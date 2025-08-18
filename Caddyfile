@@ -1,0 +1,44 @@
+# Caddyfile for CodeB Local Development
+
+# Admin API endpoint
+{
+    admin localhost:2019
+}
+
+# Local development domain
+localhost, codeb.local {
+    # Reverse proxy to CodeB server
+    reverse_proxy codeb-server:3000
+
+    # Security headers
+    header {
+        X-Frame-Options "SAMEORIGIN"
+        X-Content-Type-Options "nosniff"
+        X-XSS-Protection "1; mode=block"
+        Strict-Transport-Security "max-age=31536000; includeSubDomains"
+    }
+
+    # Enable compression
+    encode gzip
+
+    # Logging
+    log {
+        output stdout
+        format console
+        level INFO
+    }
+}
+
+# API subdomain (optional)
+api.codeb.local {
+    reverse_proxy codeb-server:3000
+
+    # CORS headers for API
+    header {
+        Access-Control-Allow-Origin *
+        Access-Control-Allow-Methods "GET, POST, PUT, DELETE, OPTIONS, PATCH"
+        Access-Control-Allow-Headers "Authorization, Content-Type, X-API-Key"
+    }
+
+    encode gzip
+}

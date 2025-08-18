@@ -1,0 +1,318 @@
+<!DOCTYPE html>
+<html lang="ko">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>🚀 프로젝트 배포 대시보드</title>
+    <style>
+        * {
+            margin: 0;
+            padding: 0;
+            box-sizing: border-box;
+        }
+        
+        body {
+            font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif;
+            background: #f5f7fa;
+            padding: 20px;
+        }
+        
+        .container {
+            max-width: 1200px;
+            margin: 0 auto;
+        }
+        
+        .header {
+            background: white;
+            padding: 30px;
+            border-radius: 12px;
+            box-shadow: 0 2px 10px rgba(0,0,0,0.1);
+            margin-bottom: 30px;
+        }
+        
+        .deploy-form {
+            background: white;
+            padding: 30px;
+            border-radius: 12px;
+            box-shadow: 0 2px 10px rgba(0,0,0,0.1);
+            margin-bottom: 30px;
+        }
+        
+        .form-group {
+            margin-bottom: 20px;
+        }
+        
+        label {
+            display: block;
+            margin-bottom: 8px;
+            font-weight: 600;
+            color: #2d3748;
+        }
+        
+        input, select {
+            width: 100%;
+            padding: 12px;
+            border: 2px solid #e2e8f0;
+            border-radius: 8px;
+            font-size: 16px;
+        }
+        
+        input:focus, select:focus {
+            outline: none;
+            border-color: #4299e1;
+        }
+        
+        .btn {
+            background: #4299e1;
+            color: white;
+            padding: 12px 24px;
+            border: none;
+            border-radius: 8px;
+            cursor: pointer;
+            font-size: 16px;
+            font-weight: 600;
+        }
+        
+        .btn:hover {
+            background: #3182ce;
+        }
+        
+        .btn:disabled {
+            background: #a0aec0;
+            cursor: not-allowed;
+        }
+        
+        .status {
+            padding: 15px;
+            border-radius: 8px;
+            margin-bottom: 20px;
+        }
+        
+        .status.success {
+            background: #c6f6d5;
+            color: #22543d;
+        }
+        
+        .status.error {
+            background: #fed7d7;
+            color: #742a2a;
+        }
+        
+        .projects-list {
+            background: white;
+            padding: 30px;
+            border-radius: 12px;
+            box-shadow: 0 2px 10px rgba(0,0,0,0.1);
+        }
+        
+        .project-item {
+            padding: 15px;
+            border: 1px solid #e2e8f0;
+            border-radius: 8px;
+            margin-bottom: 10px;
+            display: flex;
+            justify-content: between;
+            align-items: center;
+        }
+        
+        .project-info {
+            flex: 1;
+        }
+        
+        .project-name {
+            font-weight: 600;
+            color: #2d3748;
+        }
+        
+        .project-domain {
+            color: #4299e1;
+            text-decoration: none;
+        }
+        
+        .project-domain:hover {
+            text-decoration: underline;
+        }
+    </style>
+</head>
+<body>
+    <div class="container">
+        <!-- 헤더 -->
+        <div class="header">
+            <h1>🚀 프로젝트 배포 대시보드</h1>
+            <p>SSH 없이 안전하게 프로젝트를 배포하세요</p>
+        </div>
+
+        <!-- 배포 폼 -->
+        <div class="deploy-form">
+            <h2>새 프로젝트 배포</h2>
+            <form id="deployForm">
+                <div class="form-group">
+                    <label for="projectName">프로젝트 이름</label>
+                    <input type="text" id="projectName" name="name" placeholder="예: myblog" required>
+                </div>
+                
+                <div class="form-group">
+                    <label for="domain">도메인</label>
+                    <input type="text" id="domain" name="domain" placeholder="예: myblog.one-q.kr">
+                    <small>비워두면 프로젝트명.one-q.kr로 자동 생성됩니다</small>
+                </div>
+                
+                <div class="form-group">
+                    <label for="projectType">프로젝트 타입</label>
+                    <select id="projectType" name="type">
+                        <option value="docker-compose">Docker Compose (기본)</option>
+                        <option value="git">Git 저장소</option>
+                        <option value="dockerfile">Custom Dockerfile</option>
+                    </select>
+                </div>
+                
+                <div class="form-group" id="repoGroup" style="display: none;">
+                    <label for="repo">Git 저장소 URL</label>
+                    <input type="url" id="repo" name="repo" placeholder="https://github.com/username/repo">
+                </div>
+                
+                <div class="form-group">
+                    <label>
+                        <input type="checkbox" id="ssl" name="ssl"> SSL 인증서 자동 발급
+                    </label>
+                </div>
+                
+                <button type="submit" class="btn">🚀 배포 시작</button>
+            </form>
+        </div>
+
+        <!-- 상태 메시지 -->
+        <div id="status" style="display: none;"></div>
+
+        <!-- 프로젝트 목록 -->
+        <div class="projects-list">
+            <h2>배포된 프로젝트</h2>
+            <div id="projectsList">
+                <p>로딩 중...</p>
+            </div>
+        </div>
+    </div>
+
+    <script>
+        // API 기본 설정
+        const API_BASE = 'http://localhost:3000/api';
+        const AUTH_TOKEN = prompt('배포 토큰을 입력하세요:');
+
+        if (!AUTH_TOKEN) {
+            alert('토큰이 필요합니다.');
+        }
+
+        // 프로젝트 타입 변경 시 Git 저장소 필드 표시/숨김
+        document.getElementById('projectType').addEventListener('change', function() {
+            const repoGroup = document.getElementById('repoGroup');
+            if (this.value === 'git') {
+                repoGroup.style.display = 'block';
+                document.getElementById('repo').required = true;
+            } else {
+                repoGroup.style.display = 'none';
+                document.getElementById('repo').required = false;
+            }
+        });
+
+        // 상태 메시지 표시
+        function showStatus(message, type = 'success') {
+            const statusDiv = document.getElementById('status');
+            statusDiv.className = `status ${type}`;
+            statusDiv.textContent = message;
+            statusDiv.style.display = 'block';
+            
+            setTimeout(() => {
+                statusDiv.style.display = 'none';
+            }, 5000);
+        }
+
+        // 프로젝트 배포
+        document.getElementById('deployForm').addEventListener('submit', async function(e) {
+            e.preventDefault();
+            
+            const formData = new FormData(e.target);
+            const data = {
+                name: formData.get('name'),
+                domain: formData.get('domain') || `${formData.get('name')}.one-q.kr`,
+                type: formData.get('type'),
+                ssl: formData.has('ssl')
+            };
+            
+            if (data.type === 'git') {
+                data.repo = formData.get('repo');
+            }
+            
+            const submitBtn = e.target.querySelector('button[type="submit"]');
+            submitBtn.disabled = true;
+            submitBtn.textContent = '배포 중...';
+            
+            try {
+                const response = await fetch(`${API_BASE}/deploy`, {
+                    method: 'POST',
+                    headers: {
+                        'Content-Type': 'application/json',
+                        'Authorization': `Bearer ${AUTH_TOKEN}`
+                    },
+                    body: JSON.stringify(data)
+                });
+                
+                const result = await response.json();
+                
+                if (result.success) {
+                    showStatus(`✅ ${data.name} 배포 성공! ${result.data.url}`, 'success');
+                    loadProjects();
+                    e.target.reset();
+                } else {
+                    showStatus(`❌ 배포 실패: ${result.error}`, 'error');
+                }
+            } catch (error) {
+                showStatus(`❌ 배포 실패: ${error.message}`, 'error');
+            } finally {
+                submitBtn.disabled = false;
+                submitBtn.textContent = '🚀 배포 시작';
+            }
+        });
+
+        // 프로젝트 목록 로드
+        async function loadProjects() {
+            try {
+                const response = await fetch(`${API_BASE}/projects`, {
+                    headers: {
+                        'Authorization': `Bearer ${AUTH_TOKEN}`
+                    }
+                });
+                
+                const result = await response.json();
+                const projectsList = document.getElementById('projectsList');
+                
+                if (result.success && result.projects.length > 0) {
+                    projectsList.innerHTML = result.projects.map(project => `
+                        <div class="project-item">
+                            <div class="project-info">
+                                <div class="project-name">${project.name}</div>
+                                <a href="http://${project.name}.one-q.kr" 
+                                   class="project-domain" target="_blank">
+                                   ${project.name}.one-q.kr
+                                </a>
+                            </div>
+                            <div>
+                                <span class="status-badge">실행 중</span>
+                            </div>
+                        </div>
+                    `).join('');
+                } else {
+                    projectsList.innerHTML = '<p>배포된 프로젝트가 없습니다.</p>';
+                }
+            } catch (error) {
+                document.getElementById('projectsList').innerHTML = 
+                    '<p>프로젝트 목록을 불러올 수 없습니다.</p>';
+            }
+        }
+
+        // 페이지 로드 시 프로젝트 목록 로드
+        if (AUTH_TOKEN) {
+            loadProjects();
+        }
+    </script>
+</body>
+</html>

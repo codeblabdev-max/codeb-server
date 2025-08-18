@@ -1,0 +1,69 @@
+# OS generated files
+.DS_Store
+.DS_Store?
+._*
+.Spotlight-V100
+.Trashes
+ehthumbs.db
+Thumbs.db
+
+# IDE
+.vscode/
+.idea/
+*.swp
+*.swo
+
+# Dependencies
+node_modules/
+vendor/
+*.lock
+
+# Build outputs
+dist/
+build/
+out/
+target/
+
+# Environment variables
+.env
+.env.local
+.env.production
+.env.staging
+
+# Logs
+*.log
+logs/
+
+# Database
+*.db
+*.sqlite
+
+# Secrets
+secrets/
+*.pem
+*.key
+config/secrets.yaml
+
+# Terraform
+*.tfstate
+*.tfstate.*
+*.tfplan
+terraform.tfvars
+
+# Docker
+docker-compose.override.yml
+
+# Deployment logs
+deploy.log
+setup.log
+
+# OS specific
+*.tmp
+*.temp
+
+# Backup files
+backups/local/
+*.backup
+
+# Claude Code
+.claude/

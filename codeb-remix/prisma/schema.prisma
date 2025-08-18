@@ -1,0 +1,173 @@
+// This is your Prisma schema file,
+// learn more about it in the docs: https://pris.ly/d/prisma-schema
+
+// Looking for ways to speed up your queries, or scale easily with your serverless or edge functions?
+// Try Prisma Accelerate: https://pris.ly/cli/accelerate-init
+
+generator client {
+  provider = "prisma-client-js"
+}
+
+// JSON 파일 기반 데이터베이스 사용 (SQLite 대신)
+// 실제로는 app/services/db.server.ts의 JsonDatabase를 사용합니다.
+datasource db {
+  provider = "sqlite"
+  url      = "file:./dev.db"
+}
+
+// 프로젝트 모델
+model Project {
+  id              String   @id @default(cuid())
+  name            String   @unique
+  git_repository  String?
+  domain          String?
+  template        String   @default("node")
+  database_type   String   @default("postgres")
+  has_cache       Boolean  @default(true)
+  ssl_enabled     Boolean  @default(true)
+  port            Int
+  db_port         Int
+  redis_port      Int
+  status          String   @default("creating") // creating, running, stopped, error
+  created_at      DateTime @default(now())
+  updated_at      DateTime @updatedAt
+
+  // 관계
+  deployments Deployment[]
+  backups     Backup[]
+  
+  @@map("projects")
+}
+
+// 배포 기록 모델
+model Deployment {
+  id          String   @id @default(cuid())
+  project_id  String
+  commit_hash String?
+  branch      String   @default("main")
+  status      String   @default("pending") // pending, running, completed, failed
+  logs        String?
+  started_at  DateTime @default(now())
+  finished_at DateTime?
+  created_at  DateTime @default(now())
+  
+  // 관계
+  project Project @relation(fields: [project_id], references: [id], onDelete: Cascade)
+  
+  @@map("deployments")
+}
+
+// 백업 모델
+model Backup {
+  id         String   @id @default(cuid())
+  project_id String
+  backup_id  String   @unique // 실제 백업 파일 ID
+  size_bytes Int?
+  type       String   @default("full") // full, incremental, database, files
+  status     String   @default("creating") // creating, completed, failed
+  created_at DateTime @default(now())
+  
+  // 관계
+  project Project @relation(fields: [project_id], references: [id], onDelete: Cascade)
+  
+  @@map("backups")
+}
+
+// 사용자 모델 (향후 확장용)
+model User {
+  id         String   @id @default(cuid())
+  email      String   @unique
+  username   String   @unique
+  password   String
+  role       String   @default("user") // admin, user
+  active     Boolean  @default(true)
+  last_login DateTime?
+  created_at DateTime @default(now())
+  updated_at DateTime @updatedAt
+  
+  @@map("users")
+}
+
+// 시스템 설정 모델
+model Setting {
+  id          String   @id @default(cuid())
+  key         String   @unique
+  value       String
+  description String?
+  type        String   @default("string") // string, number, boolean, json
+  category    String   @default("general")
+  updated_at  DateTime @updatedAt
+  
+  @@map("settings")
+}
+
+// API 키 모델 (API 액세스 관리용)
+model ApiKey {
+  id          String   @id @default(cuid())
+  name        String
+  key_hash    String   @unique
+  permissions String   @default("read") // read, write, admin
+  active      Boolean  @default(true)
+  last_used   DateTime?
+  expires_at  DateTime?
+  created_at  DateTime @default(now())
+  updated_at  DateTime @updatedAt
+  
+  @@map("api_keys")
+}
+
+// 로그 모델 (시스템 로그 저장용)
+model Log {
+  id         String   @id @default(cuid())
+  level      String   // debug, info, warn, error
+  message    String
+  category   String   @default("system") // system, project, deployment, backup
+  project_id String?
+  metadata   String?  // JSON 형태의 추가 정보
+  created_at DateTime @default(now())
+  
+  @@map("logs")
+}
+
+// 도메인 설정 모델
+model Domain {
+  id          String   @id @default(cuid())
+  domain      String   @unique
+  project_id  String?
+  ssl_enabled Boolean  @default(true)
+  ssl_cert    String?
+  ssl_key     String?
+  status      String   @default("pending") // pending, active, expired, failed
+  created_at  DateTime @default(now())
+  updated_at  DateTime @updatedAt
+  expires_at  DateTime?
+  
+  @@map("domains")
+}
+
+// 리소스 사용량 모니터링 모델
+model ResourceUsage {
+  id         String   @id @default(cuid())
+  project_id String?
+  cpu_usage  Float?   // CPU 사용률 (%)
+  memory_mb  Int?     // 메모리 사용량 (MB)
+  disk_mb    Int?     // 디스크 사용량 (MB)
+  network_in Int?     // 네트워크 입력 (bytes)
+  network_out Int?    // 네트워크 출력 (bytes)
+  timestamp  DateTime @default(now())
+  
+  @@map("resource_usage")
+}
+
+// 알림 모델
+model Notification {
+  id         String   @id @default(cuid())
+  type       String   // info, warning, error, success
+  title      String
+  message    String
+  project_id String?
+  read       Boolean  @default(false)
+  created_at DateTime @default(now())
+  
+  @@map("notifications")
+}
