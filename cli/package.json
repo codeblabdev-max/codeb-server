@@ -1,0 +1,51 @@
+{
+  "name": "@codeb/we-cli",
+  "version": "2.3.1",
+  "description": "/we: Web Deploy CLI - Deploy, Analyze, Workflow, Optimize with 7-Agent System",
+  "type": "module",
+  "bin": {
+    "we": "./bin/we.js"
+  },
+  "main": "./bin/we.js",
+  "files": [
+    "bin",
+    "src",
+    "commands"
+  ],
+  "scripts": {
+    "test": "echo \"Tests coming soon\" && exit 0",
+    "link": "npm link",
+    "unlink": "npm unlink -g @codeb/we-cli",
+    "postinstall": "node scripts/install-commands.js",
+    "install-commands": "node scripts/install-commands.js"
+  },
+  "keywords": [
+    "codeb",
+    "cli",
+    "deployment",
+    "analysis",
+    "optimization",
+    "mcp",
+    "agents"
+  ],
+  "author": "CodeB Team",
+  "license": "MIT",
+  "dependencies": {
+    "chalk": "^5.3.0",
+    "commander": "^11.1.0",
+    "ora": "^7.0.1",
+    "inquirer": "^9.2.12",
+    "axios": "^1.6.2",
+    "dotenv": "^16.3.1",
+    "table": "^6.8.1",
+    "cli-progress": "^3.12.0"
+  },
+  "engines": {
+    "node": ">=18.0.0",
+    "npm": ">=9.0.0"
+  },
+  "repository": {
+    "type": "git",
+    "url": "https://github.com/codeb/codeb-server.git"
+  }
+}
