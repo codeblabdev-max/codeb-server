@@ -118,6 +118,207 @@ function findNextAvailablePort(registry, basePort, usedPorts = []) {
   return port;
 }
 
+// ============================================================================
+// Port Scanning & Validation Functions (Auto-detection)
+// ============================================================================
+
+/**
+ * Port ranges by environment (GitOps standard)
+ */
+const PORT_RANGES = {
+  staging: { app: { min: 3000, max: 3499 }, db: { min: 15432, max: 15499 }, redis: { min: 16379, max: 16399 } },
+  production: { app: { min: 4000, max: 4499 }, db: { min: 25432, max: 25499 }, redis: { min: 26379, max: 26399 } },
+  preview: { app: { min: 5000, max: 5999 }, db: { min: 35432, max: 35499 }, redis: { min: 36379, max: 36399 } }
+};
+
+/**
+ * Scan server for currently used ports
+ * @returns {Promise<{usedPorts: Set<number>, portOwners: Map<number, string>, errors: string[]}>}
+ */
+async function scanServerPorts(serverHost, serverUser) {
+  const { execSync } = await import('child_process');
+  const usedPorts = new Set();
+  const portOwners = new Map(); // port -> owner (container name or process)
+  const errors = [];
+
+  try {
+    // 1. Get ports from running containers
+    const containerCmd = `ssh ${serverUser}@${serverHost} "podman ps --format '{{.Names}}|{{.Ports}}' 2>/dev/null"`;
+    const containerOutput = execSync(containerCmd, { encoding: 'utf-8', timeout: 30000 }).trim();
+
+    if (containerOutput) {
+      for (const line of containerOutput.split('\n')) {
+        const [name, ports] = line.split('|');
+        if (ports) {
+          // Parse port mappings like "0.0.0.0:3000->3000/tcp, 0.0.0.0:5432->5432/tcp"
+          const portMatches = ports.matchAll(/:(\d+)->/g);
+          for (const match of portMatches) {
+            const port = parseInt(match[1]);
+            usedPorts.add(port);
+            portOwners.set(port, name || 'unknown');
+          }
+        }
+      }
+    }
+
+    // 2. Get ports from ss (actual listening ports)
+    const ssCmd = `ssh ${serverUser}@${serverHost} "ss -tlnp 2>/dev/null | grep LISTEN | awk '{print \\$4}' | grep -oE '[0-9]+$' | sort -u"`;
+    try {
+      const ssOutput = execSync(ssCmd, { encoding: 'utf-8', timeout: 30000 }).trim();
+      if (ssOutput) {
+        for (const portStr of ssOutput.split('\n')) {
+          const port = parseInt(portStr);
+          if (!isNaN(port)) {
+            usedPorts.add(port);
+            if (!portOwners.has(port)) {
+              portOwners.set(port, 'system');
+            }
+          }
+        }
+      }
+    } catch {
+      // ss might fail, but container check is more important
+    }
+
+    // 3. Get ports from registry
+    try {
+      const registry = await readProjectRegistry(serverHost, serverUser);
+      for (const [projName, project] of Object.entries(registry.projects || {})) {
+        const envs = project.environments || {};
+        for (const [envName, env] of Object.entries(envs)) {
+          if (env.port) {
+            usedPorts.add(env.port);
+            if (!portOwners.has(env.port)) {
+              portOwners.set(env.port, `${projName}/${envName}`);
+            }
+          }
+        }
+      }
+    } catch {
+      // Registry might not exist
+    }
+
+  } catch (error) {
+    errors.push(`Port scan error: ${error.message}`);
+  }
+
+  return { usedPorts, portOwners, errors };
+}
+
+/**
+ * Validate port and suggest alternative if conflict
+ * @returns {{ valid: boolean, suggested?: number, conflict?: string }}
+ */
+function validatePort(port, environment, serviceType, usedPorts, portOwners) {
+  const range = PORT_RANGES[environment]?.[serviceType];
+  const warnings = [];
+
+  // Check range compliance
+  if (range && (port < range.min || port > range.max)) {
+    warnings.push(`Port ${port} is outside ${environment}/${serviceType} range (${range.min}-${range.max})`);
+  }
+
+  // Check conflict
+  if (usedPorts.has(port)) {
+    const owner = portOwners.get(port) || 'unknown';
+    return {
+      valid: false,
+      conflict: owner,
+      suggested: findSafePort(environment, serviceType, usedPorts),
+      warnings
+    };
+  }
+
+  return { valid: true, warnings };
+}
+
+/**
+ * Find next safe port within environment range
+ */
+function findSafePort(environment, serviceType, usedPorts) {
+  const range = PORT_RANGES[environment]?.[serviceType];
+  if (!range) {
+    // Fallback to default ranges
+    const defaults = { staging: 3000, production: 4000, preview: 5000 };
+    let port = defaults[environment] || 3000;
+    while (usedPorts.has(port)) port++;
+    return port;
+  }
+
+  for (let port = range.min; port <= range.max; port++) {
+    if (!usedPorts.has(port)) return port;
+  }
+
+  // Range exhausted, return next after max
+  return range.max + 1;
+}
+
+/**
+ * Auto-scan and validate all ports for a project configuration
+ * Returns validated config with safe port assignments
+ */
+async function autoScanAndValidatePorts(config, serverHost, serverUser, spinner) {
+  const originalText = spinner?.text;
+  if (spinner) spinner.text = 'Scanning server ports for conflicts...';
+
+  const { usedPorts, portOwners, errors } = await scanServerPorts(serverHost, serverUser);
+  const validationResults = {
+    scanned: true,
+    usedPortCount: usedPorts.size,
+    conflicts: [],
+    adjustments: [],
+    warnings: []
+  };
+
+  if (errors.length > 0) {
+    validationResults.warnings.push(...errors);
+  }
+
+  // Validate each port
+  const portsToValidate = [
+    { key: 'stagingPort', env: 'staging', type: 'app', label: 'Staging App' },
+    { key: 'productionPort', env: 'production', type: 'app', label: 'Production App' },
+    { key: 'stagingDbPort', env: 'staging', type: 'db', label: 'Staging DB' },
+    { key: 'productionDbPort', env: 'production', type: 'db', label: 'Production DB' },
+    { key: 'stagingRedisPort', env: 'staging', type: 'redis', label: 'Staging Redis' },
+    { key: 'productionRedisPort', env: 'production', type: 'redis', label: 'Production Redis' }
+  ];
+
+  for (const { key, env, type, label } of portsToValidate) {
+    const port = parseInt(config[key]);
+    if (isNaN(port)) continue;
+
+    const result = validatePort(port, env, type, usedPorts, portOwners);
+
+    if (!result.valid) {
+      validationResults.conflicts.push({
+        label,
+        originalPort: port,
+        conflictWith: result.conflict,
+        suggestedPort: result.suggested
+      });
+
+      // Auto-adjust config
+      config[key] = String(result.suggested);
+      validationResults.adjustments.push({
+        label,
+        from: port,
+        to: result.suggested
+      });
+
+      // Mark the new port as used to prevent double allocation
+      usedPorts.add(result.suggested);
+    }
+
+    if (result.warnings?.length > 0) {
+      validationResults.warnings.push(...result.warnings);
+    }
+  }
+
+  if (spinner) spinner.text = originalText;
+  return validationResults;
+}
+
 /**
  * Provision PostgreSQL database and user for project
  */
@@ -1452,6 +1653,58 @@ async function initWorkflow(projectName, options) {
       };
     }
 
+    // ================================================================
+    // Auto Port Scan & Validation (detect conflicts before proceeding)
+    // ================================================================
+    const serverHost = options.host || getServerHost();
+    const serverUser = options.user || getServerUser();
+    let portValidation = null;
+
+    if (serverHost) {
+      try {
+        portValidation = await autoScanAndValidatePorts(config, serverHost, serverUser, spinner);
+
+        // Show conflicts and adjustments to user
+        if (portValidation.conflicts.length > 0) {
+          spinner.stop();
+          console.log(chalk.yellow('\n⚠️  Port Conflicts Detected:'));
+          for (const conflict of portValidation.conflicts) {
+            console.log(chalk.red(`   • ${conflict.label}: Port ${conflict.originalPort} is used by "${conflict.conflictWith}"`));
+            console.log(chalk.green(`     → Auto-assigned: ${conflict.suggestedPort}`));
+          }
+          console.log('');
+
+          // In interactive mode, ask for confirmation
+          if (options.interactive !== false) {
+            const { proceed } = await inquirer.prompt([{
+              type: 'confirm',
+              name: 'proceed',
+              message: 'Continue with adjusted ports?',
+              default: true
+            }]);
+
+            if (!proceed) {
+              console.log(chalk.gray('Aborted. Adjust ports manually and retry.'));
+              return;
+            }
+          }
+          spinner.start('Generating workflow files...');
+        } else if (portValidation.scanned) {
+          spinner.text = `Port scan complete (${portValidation.usedPortCount} ports in use). Generating files...`;
+        }
+
+        // Show warnings if any
+        if (portValidation.warnings.length > 0) {
+          for (const warning of portValidation.warnings) {
+            console.log(chalk.yellow(`   ⚠ ${warning}`));
+          }
+        }
+      } catch (scanError) {
+        // Port scan failed - continue without validation
+        console.log(chalk.gray(`   (Port scan skipped: ${scanError.message})`));
+      }
+    }
+
     const outputDir = options.output || '.';
     const files = [];
 
@@ -1546,7 +1799,7 @@ async function initWorkflow(projectName, options) {
     files.push(envPath);
 
     // 6. Generate local .env.local for development (connects to server DB)
-    const serverHost = options.host || getServerHost();
+    // Note: serverHost and serverUser already declared in port validation section above
     const localEnvContent = generateLocalEnvForDev({
       projectName: config.projectName,
       serverHost,
@@ -1562,7 +1815,6 @@ async function initWorkflow(projectName, options) {
 
     // 7. Provision server infrastructure (DB, Redis, Storage)
     let provisionResult = null;
-    const serverUser = options.user || getServerUser();
 
     if (serverHost) {
       spinner.text = 'Provisioning server infrastructure...';
@@ -1652,6 +1904,22 @@ EOFENV"`, { timeout: 30000 });
     spinner.succeed('Workflow initialization complete');
 
     console.log(chalk.green('\n✅ Workflow Initialization Complete\n'));
+
+    // Show port validation summary
+    if (portValidation?.scanned) {
+      console.log(chalk.blue('🔍 Port Scan Summary:'));
+      console.log(chalk.gray(`  Scanned ${portValidation.usedPortCount} ports in use on server`));
+      if (portValidation.adjustments.length > 0) {
+        console.log(chalk.yellow(`  ${portValidation.adjustments.length} port(s) were auto-adjusted to avoid conflicts`));
+        for (const adj of portValidation.adjustments) {
+          console.log(chalk.gray(`    • ${adj.label}: ${adj.from} → ${adj.to}`));
+        }
+      } else {
+        console.log(chalk.green('  ✓ No port conflicts detected'));
+      }
+      console.log('');
+    }
+
     console.log(chalk.gray('Generated files:'));
     files.forEach(f => console.log(chalk.cyan(`  • ${f}`)));
 
