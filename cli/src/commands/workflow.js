@@ -1786,7 +1786,7 @@ async function initWorkflow(projectName, options) {
       files.push(dockerfilePath);
     }
 
-    // 5. Generate environment file templates
+    // 5. Generate environment file templates (.env.example is always safe to overwrite)
     const envTemplate = generateEnvTemplate({
       projectName: config.projectName,
       useDatabase: config.useDatabase,
@@ -1798,20 +1798,100 @@ async function initWorkflow(projectName, options) {
     await writeFile(envPath, envTemplate);
     files.push(envPath);
 
-    // 6. Generate local .env.local for development (connects to server DB)
+    // 6. Handle .env.local for development - WITH PROTECTION
     // Note: serverHost and serverUser already declared in port validation section above
-    const localEnvContent = generateLocalEnvForDev({
-      projectName: config.projectName,
-      serverHost,
-      useDatabase: config.useDatabase,
-      useRedis: config.useRedis,
-      dbPassword: config.dbPassword,
-      dbPort: parseInt(config.productionDbPort),
-      redisPort: parseInt(config.productionRedisPort)
-    });
     const localEnvPath = join(outputDir, '.env.local');
-    await writeFile(localEnvPath, localEnvContent);
-    files.push(localEnvPath);
+    const envFilePath = join(outputDir, '.env');
+    let envFileProtected = false;
+    let existingEnvContent = null;
+
+    // Check for existing .env or .env.local with DB config
+    if (existsSync(envFilePath) || existsSync(localEnvPath)) {
+      const existingPath = existsSync(envFilePath) ? envFilePath : localEnvPath;
+      try {
+        existingEnvContent = await readFile(existingPath, 'utf-8');
+        // Check if it contains DATABASE_URL or REDIS_URL
+        if (existingEnvContent.includes('DATABASE_URL') || existingEnvContent.includes('REDIS_URL')) {
+          envFileProtected = true;
+          spinner.stop();
+          console.log(chalk.yellow('\n⚠️  Existing environment file detected with DB configuration:'));
+          console.log(chalk.gray(`   File: ${existingPath}`));
+
+          // Show current DB config
+          const dbMatch = existingEnvContent.match(/DATABASE_URL=["']?([^"'\n]+)/);
+          const redisMatch = existingEnvContent.match(/REDIS_URL=["']?([^"'\n]+)/);
+          if (dbMatch) console.log(chalk.cyan(`   DATABASE_URL: ${dbMatch[1].substring(0, 50)}...`));
+          if (redisMatch) console.log(chalk.cyan(`   REDIS_URL: ${redisMatch[1].substring(0, 50)}...`));
+
+          if (options.interactive !== false) {
+            const { envAction } = await inquirer.prompt([{
+              type: 'list',
+              name: 'envAction',
+              message: 'How should we handle the existing .env file?',
+              choices: [
+                { name: 'Keep existing (recommended) - only add missing variables', value: 'keep' },
+                { name: 'Backup & replace - create .env.backup and generate new', value: 'backup' },
+                { name: 'Skip - don\'t touch .env files at all', value: 'skip' }
+              ],
+              default: 'keep'
+            }]);
+
+            if (envAction === 'skip') {
+              console.log(chalk.gray('   Skipping .env file generation.'));
+              spinner.start('Continuing with workflow files...');
+            } else if (envAction === 'backup') {
+              // Create backup
+              const backupPath = `${existingPath}.backup.${Date.now()}`;
+              await writeFile(backupPath, existingEnvContent);
+              console.log(chalk.green(`   ✓ Backup created: ${backupPath}`));
+              envFileProtected = false; // Allow overwrite after backup
+              spinner.start('Generating new .env.local...');
+            } else {
+              // Keep existing - merge mode
+              spinner.start('Merging environment variables...');
+            }
+          } else {
+            // Non-interactive: always keep existing
+            console.log(chalk.gray('   Keeping existing .env file (non-interactive mode).'));
+          }
+        }
+      } catch {
+        // File exists but can't read - proceed with caution
+      }
+    }
+
+    // Generate .env.local only if not protected or merge mode
+    if (!envFileProtected) {
+      const localEnvContent = generateLocalEnvForDev({
+        projectName: config.projectName,
+        serverHost,
+        useDatabase: config.useDatabase,
+        useRedis: config.useRedis,
+        dbPassword: config.dbPassword,
+        dbPort: parseInt(config.productionDbPort),
+        redisPort: parseInt(config.productionRedisPort)
+      });
+      await writeFile(localEnvPath, localEnvContent);
+      files.push(localEnvPath);
+    } else if (existingEnvContent) {
+      // Merge mode: add missing variables without changing DB config
+      const newEnvContent = generateLocalEnvForDev({
+        projectName: config.projectName,
+        serverHost,
+        useDatabase: config.useDatabase,
+        useRedis: config.useRedis,
+        dbPassword: config.dbPassword,
+        dbPort: parseInt(config.productionDbPort),
+        redisPort: parseInt(config.productionRedisPort)
+      });
+
+      const mergedContent = mergeEnvFiles(existingEnvContent, newEnvContent);
+      if (mergedContent !== existingEnvContent) {
+        const targetPath = existsSync(envFilePath) ? envFilePath : localEnvPath;
+        await writeFile(targetPath, mergedContent);
+        files.push(targetPath + ' (merged)');
+      }
+    }
 
     // 7. Provision server infrastructure (DB, Redis, Storage)
     let provisionResult = null;
@@ -1865,8 +1945,8 @@ EOFENV"`, { timeout: 30000 });
 ${stagingEnvContent}
 EOFENV"`, { timeout: 30000 });
 
-        // 9. Regenerate local .env.local with actual credentials
-        if (provisionResult.database || provisionResult.redis) {
+        // 9. Update local .env.local with actual credentials (respecting protection)
+        if ((provisionResult.database || provisionResult.redis) && !envFileProtected) {
           const actualLocalEnvContent = generateLocalEnvContent({
             projectName: config.projectName,
             serverHost,
@@ -1876,6 +1956,10 @@ EOFENV"`, { timeout: 30000 });
             redisExternalPort: parseInt(config.productionRedisPort)
           });
           await writeFile(localEnvPath, actualLocalEnvContent);
+        } else if (envFileProtected) {
+          // Show info about server credentials that weren't applied
+          console.log(chalk.gray('\n   ℹ️  Server credentials generated but not applied to local .env'));
+          console.log(chalk.gray('   To use server DB, update .env manually or run with --force-env'));
         }
 
         // Update registry with environment info
@@ -2136,6 +2220,57 @@ ${stagingEnv}
 EOFENV"`, { timeout: 30000 });
 
   return true;
+}
+
+/**
+ * Merge environment files - adds new variables without overwriting protected ones
+ * Protected: DATABASE_URL, REDIS_URL, DIRECT_URL, POSTGRES_*, DB_*
+ */
+function mergeEnvFiles(existingContent, newContent) {
+  const protectedPrefixes = ['DATABASE_URL', 'REDIS_URL', 'DIRECT_URL', 'POSTGRES_', 'DB_'];
+
+  // Parse existing env
+  const existingVars = new Map();
+  for (const line of existingContent.split('\n')) {
+    const match = line.match(/^([A-Z_][A-Z0-9_]*)=/);
+    if (match) {
+      existingVars.set(match[1], line);
+    }
+  }
+
+  // Parse new env and identify what to add
+  const newVars = new Map();
+  for (const line of newContent.split('\n')) {
+    const match = line.match(/^([A-Z_][A-Z0-9_]*)=/);
+    if (match) {
+      const varName = match[1];
+      // Check if protected
+      const isProtected = protectedPrefixes.some(prefix => varName.startsWith(prefix));
+      if (!isProtected || !existingVars.has(varName)) {
+        newVars.set(varName, line);
+      }
+    }
+  }
+
+  // Build merged content
+  const lines = existingContent.split('\n');
+  const addedVars = [];
+
+  // Add new variables that don't exist
+  for (const [varName, line] of newVars) {
+    if (!existingVars.has(varName)) {
+      addedVars.push(line);
+    }
+  }
+
+  if (addedVars.length > 0) {
+    // Add new vars at the end with a comment
+    lines.push('');
+    lines.push('# Added by workflow init');
+    lines.push(...addedVars);
+  }
+
+  return lines.join('\n');
 }
 
 /**
