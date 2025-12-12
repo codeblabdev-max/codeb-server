@@ -1,7 +1,7 @@
 {
   "name": "we-cli",
-  "version": "2.4.0",
-  "description": "/we: Web Deploy CLI - Deploy, Analyze, Workflow, Optimize with 7-Agent System",
+  "version": "2.5.0",
+  "description": "/we: Web Deploy CLI - Deploy, Analyze, Workflow, Optimize with 7-Agent System + Server Infrastructure Provisioning",
   "type": "module",
   "bin": {
     "we": "./bin/we.js"

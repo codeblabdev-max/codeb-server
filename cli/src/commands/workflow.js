@@ -3,6 +3,12 @@
  *
  * Generates Quadlet container files and GitHub Actions CI/CD workflows
  * Supports: new project initialization, updates, and automation
+ *
+ * v2.5.0: Integrated server infrastructure provisioning
+ * - PostgreSQL: Per-project database + user creation
+ * - Redis: Per-project DB index or prefix allocation
+ * - Storage: Per-project directories (/opt/codeb/data/{project}/)
+ * - Registry: Central project registry management
  */
 
 import chalk from 'chalk';
@@ -11,7 +17,514 @@ import inquirer from 'inquirer';
 import { writeFile, readFile, mkdir } from 'fs/promises';
 import { join, dirname } from 'path';
 import { existsSync } from 'fs';
-import { getServerHost, getServerUser, getDbPassword } from '../lib/config.js';
+import { getServerHost, getServerUser, getDbPassword, getBaseDomain } from '../lib/config.js';
+
+// ============================================================================
+// Server Infrastructure Provisioning Functions
+// ============================================================================
+
+/**
+ * Read project registry from server
+ * @returns {Promise<Object>} Registry data or default structure
+ */
+async function readProjectRegistry(serverHost, serverUser) {
+  const { execSync } = await import('child_process');
+
+  try {
+    const cmd = `ssh ${serverUser}@${serverHost} "cat /opt/codeb/config/project-registry.json 2>/dev/null"`;
+    const output = execSync(cmd, { encoding: 'utf-8', timeout: 30000 });
+    return JSON.parse(output);
+  } catch {
+    // Return default registry structure
+    return {
+      version: '2.0',
+      updated_at: new Date().toISOString(),
+      infrastructure: {
+        postgres: {
+          host: 'codeb-postgres',
+          port: 5432,
+          admin_user: 'postgres'
+        },
+        redis: {
+          host: 'codeb-redis',
+          port: 6379,
+          max_databases: 16
+        },
+        storage: {
+          base_path: '/opt/codeb/data'
+        }
+      },
+      projects: {}
+    };
+  }
+}
+
+/**
+ * Write project registry to server
+ */
+async function writeProjectRegistry(serverHost, serverUser, registry) {
+  const { execSync } = await import('child_process');
+
+  registry.updated_at = new Date().toISOString();
+  const registryJson = JSON.stringify(registry, null, 2);
+
+  // Ensure config directory exists
+  execSync(`ssh ${serverUser}@${serverHost} "mkdir -p /opt/codeb/config"`, { timeout: 30000 });
+
+  // Write registry file
+  execSync(`ssh ${serverUser}@${serverHost} "cat > /opt/codeb/config/project-registry.json << 'EOFREG'
+${registryJson}
+EOFREG"`, { timeout: 30000 });
+}
+
+/**
+ * Find next available Redis DB index
+ */
+function findNextRedisDbIndex(registry) {
+  const usedIndexes = new Set();
+
+  for (const project of Object.values(registry.projects || {})) {
+    if (project.resources?.redis?.db_index !== undefined) {
+      usedIndexes.add(project.resources.redis.db_index);
+    }
+  }
+
+  for (let i = 0; i < 16; i++) {
+    if (!usedIndexes.has(i)) return i;
+  }
+
+  return 0; // Fallback to 0 with prefix-based isolation
+}
+
+/**
+ * Find next available port in range
+ */
+function findNextAvailablePort(registry, basePort, usedPorts = []) {
+  const allUsedPorts = new Set(usedPorts);
+
+  for (const project of Object.values(registry.projects || {})) {
+    const envs = project.environments || {};
+    for (const env of Object.values(envs)) {
+      if (env.port) allUsedPorts.add(env.port);
+      if (env.db_port) allUsedPorts.add(env.db_port);
+      if (env.redis_port) allUsedPorts.add(env.redis_port);
+    }
+  }
+
+  let port = basePort;
+  while (allUsedPorts.has(port)) {
+    port++;
+  }
+  return port;
+}
+
+/**
+ * Provision PostgreSQL database and user for project
+ */
+async function provisionPostgresDatabase(config) {
+  const { execSync } = await import('child_process');
+  const { projectName, serverHost, serverUser, dbPassword = 'postgres' } = config;
+
+  const dbName = projectName.replace(/-/g, '_');
+  const dbUser = `${dbName}_user`;
+  const userPassword = config.userPassword || generateSecurePassword();
+
+  // Check if shared PostgreSQL container exists
+  const containerCheck = `ssh ${serverUser}@${serverHost} "podman ps --filter name=codeb-postgres --format '{{.Names}}'" 2>/dev/null`;
+  let containerOutput;
+  try {
+    containerOutput = execSync(containerCheck, { encoding: 'utf-8', timeout: 30000 }).trim();
+  } catch {
+    containerOutput = '';
+  }
+
+  if (!containerOutput) {
+    throw new Error('Shared PostgreSQL container (codeb-postgres) not found. Run "we workflow setup-infra" first.');
+  }
+
+  // Create database and user
+  const createDbSql = `
+    SELECT 'CREATE DATABASE ${dbName}' WHERE NOT EXISTS (SELECT FROM pg_database WHERE datname = '${dbName}')\\gexec
+    DO \\$\\$
+    BEGIN
+      IF NOT EXISTS (SELECT FROM pg_roles WHERE rolname = '${dbUser}') THEN
+        CREATE USER ${dbUser} WITH PASSWORD '${userPassword}';
+      END IF;
+    END
+    \\$\\$;
+    GRANT ALL PRIVILEGES ON DATABASE ${dbName} TO ${dbUser};
+    \\c ${dbName}
+    GRANT ALL ON SCHEMA public TO ${dbUser};
+  `;
+
+  const createCmd = `ssh ${serverUser}@${serverHost} "podman exec codeb-postgres psql -U postgres -c \\"${createDbSql.replace(/\n/g, ' ')}\\"" 2>/dev/null || true`;
+
+  try {
+    execSync(createCmd, { encoding: 'utf-8', timeout: 60000 });
+  } catch (e) {
+    // Try simpler approach if complex SQL fails
+    const simpleSql = [
+      `CREATE DATABASE ${dbName};`,
+      `CREATE USER ${dbUser} WITH PASSWORD '${userPassword}';`,
+      `GRANT ALL PRIVILEGES ON DATABASE ${dbName} TO ${dbUser};`
+    ];
+
+    for (const sql of simpleSql) {
+      try {
+        execSync(`ssh ${serverUser}@${serverHost} "podman exec codeb-postgres psql -U postgres -c '${sql}'" 2>/dev/null || true`,
+          { encoding: 'utf-8', timeout: 30000 });
+      } catch { /* ignore individual errors */ }
+    }
+  }
+
+  return {
+    database: dbName,
+    user: dbUser,
+    password: userPassword,
+    host: 'codeb-postgres',
+    port: 5432
+  };
+}
+
+/**
+ * Provision Redis for project (allocate DB index and prefix)
+ */
+async function provisionRedis(config, registry) {
+  const { projectName } = config;
+
+  const dbIndex = findNextRedisDbIndex(registry);
+  const prefix = `${projectName}:`;
+
+  return {
+    enabled: true,
+    db_index: dbIndex,
+    prefix: prefix,
+    host: 'codeb-redis',
+    port: 6379
+  };
+}
+
+/**
+ * Provision storage directories for project
+ */
+async function provisionStorage(config) {
+  const { execSync } = await import('child_process');
+  const { projectName, serverHost, serverUser } = config;
+
+  const basePath = `/opt/codeb/data/${projectName}`;
+  const directories = ['uploads', 'cache', 'temp'];
+
+  // Create directories
+  const mkdirCmd = `ssh ${serverUser}@${serverHost} "mkdir -p ${basePath}/{${directories.join(',')}}"`;
+  execSync(mkdirCmd, { timeout: 30000 });
+
+  // Set permissions
+  const chmodCmd = `ssh ${serverUser}@${serverHost} "chmod -R 755 ${basePath}"`;
+  execSync(chmodCmd, { timeout: 30000 });
+
+  return {
+    enabled: true,
+    path: basePath,
+    directories: directories
+  };
+}
+
+/**
+ * Generate secure random password
+ */
+function generateSecurePassword(length = 24) {
+  const chars = 'ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789';
+  let password = '';
+  for (let i = 0; i < length; i++) {
+    password += chars.charAt(Math.floor(Math.random() * chars.length));
+  }
+  return password;
+}
+
+/**
+ * Provision all server infrastructure for a project
+ */
+async function provisionServerInfrastructure(config, spinner) {
+  const {
+    projectName,
+    serverHost,
+    serverUser,
+    useDatabase = true,
+    useRedis = true,
+    useStorage = true,
+    dbPassword
+  } = config;
+
+  const result = {
+    database: null,
+    redis: null,
+    storage: null,
+    registry: null
+  };
+
+  // Read current registry
+  spinner.text = 'Reading project registry...';
+  const registry = await readProjectRegistry(serverHost, serverUser);
+
+  // Initialize project in registry if not exists
+  if (!registry.projects[projectName]) {
+    registry.projects[projectName] = {
+      created_at: new Date().toISOString(),
+      type: config.projectType || 'nextjs',
+      resources: {},
+      environments: {}
+    };
+  }
+
+  // Provision PostgreSQL
+  if (useDatabase) {
+    spinner.text = 'Provisioning PostgreSQL database...';
+    try {
+      result.database = await provisionPostgresDatabase({
+        projectName,
+        serverHost,
+        serverUser,
+        dbPassword
+      });
+      registry.projects[projectName].resources.database = {
+        enabled: true,
+        name: result.database.database,
+        user: result.database.user,
+        port: 5432
+      };
+    } catch (e) {
+      console.log(chalk.yellow(`\n⚠️  PostgreSQL provisioning skipped: ${e.message}`));
+    }
+  }
+
+  // Provision Redis
+  if (useRedis) {
+    spinner.text = 'Provisioning Redis...';
+    try {
+      result.redis = await provisionRedis({ projectName }, registry);
+      registry.projects[projectName].resources.redis = result.redis;
+    } catch (e) {
+      console.log(chalk.yellow(`\n⚠️  Redis provisioning skipped: ${e.message}`));
+    }
+  }
+
+  // Provision Storage
+  if (useStorage) {
+    spinner.text = 'Provisioning storage directories...';
+    try {
+      result.storage = await provisionStorage({
+        projectName,
+        serverHost,
+        serverUser
+      });
+      registry.projects[projectName].resources.storage = result.storage;
+    } catch (e) {
+      console.log(chalk.yellow(`\n⚠️  Storage provisioning skipped: ${e.message}`));
+    }
+  }
+
+  // Save updated registry
+  spinner.text = 'Updating project registry...';
+  await writeProjectRegistry(serverHost, serverUser, registry);
+  result.registry = registry;
+
+  return result;
+}
+
+/**
+ * Generate server environment file content
+ */
+function generateServerEnvContent(config) {
+  const {
+    projectName,
+    environment = 'production',
+    port = 3000,
+    database,
+    redis,
+    storage
+  } = config;
+
+  const dbName = projectName.replace(/-/g, '_');
+
+  let content = `# ${projectName} - ${environment.charAt(0).toUpperCase() + environment.slice(1)} Environment
+# Generated by CodeB CLI v2.5.0
+
+NODE_ENV=${environment}
+PORT=${port}
+HOSTNAME=0.0.0.0
+`;
+
+  if (database) {
+    content += `
+# PostgreSQL (컨테이너 DNS)
+DATABASE_URL=postgresql://${database.user}:${database.password}@codeb-postgres:5432/${database.database}?schema=public
+POSTGRES_HOST=codeb-postgres
+POSTGRES_PORT=5432
+POSTGRES_USER=${database.user}
+POSTGRES_PASSWORD=${database.password}
+POSTGRES_DB=${database.database}
+`;
+  }
+
+  if (redis) {
+    content += `
+# Redis (컨테이너 DNS)
+REDIS_URL=redis://codeb-redis:6379/${redis.db_index}
+REDIS_HOST=codeb-redis
+REDIS_PORT=6379
+REDIS_DB=${redis.db_index}
+REDIS_PREFIX=${redis.prefix}
+
+# Socket.IO (Redis Adapter)
+SOCKETIO_REDIS_HOST=codeb-redis
+SOCKETIO_REDIS_PORT=6379
+SOCKETIO_REDIS_PREFIX=${redis.prefix}socket:
+`;
+  }
+
+  if (storage) {
+    content += `
+# Storage
+STORAGE_PATH=/data
+UPLOAD_PATH=/data/uploads
+CACHE_PATH=/data/cache
+`;
+  }
+
+  return content;
+}
+
+/**
+ * Generate local .env.local content for development
+ */
+function generateLocalEnvContent(config) {
+  const {
+    projectName,
+    serverHost,
+    database,
+    redis,
+    dbExternalPort = 5432,
+    redisExternalPort = 6379
+  } = config;
+
+  let content = `# ${projectName} - Local Development Environment
+# Generated by CodeB CLI v2.5.0
+# ⚠️  WARNING: This connects to REAL server data!
+
+NODE_ENV=development
+PORT=3000
+`;
+
+  if (database && serverHost) {
+    content += `
+# PostgreSQL (서버 외부 포트로 연결)
+DATABASE_URL=postgresql://${database.user}:${database.password}@${serverHost}:${dbExternalPort}/${database.database}?schema=public
+`;
+  }
+
+  if (redis && serverHost) {
+    content += `
+# Redis (서버 외부 포트로 연결)
+REDIS_URL=redis://${serverHost}:${redisExternalPort}/${redis.db_index}
+REDIS_PREFIX=${redis.prefix}
+
+# Socket.IO (개발 시 서버 Redis 사용)
+SOCKETIO_REDIS_HOST=${serverHost}
+SOCKETIO_REDIS_PORT=${redisExternalPort}
+SOCKETIO_REDIS_PREFIX=${redis.prefix}socket:
+`;
+  }
+
+  content += `
+# Storage (로컬 개발 시 로컬 경로 사용)
+STORAGE_PATH=./data
+UPLOAD_PATH=./data/uploads
+CACHE_PATH=./data/cache
+`;
+
+  return content;
+}
+
+/**
+ * Scan project resources on server
+ */
+async function scanProjectResources(config) {
+  const { execSync } = await import('child_process');
+  const { projectName, serverHost, serverUser } = config;
+
+  const dbName = projectName.replace(/-/g, '_');
+  const dbUser = `${dbName}_user`;
+
+  const result = {
+    database: { exists: false, details: null },
+    redis: { exists: false, details: null },
+    storage: { exists: false, details: null },
+    envFiles: { production: false, staging: false },
+    registry: { exists: false, details: null }
+  };
+
+  // Check database
+  try {
+    const dbCheck = `ssh ${serverUser}@${serverHost} "podman exec codeb-postgres psql -U postgres -lqt 2>/dev/null | grep -w ${dbName}"`;
+    const dbOutput = execSync(dbCheck, { encoding: 'utf-8', timeout: 30000 }).trim();
+    if (dbOutput) {
+      result.database.exists = true;
+      result.database.details = { name: dbName };
+    }
+  } catch { /* database not found */ }
+
+  // Check user
+  try {
+    const userCheck = `ssh ${serverUser}@${serverHost} "podman exec codeb-postgres psql -U postgres -c 'SELECT usename FROM pg_user' 2>/dev/null | grep -w ${dbUser}"`;
+    const userOutput = execSync(userCheck, { encoding: 'utf-8', timeout: 30000 }).trim();
+    if (userOutput && result.database.exists) {
+      result.database.details.user = dbUser;
+    }
+  } catch { /* user not found */ }
+
+  // Check registry for Redis info
+  try {
+    const registry = await readProjectRegistry(serverHost, serverUser);
+    if (registry.projects?.[projectName]) {
+      result.registry.exists = true;
+      result.registry.details = registry.projects[projectName];
+
+      if (registry.projects[projectName].resources?.redis) {
+        result.redis.exists = true;
+        result.redis.details = registry.projects[projectName].resources.redis;
+      }
+    }
+  } catch { /* registry not found */ }
+
+  // Check storage
+  try {
+    const storageCheck = `ssh ${serverUser}@${serverHost} "ls -d /opt/codeb/data/${projectName} 2>/dev/null"`;
+    const storageOutput = execSync(storageCheck, { encoding: 'utf-8', timeout: 30000 }).trim();
+    if (storageOutput) {
+      result.storage.exists = true;
+
+      // Check subdirectories
+      const subdirCheck = `ssh ${serverUser}@${serverHost} "ls /opt/codeb/data/${projectName} 2>/dev/null"`;
+      const subdirs = execSync(subdirCheck, { encoding: 'utf-8', timeout: 30000 }).trim().split('\n').filter(Boolean);
+      result.storage.details = { path: `/opt/codeb/data/${projectName}`, directories: subdirs };
+    }
+  } catch { /* storage not found */ }
+
+  // Check env files
+  try {
+    const prodEnvCheck = `ssh ${serverUser}@${serverHost} "ls /opt/codeb/envs/${projectName}-production.env 2>/dev/null"`;
+    execSync(prodEnvCheck, { encoding: 'utf-8', timeout: 30000 });
+    result.envFiles.production = true;
+  } catch { /* not found */ }
+
+  try {
+    const stagingEnvCheck = `ssh ${serverUser}@${serverHost} "ls /opt/codeb/envs/${projectName}-staging.env 2>/dev/null"`;
+    execSync(stagingEnvCheck, { encoding: 'utf-8', timeout: 30000 });
+    result.envFiles.staging = true;
+  } catch { /* not found */ }
+
+  return result;
+}
 
 // ============================================================================
 // Quadlet Template Generator (Enhanced with Project Set Support)
@@ -710,21 +1223,25 @@ export async function workflow(action, target, options) {
     case 'add-service':
       await addServiceWorkflow(target, options);
       break;
+    case 'add-resource':
+      await addResourceWorkflow(target, options);
+      break;
     case 'fix-network':
       await fixNetworkWorkflow(target, options);
       break;
     default:
       console.log(chalk.red(`Unknown action: ${action}`));
       console.log(chalk.gray('\nAvailable actions:'));
-      console.log(chalk.gray('  init         - Initialize complete workflow (Quadlet + GitHub Actions)'));
+      console.log(chalk.gray('  init         - Initialize complete workflow + server resources (DB, Redis, Storage)'));
       console.log(chalk.gray('  quadlet      - Generate Quadlet .container file'));
       console.log(chalk.gray('  github-actions - Generate GitHub Actions workflow'));
       console.log(chalk.gray('  dockerfile   - Generate optimized Dockerfile'));
       console.log(chalk.gray('  update       - Update existing workflow configurations'));
-      console.log(chalk.gray('  scan         - Scan server/local deployment status'));
+      console.log(chalk.gray('  scan         - Scan project resources (DB, Redis, Storage, ENV)'));
       console.log(chalk.gray('  migrate      - Migrate existing project to new CLI structure'));
       console.log(chalk.gray('  sync         - Sync workflow changes to server'));
-      console.log(chalk.gray('  add-service  - Add missing service (PostgreSQL/Redis) to existing project'));
+      console.log(chalk.gray('  add-service  - Add container service (PostgreSQL/Redis container)'));
+      console.log(chalk.gray('  add-resource - Add missing resources to existing project (DB user, Redis DB, Storage)'));
       console.log(chalk.gray('  fix-network  - Fix network issues (migrate to codeb-network)'));
   }
 }
@@ -952,42 +1469,175 @@ async function initWorkflow(projectName, options) {
     await writeFile(envPath, envTemplate);
     files.push(envPath);
 
-    spinner.succeed('Workflow files generated');
+    // 6. Generate local .env.local for development (connects to server DB)
+    const serverHost = options.host || getServerHost();
+    const localEnvContent = generateLocalEnvForDev({
+      projectName: config.projectName,
+      serverHost,
+      useDatabase: config.useDatabase,
+      useRedis: config.useRedis,
+      dbPassword: config.dbPassword,
+      dbPort: parseInt(config.productionDbPort),
+      redisPort: parseInt(config.productionRedisPort)
+    });
+    const localEnvPath = join(outputDir, '.env.local');
+    await writeFile(localEnvPath, localEnvContent);
+    files.push(localEnvPath);
+
+    // 7. Provision server infrastructure (DB, Redis, Storage)
+    let provisionResult = null;
+    const serverUser = options.user || getServerUser();
+
+    if (serverHost) {
+      spinner.text = 'Provisioning server infrastructure...';
+      try {
+        provisionResult = await provisionServerInfrastructure({
+          projectName: config.projectName,
+          projectType: config.projectType,
+          serverHost,
+          serverUser,
+          useDatabase: config.useDatabase,
+          useRedis: config.useRedis,
+          useStorage: true,
+          dbPassword: config.dbPassword
+        }, spinner);
+
+        // 8. Create server env files with actual provisioned credentials
+        spinner.text = 'Creating server environment files...';
+        const { execSync } = await import('child_process');
+
+        // Ensure env directory exists
+        execSync(`ssh ${serverUser}@${serverHost} "mkdir -p /opt/codeb/envs"`, { timeout: 30000 });
+
+        // Production env
+        const prodEnvContent = generateServerEnvContent({
+          projectName: config.projectName,
+          environment: 'production',
+          port: config.productionPort,
+          database: provisionResult.database,
+          redis: provisionResult.redis,
+          storage: provisionResult.storage
+        });
+
+        execSync(`ssh ${serverUser}@${serverHost} "cat > /opt/codeb/envs/${config.projectName}-production.env << 'EOFENV'
+${prodEnvContent}
+EOFENV"`, { timeout: 30000 });
+
+        // Staging env
+        const stagingEnvContent = generateServerEnvContent({
+          projectName: config.projectName,
+          environment: 'staging',
+          port: config.stagingPort,
+          database: provisionResult.database,
+          redis: provisionResult.redis,
+          storage: provisionResult.storage
+        });
+
+        execSync(`ssh ${serverUser}@${serverHost} "cat > /opt/codeb/envs/${config.projectName}-staging.env << 'EOFENV'
+${stagingEnvContent}
+EOFENV"`, { timeout: 30000 });
+
+        // 9. Regenerate local .env.local with actual credentials
+        if (provisionResult.database || provisionResult.redis) {
+          const actualLocalEnvContent = generateLocalEnvContent({
+            projectName: config.projectName,
+            serverHost,
+            database: provisionResult.database,
+            redis: provisionResult.redis,
+            dbExternalPort: parseInt(config.productionDbPort),
+            redisExternalPort: parseInt(config.productionRedisPort)
+          });
+          await writeFile(localEnvPath, actualLocalEnvContent);
+        }
+
+        // Update registry with environment info
+        if (provisionResult.registry) {
+          provisionResult.registry.projects[config.projectName].environments = {
+            production: {
+              port: parseInt(config.productionPort),
+              domain: config.productionDomain || `${config.projectName}.one-q.xyz`,
+              env_file: `/opt/codeb/envs/${config.projectName}-production.env`
+            },
+            staging: {
+              port: parseInt(config.stagingPort),
+              domain: config.stagingDomain || `${config.projectName}-staging.one-q.xyz`,
+              env_file: `/opt/codeb/envs/${config.projectName}-staging.env`
+            }
+          };
+          await writeProjectRegistry(serverHost, serverUser, provisionResult.registry);
+        }
+
+      } catch (serverError) {
+        console.log(chalk.yellow(`\n⚠️  Server provisioning error: ${serverError.message}`));
+        console.log(chalk.gray('   You can provision resources manually later with: we workflow add-resource'));
+      }
+    }
+
+    spinner.succeed('Workflow initialization complete');
 
     console.log(chalk.green('\n✅ Workflow Initialization Complete\n'));
     console.log(chalk.gray('Generated files:'));
     files.forEach(f => console.log(chalk.cyan(`  • ${f}`)));
 
+    if (provisionResult) {
+      console.log(chalk.green('\n🗄️  Server Resources Provisioned:'));
+      if (provisionResult.database) {
+        console.log(chalk.cyan(`  ✓ PostgreSQL: ${provisionResult.database.database}`));
+        console.log(chalk.gray(`    User: ${provisionResult.database.user}`));
+      }
+      if (provisionResult.redis) {
+        console.log(chalk.cyan(`  ✓ Redis: DB ${provisionResult.redis.db_index}, Prefix "${provisionResult.redis.prefix}"`));
+      }
+      if (provisionResult.storage) {
+        console.log(chalk.cyan(`  ✓ Storage: ${provisionResult.storage.path}`));
+      }
+
+      console.log(chalk.green('\n📁 Server ENV Files:'));
+      console.log(chalk.cyan(`  • /opt/codeb/envs/${config.projectName}-production.env`));
+      console.log(chalk.cyan(`  • /opt/codeb/envs/${config.projectName}-staging.env`));
+    }
+
+    console.log(chalk.blue('\n🔧 Local Development Setup:'));
+    console.log(chalk.gray('  .env.local has been created with server DB connection.'));
+    if (provisionResult?.database) {
+      console.log(chalk.gray('  Your local dev environment will connect to:'));
+      console.log(chalk.cyan(`    PostgreSQL: ${serverHost}:${config.productionDbPort}`));
+      console.log(chalk.gray(`    Database: ${provisionResult.database.database}`));
+      console.log(chalk.gray(`    User: ${provisionResult.database.user}`));
+    }
+    if (provisionResult?.redis) {
+      console.log(chalk.cyan(`    Redis: ${serverHost}:${config.productionRedisPort}/${provisionResult.redis.db_index}`));
+    }
+
     console.log(chalk.yellow('\n📋 Next steps:'));
-    console.log(chalk.gray('  1. Copy quadlet/*.container files to /etc/containers/systemd/ on server'));
-    console.log(chalk.gray('  2. Run: systemctl daemon-reload'));
-    console.log(chalk.gray('  3. Add GitHub Secrets:'));
+    console.log(chalk.gray('  1. Run: we workflow sync ' + config.projectName + ' (copy files to server)'));
+    console.log(chalk.gray('  2. Add GitHub Secrets:'));
     console.log(chalk.gray('     - SSH_PRIVATE_KEY: Server SSH private key'));
-    console.log(chalk.gray('     - SERVER_HOST: (your server IP from config)'));
-    console.log(chalk.gray('  4. Push to GitHub to trigger deployment'));
+    console.log(chalk.gray('     - SERVER_HOST: ' + (serverHost || '(your server IP)')));
+    console.log(chalk.gray('  3. Push to GitHub to trigger deployment'));
     console.log(chalk.gray('\n  💡 Hybrid Mode: GitHub builds → ghcr.io → Self-hosted deploys'));
+    console.log(chalk.gray('  💡 Local dev connects to server DB automatically'));
     console.log();
 
     // Output environment info for reference
     if (config.useDatabase || config.useRedis) {
-      console.log(chalk.blue('📦 Project Set Configuration:'));
-      console.log(chalk.gray(`  Production:`));
-      console.log(chalk.gray(`    App: localhost:${config.productionPort}`));
+      console.log(chalk.blue('📦 Project Infrastructure:'));
+      console.log(chalk.gray(`  Shared Services (codeb-network):`));
       if (config.useDatabase) {
-        console.log(chalk.gray(`    PostgreSQL: localhost:${config.productionDbPort}`));
-        console.log(chalk.gray(`    DATABASE_URL: postgresql://postgres:***@${config.projectName}-postgres:5432/${config.projectName}`));
+        console.log(chalk.gray(`    PostgreSQL: codeb-postgres:5432 (external: ${serverHost}:5432)`));
       }
       if (config.useRedis) {
-        console.log(chalk.gray(`    Redis: localhost:${config.productionRedisPort}`));
-        console.log(chalk.gray(`    REDIS_URL: redis://${config.projectName}-redis:6379`));
+        console.log(chalk.gray(`    Redis: codeb-redis:6379 (external: ${serverHost}:6379)`));
       }
-      console.log(chalk.gray(`  Staging:`));
-      console.log(chalk.gray(`    App: localhost:${config.stagingPort}`));
-      if (config.useDatabase) {
-        console.log(chalk.gray(`    PostgreSQL: localhost:${config.stagingDbPort}`));
+      console.log(chalk.gray(`  Project Isolation:`));
+      if (provisionResult?.database) {
+        console.log(chalk.gray(`    Database: ${provisionResult.database.database}`));
       }
-      if (config.useRedis) {
-        console.log(chalk.gray(`    Redis: localhost:${config.stagingRedisPort}`));
+      if (provisionResult?.redis) {
+        console.log(chalk.gray(`    Redis: DB ${provisionResult.redis.db_index}, Prefix "${provisionResult.redis.prefix}"`));
+      }
+      if (provisionResult?.storage) {
+        console.log(chalk.gray(`    Storage: ${provisionResult.storage.path}/`));
       }
       console.log();
     }
@@ -997,6 +1647,151 @@ async function initWorkflow(projectName, options) {
     console.log(chalk.red(`\n❌ Error: ${error.message}\n`));
     process.exit(1);
   }
+}
+
+/**
+ * Generate local .env.local for development (connects to server DB)
+ * This allows developers to test against the deployed database
+ */
+function generateLocalEnvForDev(config) {
+  const {
+    projectName,
+    serverHost,
+    useDatabase = true,
+    useRedis = true,
+    dbPassword = 'postgres',
+    dbPort = 5432,
+    redisPort = 6379
+  } = config;
+
+  const dbName = projectName.replace(/-/g, '_');
+
+  let content = `# ${projectName} - Local Development Environment
+# Generated by CodeB CLI v2.4.0
+# This file connects your local dev to the SERVER database
+# ⚠️  WARNING: This connects to REAL server data!
+
+NODE_ENV=development
+PORT=3000
+`;
+
+  if (useDatabase && serverHost) {
+    content += `
+# PostgreSQL (connects to server)
+# Container internal: postgresql://postgres:***@${projectName}-postgres:5432/${dbName}
+# External access (for local dev):
+DATABASE_URL=postgresql://postgres:${dbPassword}@${serverHost}:${dbPort}/${dbName}?schema=public
+`;
+  }
+
+  if (useRedis && serverHost) {
+    content += `
+# Redis (connects to server)
+# Container internal: redis://${projectName}-redis:6379
+# External access (for local dev):
+REDIS_URL=redis://${serverHost}:${redisPort}
+`;
+  }
+
+  content += `
+# Add your application-specific variables below
+# NEXT_PUBLIC_API_URL=http://localhost:3000/api
+# AUTH_SECRET=your-secret-here
+
+# To use LOCAL database instead:
+# DATABASE_URL=postgresql://postgres:postgres@localhost:5432/${dbName}?schema=public
+`;
+
+  return content;
+}
+
+/**
+ * Create server environment files via SSH
+ * Creates /opt/codeb/envs/{project}-{env}.env on the server
+ */
+async function createServerEnvFiles(config) {
+  const {
+    projectName,
+    serverHost,
+    serverUser = 'root',
+    useDatabase = true,
+    useRedis = true,
+    dbPassword = 'postgres',
+    productionPort = '3000',
+    stagingPort = '3001',
+    productionDbPort = '5432',
+    stagingDbPort = '5433',
+    productionRedisPort = '6379',
+    stagingRedisPort = '6380'
+  } = config;
+
+  const { execSync } = await import('child_process');
+  const dbName = projectName.replace(/-/g, '_');
+
+  // Ensure /opt/codeb/envs directory exists
+  execSync(`ssh ${serverUser}@${serverHost} "mkdir -p /opt/codeb/envs"`, { timeout: 30000 });
+
+  // Generate production env content
+  const productionEnv = `# ${projectName} - Production Environment
+# Generated by CodeB CLI v2.4.0
+# Location: /opt/codeb/envs/${projectName}-production.env
+
+NODE_ENV=production
+PORT=3000
+HOSTNAME=0.0.0.0
+${useDatabase ? `
+# PostgreSQL (uses container DNS name)
+DATABASE_URL=postgresql://postgres:${dbPassword}@${projectName}-postgres:5432/${dbName}?schema=public
+POSTGRES_USER=postgres
+POSTGRES_PASSWORD=${dbPassword}
+POSTGRES_DB=${dbName}
+` : ''}
+${useRedis ? `
+# Redis (uses container DNS name)
+REDIS_URL=redis://${projectName}-redis:6379
+` : ''}
+# Add application secrets below
+# AUTH_SECRET=
+# API_KEY=
+`;
+
+  // Generate staging env content
+  const stagingEnv = `# ${projectName} - Staging Environment
+# Generated by CodeB CLI v2.4.0
+# Location: /opt/codeb/envs/${projectName}-staging.env
+
+NODE_ENV=staging
+PORT=3000
+HOSTNAME=0.0.0.0
+${useDatabase ? `
+# PostgreSQL (uses container DNS name)
+DATABASE_URL=postgresql://postgres:${dbPassword}@${projectName}-staging-postgres:5432/${dbName}?schema=public
+POSTGRES_USER=postgres
+POSTGRES_PASSWORD=${dbPassword}
+POSTGRES_DB=${dbName}
+` : ''}
+${useRedis ? `
+# Redis (uses container DNS name)
+REDIS_URL=redis://${projectName}-staging-redis:6379
+` : ''}
+# Add application secrets below
+# AUTH_SECRET=
+# API_KEY=
+`;
+
+  // Write production env to server
+  const productionPath = `/opt/codeb/envs/${projectName}-production.env`;
+  execSync(`ssh ${serverUser}@${serverHost} "cat > ${productionPath} << 'EOFENV'
+${productionEnv}
+EOFENV"`, { timeout: 30000 });
+
+  // Write staging env to server
+  const stagingPath = `/opt/codeb/envs/${projectName}-staging.env`;
+  execSync(`ssh ${serverUser}@${serverHost} "cat > ${stagingPath} << 'EOFENV'
+${stagingEnv}
+EOFENV"`, { timeout: 30000 });
+
+  return true;
 }
 
 /**
@@ -1204,6 +1999,271 @@ async function updateWorkflow(projectName, options) {
     spinner.fail('Workflow update failed');
     console.log(chalk.red(`\n❌ Error: ${error.message}\n`));
     process.exit(1);
+  }
+}
+
+// ============================================================================
+// Add Resource Workflow - Add missing resources to existing project
+// ============================================================================
+
+async function addResourceWorkflow(projectName, options) {
+  if (!projectName) {
+    console.log(chalk.red('\n❌ Error: Project name is required'));
+    console.log(chalk.gray('   Usage: we workflow add-resource <project-name> --database --redis --storage\n'));
+    return;
+  }
+
+  const spinner = ora('Checking project resources...').start();
+  const serverHost = options.host || getServerHost();
+  const serverUser = options.user || getServerUser();
+
+  if (!serverHost) {
+    spinner.fail('Server host not configured');
+    console.log(chalk.yellow('\n⚠️  Configure server host: we config init\n'));
+    return;
+  }
+
+  try {
+    // 1. Scan existing resources
+    const scanResult = await scanProjectResources({
+      projectName,
+      serverHost,
+      serverUser
+    });
+
+    spinner.succeed('Resource scan complete');
+    console.log('');
+
+    // Determine what resources are missing
+    const missingResources = [];
+    if (!scanResult.database.exists) missingResources.push('database');
+    if (!scanResult.redis.exists) missingResources.push('redis');
+    if (!scanResult.storage.exists) missingResources.push('storage');
+
+    // Check what user requested to add
+    const requestedResources = [];
+    if (options.database) requestedResources.push('database');
+    if (options.redis) requestedResources.push('redis');
+    if (options.storage !== false) requestedResources.push('storage'); // storage is default true
+
+    // If no specific resources requested, add all missing
+    const resourcesToAdd = requestedResources.length > 0
+      ? requestedResources.filter(r => missingResources.includes(r))
+      : missingResources;
+
+    if (resourcesToAdd.length === 0) {
+      console.log(chalk.green('✅ All requested resources already exist!\n'));
+
+      // Show current resource status
+      console.log(chalk.cyan.bold('Current Resources:'));
+      console.log(`  📦 Database: ${scanResult.database.exists ? chalk.green('✓ ' + scanResult.database.name) : chalk.gray('Not configured')}`);
+      console.log(`  🔴 Redis:    ${scanResult.redis.exists ? chalk.green('✓ db:' + scanResult.redis.dbIndex + ' prefix:' + scanResult.redis.prefix) : chalk.gray('Not configured')}`);
+      console.log(`  📁 Storage:  ${scanResult.storage.exists ? chalk.green('✓ ' + scanResult.storage.path) : chalk.gray('Not configured')}`);
+      console.log('');
+      return;
+    }
+
+    // Show what will be added
+    console.log(chalk.cyan.bold('Resources to Add:'));
+    for (const resource of resourcesToAdd) {
+      console.log(`  • ${resource}`);
+    }
+    console.log('');
+
+    // Interactive confirmation unless --force
+    if (!options.force && !options.noInteractive) {
+      const inquirer = (await import('inquirer')).default;
+      const { confirm } = await inquirer.prompt([{
+        type: 'confirm',
+        name: 'confirm',
+        message: 'Proceed with adding these resources?',
+        default: true
+      }]);
+
+      if (!confirm) {
+        console.log(chalk.yellow('\n⏹️  Cancelled\n'));
+        return;
+      }
+    }
+
+    // 2. Read current registry
+    spinner.start('Reading project registry...');
+    const registry = await readProjectRegistry(serverHost, serverUser);
+    spinner.succeed('Registry loaded');
+
+    // Get or create project entry
+    let projectEntry = registry.projects[projectName];
+    if (!projectEntry) {
+      projectEntry = {
+        created_at: new Date().toISOString(),
+        type: options.type || 'nextjs',
+        resources: {}
+      };
+      registry.projects[projectName] = projectEntry;
+    }
+
+    const provisionResult = { database: null, redis: null, storage: null };
+
+    // 3. Provision requested resources
+    if (resourcesToAdd.includes('database')) {
+      spinner.start('Creating PostgreSQL database...');
+      try {
+        const dbResult = await provisionPostgresDatabase({
+          projectName,
+          serverHost,
+          serverUser,
+          dbPassword: options.dbPassword || getDbPassword()
+        });
+        provisionResult.database = dbResult;
+        projectEntry.resources.database = {
+          enabled: true,
+          name: dbResult.database,
+          user: dbResult.user,
+          host: dbResult.host,
+          port: dbResult.port
+        };
+        spinner.succeed(`Database created: ${dbResult.database}`);
+      } catch (err) {
+        spinner.fail(`Database creation failed: ${err.message}`);
+      }
+    }
+
+    if (resourcesToAdd.includes('redis')) {
+      spinner.start('Allocating Redis resources...');
+      try {
+        const redisResult = await provisionRedis({
+          projectName,
+          registry,
+          serverHost,
+          serverUser
+        });
+        provisionResult.redis = redisResult;
+        projectEntry.resources.redis = {
+          enabled: true,
+          db_index: redisResult.dbIndex,
+          prefix: redisResult.prefix,
+          host: redisResult.host,
+          port: redisResult.port
+        };
+        spinner.succeed(`Redis allocated: db:${redisResult.dbIndex} prefix:${redisResult.prefix}`);
+      } catch (err) {
+        spinner.fail(`Redis allocation failed: ${err.message}`);
+      }
+    }
+
+    if (resourcesToAdd.includes('storage')) {
+      spinner.start('Creating storage directories...');
+      try {
+        const storageResult = await provisionStorage({
+          projectName,
+          serverHost,
+          serverUser
+        });
+        provisionResult.storage = storageResult;
+        projectEntry.resources.storage = {
+          enabled: true,
+          path: storageResult.path,
+          directories: storageResult.directories
+        };
+        spinner.succeed(`Storage created: ${storageResult.path}`);
+      } catch (err) {
+        spinner.fail(`Storage creation failed: ${err.message}`);
+      }
+    }
+
+    // 4. Update registry
+    spinner.start('Updating project registry...');
+    registry.updated_at = new Date().toISOString();
+    await writeProjectRegistry(serverHost, serverUser, registry);
+    spinner.succeed('Registry updated');
+
+    // 5. Update ENV files if we have provisioned credentials
+    if (provisionResult.database || provisionResult.redis) {
+      spinner.start('Updating environment files...');
+
+      // Generate server ENV content
+      const environment = options.environment || 'production';
+      const baseDomain = options.stagingDomain?.split('.').slice(1).join('.') || getBaseDomain();
+      const envContent = generateServerEnvContent({
+        projectName,
+        environment,
+        port: projectEntry.environments?.[environment]?.port || 3000,
+        domain: projectEntry.environments?.[environment]?.domain || `${projectName}.${baseDomain}`,
+        database: provisionResult.database || projectEntry.resources?.database,
+        redis: provisionResult.redis || projectEntry.resources?.redis,
+        storage: provisionResult.storage || projectEntry.resources?.storage
+      });
+
+      // Write server ENV file
+      const { execSync } = await import('child_process');
+      const envPath = `/opt/codeb/envs/${projectName}-${environment}.env`;
+
+      try {
+        execSync(
+          `ssh ${serverUser}@${serverHost} "mkdir -p /opt/codeb/envs && cat > ${envPath}" << 'ENVEOF'\n${envContent}\nENVEOF`,
+          { encoding: 'utf-8', timeout: 30000 }
+        );
+      } catch {
+        // Fallback method
+        const escaped = envContent.replace(/'/g, "'\"'\"'");
+        execSync(
+          `ssh ${serverUser}@${serverHost} "mkdir -p /opt/codeb/envs && echo '${escaped}' > ${envPath}"`,
+          { encoding: 'utf-8', timeout: 30000 }
+        );
+      }
+
+      // Update local .env.local if it exists or create it
+      const localEnvPath = join(process.cwd(), '.env.local');
+      const localEnvContent = generateLocalEnvContent({
+        projectName,
+        serverHost,
+        database: provisionResult.database || projectEntry.resources?.database,
+        redis: provisionResult.redis || projectEntry.resources?.redis,
+        stagingDbPort: projectEntry.environments?.staging?.ports?.db || 5433,
+        productionDbPort: projectEntry.environments?.production?.ports?.db || 5432,
+        stagingRedisPort: projectEntry.environments?.staging?.ports?.redis || 6380,
+        productionRedisPort: projectEntry.environments?.production?.ports?.redis || 6379
+      });
+
+      writeFileSync(localEnvPath, localEnvContent);
+      spinner.succeed('Environment files updated');
+    }
+
+    // 6. Summary
+    console.log(chalk.green.bold('\n✅ Resources Added Successfully!\n'));
+
+    if (provisionResult.database) {
+      console.log(chalk.cyan('📦 PostgreSQL:'));
+      console.log(`   Database: ${provisionResult.database.database}`);
+      console.log(`   User:     ${provisionResult.database.user}`);
+      console.log(`   Password: ${chalk.gray('(saved to ENV files)')}`);
+    }
+
+    if (provisionResult.redis) {
+      console.log(chalk.cyan('\n🔴 Redis:'));
+      console.log(`   DB Index: ${provisionResult.redis.dbIndex}`);
+      console.log(`   Prefix:   ${provisionResult.redis.prefix}`);
+    }
+
+    if (provisionResult.storage) {
+      console.log(chalk.cyan('\n📁 Storage:'));
+      console.log(`   Path: ${provisionResult.storage.path}`);
+      console.log(`   Dirs: ${provisionResult.storage.directories.join(', ')}`);
+    }
+
+    console.log(chalk.gray('\n---'));
+    console.log(chalk.gray('Files updated:'));
+    console.log(chalk.gray(`  • Server: /opt/codeb/envs/${projectName}-${options.environment || 'production'}.env`));
+    console.log(chalk.gray(`  • Local:  .env.local`));
+    console.log(chalk.gray(`  • Registry: /opt/codeb/config/project-registry.json`));
+    console.log('');
+
+  } catch (error) {
+    spinner.fail('Failed to add resources');
+    console.log(chalk.red(`\n❌ Error: ${error.message}\n`));
+    if (error.stack && process.env.DEBUG) {
+      console.log(chalk.gray(error.stack));
+    }
   }
 }
 
@@ -1469,15 +2529,105 @@ async function scanWorkflow(projectName, options) {
       });
     }
 
+    // ================================================================
+    // Resource Scan (DB, Redis, Storage, ENV) - v2.5.0 Enhancement
+    // ================================================================
+    let resourceScan = null;
+    if (projectName && !report.server.error) {
+      spinner.start('Scanning project resources...');
+      try {
+        resourceScan = await scanProjectResources({
+          projectName,
+          serverHost,
+          serverUser
+        });
+      } catch (scanError) {
+        resourceScan = { error: scanError.message };
+      }
+      spinner.stop();
+
+      // Add resource status to report
+      console.log(chalk.yellow('\n📊 Project Resource Scan:'));
+      console.log(chalk.gray(`  Project: ${projectName}`));
+
+      if (resourceScan.error) {
+        console.log(chalk.red(`  ❌ Error: ${resourceScan.error}`));
+      } else {
+        // Database status
+        if (resourceScan.database.exists) {
+          console.log(chalk.green(`  ✅ Database: ${resourceScan.database.details?.name || 'exists'}`));
+          if (resourceScan.database.details?.user) {
+            console.log(chalk.gray(`     User: ${resourceScan.database.details.user}`));
+          }
+        } else {
+          console.log(chalk.red(`  ❌ Database: NOT CONFIGURED`));
+          console.log(chalk.cyan(`     → we workflow add-resource ${projectName} --database`));
+        }
+
+        // Redis status
+        if (resourceScan.redis.exists) {
+          console.log(chalk.green(`  ✅ Redis: DB ${resourceScan.redis.details?.db_index}, Prefix "${resourceScan.redis.details?.prefix}"`));
+        } else {
+          console.log(chalk.red(`  ❌ Redis: NOT CONFIGURED`));
+          console.log(chalk.cyan(`     → we workflow add-resource ${projectName} --redis`));
+        }
+
+        // Storage status
+        if (resourceScan.storage.exists) {
+          console.log(chalk.green(`  ✅ Storage: ${resourceScan.storage.details?.path}`));
+          if (resourceScan.storage.details?.directories?.length > 0) {
+            console.log(chalk.gray(`     Dirs: ${resourceScan.storage.details.directories.join(', ')}`));
+          }
+        } else {
+          console.log(chalk.red(`  ❌ Storage: NOT CONFIGURED`));
+          console.log(chalk.cyan(`     → we workflow add-resource ${projectName} --storage`));
+        }
+
+        // ENV files status
+        console.log(chalk.gray(`  ENV Files:`));
+        if (resourceScan.envFiles.production) {
+          console.log(chalk.green(`    ✅ Production: /opt/codeb/envs/${projectName}-production.env`));
+        } else {
+          console.log(chalk.red(`    ❌ Production: Not found`));
+        }
+        if (resourceScan.envFiles.staging) {
+          console.log(chalk.green(`    ✅ Staging: /opt/codeb/envs/${projectName}-staging.env`));
+        } else {
+          console.log(chalk.red(`    ❌ Staging: Not found`));
+        }
+
+        // Registry status
+        if (resourceScan.registry.exists) {
+          console.log(chalk.green(`  ✅ Registry: Registered`));
+        } else {
+          console.log(chalk.red(`  ❌ Registry: NOT REGISTERED`));
+          console.log(chalk.cyan(`     → we workflow add-resource ${projectName} --register`));
+        }
+
+        // Detect missing resources for quick fix
+        const missingResources = [];
+        if (!resourceScan.database.exists) missingResources.push('--database');
+        if (!resourceScan.redis.exists) missingResources.push('--redis');
+        if (!resourceScan.storage.exists) missingResources.push('--storage');
+
+        if (missingResources.length > 0) {
+          console.log(chalk.yellow(`\n⚠️  Missing Resources Detected!`));
+          console.log(chalk.cyan(`   Quick fix: we workflow add-resource ${projectName} ${missingResources.join(' ')}`));
+        }
+      }
+
+      report.resources = resourceScan;
+    }
+
     // Summary
     const totalIssues = report.comparison.issues.length +
                         report.comparison.missingServices.length +
                         report.comparison.networkIssues.length;
 
-    if (totalIssues === 0) {
+    if (totalIssues === 0 && (!resourceScan || (!resourceScan.error && resourceScan.database.exists && resourceScan.redis.exists && resourceScan.storage.exists))) {
       console.log(chalk.green('\n✅ No issues found'));
     } else {
-      console.log(chalk.yellow(`\n📊 Summary: ${totalIssues} issue(s) found`));
+      console.log(chalk.yellow(`\n📊 Summary: ${totalIssues} infrastructure issue(s) found`));
     }
 
     console.log();
@@ -1765,13 +2915,26 @@ async function syncWorkflow(projectName, options) {
       process.exit(1);
     }
 
+    // Check for local env files
+    const localEnvFiles = [];
+    const envExamplePath = '.env.example';
+    const envLocalPath = '.env.local';
+    if (existsSync(envExamplePath)) localEnvFiles.push(envExamplePath);
+    if (existsSync(envLocalPath)) localEnvFiles.push(envLocalPath);
+
     spinner.stop();
 
     // Show sync plan
     console.log(chalk.blue.bold('\n📤 Sync Plan\n'));
     console.log(chalk.gray(`Server: ${serverUser}@${serverHost}`));
-    console.log(chalk.gray(`Files to sync:`));
+    console.log(chalk.gray(`\nQuadlet files to sync:`));
     projectFiles.forEach(f => console.log(chalk.cyan(`  • ${f}`)));
+
+    if (localEnvFiles.length > 0) {
+      console.log(chalk.gray(`\nEnvironment files:`));
+      console.log(chalk.cyan(`  • /opt/codeb/envs/${projectName}-production.env`));
+      console.log(chalk.cyan(`  • /opt/codeb/envs/${projectName}-staging.env`));
+    }
 
     // Confirm sync
     if (options.interactive !== false && !options.force) {
@@ -1801,11 +2964,33 @@ async function syncWorkflow(projectName, options) {
       execSync(`scp ${localPath} ${serverUser}@${serverHost}:${remotePath}`, { timeout: 30000 });
     }
 
-    // 2. Reload systemd
+    // 2. Sync env files to server
+    spinner.text = 'Syncing environment files...';
+    try {
+      // Read .env.example to extract configuration
+      if (existsSync(envExamplePath)) {
+        const envContent = await readFile(envExamplePath, 'utf-8');
+        const dbPassword = options.dbPassword || getDbPassword() || 'postgres';
+
+        // Create server env files based on .env.example
+        await createServerEnvFiles({
+          projectName,
+          serverHost,
+          serverUser,
+          useDatabase: envContent.includes('DATABASE_URL'),
+          useRedis: envContent.includes('REDIS_URL'),
+          dbPassword
+        });
+      }
+    } catch (envError) {
+      console.log(chalk.yellow(`\n⚠️  Could not sync env files: ${envError.message}`));
+    }
+
+    // 3. Reload systemd
     spinner.text = 'Reloading systemd daemon...';
     execSync(`ssh ${serverUser}@${serverHost} "systemctl daemon-reload"`, { timeout: 30000 });
 
-    // 3. Restart services (optional)
+    // 4. Restart services (optional)
     if (options.restart) {
       spinner.text = 'Restarting services...';
       for (const file of projectFiles) {
@@ -1821,8 +3006,12 @@ async function syncWorkflow(projectName, options) {
     spinner.succeed('Sync completed');
 
     console.log(chalk.green('\n✅ Sync Complete\n'));
-    console.log(chalk.gray('Synced files:'));
+    console.log(chalk.gray('Synced quadlet files:'));
     projectFiles.forEach(f => console.log(chalk.cyan(`  • /etc/containers/systemd/${f}`)));
+
+    console.log(chalk.gray('\nSynced env files:'));
+    console.log(chalk.cyan(`  • /opt/codeb/envs/${projectName}-production.env`));
+    console.log(chalk.cyan(`  • /opt/codeb/envs/${projectName}-staging.env`));
 
     console.log(chalk.yellow('\n📋 Next steps:'));
     if (!options.restart) {

@@ -36,14 +36,14 @@ const program = new Command();
 
 // CLI Header
 console.log(chalk.cyan.bold('\n╔═══════════════════════════════════════════════╗'));
-console.log(chalk.cyan.bold('║   /we: Web Deploy CLI v2.4.0                  ║'));
+console.log(chalk.cyan.bold('║   /we: Web Deploy CLI v2.5.0                  ║'));
 console.log(chalk.cyan.bold('║   배포 • 분석 • 워크플로우 • 최적화           ║'));
 console.log(chalk.cyan.bold('╚═══════════════════════════════════════════════╝\n'));
 
 program
   .name('/we:')
   .description('/we: Web Deploy CLI - 7-Agent 시스템으로 배포, 분석, 워크플로우, 최적화')
-  .version('2.4.0');
+  .version('2.5.0');
 
 // Deploy Command
 program
@@ -138,8 +138,8 @@ program
 // Workflow Command
 program
   .command('workflow')
-  .description('Generate Quadlet and GitHub Actions CI/CD workflows')
-  .argument('<action>', 'Action (init|quadlet|github-actions|dockerfile|update|scan|migrate|sync|add-service|fix-network)')
+  .description('Generate Quadlet and GitHub Actions CI/CD workflows with server infrastructure provisioning')
+  .argument('<action>', 'Action (init|quadlet|github-actions|dockerfile|update|scan|migrate|sync|add-service|add-resource|fix-network)')
   .argument('[target]', 'Project name or target')
   .option('-n, --name <name>', 'Project name')
   .option('-t, --type <type>', 'Project type (nextjs|remix|nodejs|static)', 'nextjs')
@@ -166,6 +166,8 @@ program
   .option('--no-database', 'Exclude PostgreSQL database')
   .option('--redis', 'Include Redis cache (default: true)')
   .option('--no-redis', 'Exclude Redis cache')
+  .option('--storage', 'Include storage directories (default: true)')
+  .option('--no-storage', 'Exclude storage directories')
   .option('--no-tests', 'Skip tests in CI/CD')
   .option('--no-lint', 'Skip linting in CI/CD')
   .option('--no-quadlet', 'Use direct podman commands instead of Quadlet')
@@ -259,6 +261,12 @@ program.on('--help', () => {
   console.log('');
   console.log(chalk.gray('  # Hybrid mode: GitHub builds → ghcr.io → Self-hosted deploys'));
   console.log('  $ we workflow init myapp --type nextjs  # Auto-generates complete project set');
+  console.log('');
+  console.log(chalk.gray('  # Scan project resources (DB, Redis, Storage, ENV)'));
+  console.log('  $ we workflow scan myapp');
+  console.log('');
+  console.log(chalk.gray('  # Add missing resources to existing project'));
+  console.log('  $ we workflow add-resource myapp --database --redis --storage');
   console.log('');
   console.log(chalk.gray('  # Show documentation'));
   console.log('  $ we help workflow');
