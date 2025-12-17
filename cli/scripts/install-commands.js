@@ -17,6 +17,13 @@ import { promises as fs } from 'fs';
 import path from 'path';
 import { fileURLToPath } from 'url';
 import os from 'os';
+
+// Fix cwd issue during npm postinstall (cwd may be deleted)
+try {
+  process.cwd();
+} catch {
+  process.chdir(os.homedir());
+}
 import { existsSync } from 'fs';
 
 const __filename = fileURLToPath(import.meta.url);
