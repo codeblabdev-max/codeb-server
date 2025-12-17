@@ -30,31 +30,35 @@ import { ssh } from '../src/commands/ssh.js';
 import { help } from '../src/commands/help.js';
 import { config } from '../src/commands/config.js';
 import { mcp } from '../src/commands/mcp.js';
+import { ssot } from '../src/commands/ssot.js';
+import { setup } from '../src/commands/setup.js';
+import { envScan, envPull, envPush, envList } from '../src/commands/env.js';
 import { getServerHost, getServerUser, getDbPassword } from '../src/lib/config.js';
 
 const program = new Command();
 
 // CLI Header
 console.log(chalk.cyan.bold('\n╔═══════════════════════════════════════════════╗'));
-console.log(chalk.cyan.bold('║   /we: Web Deploy CLI v2.5.0                  ║'));
+console.log(chalk.cyan.bold('║   /we: Web Deploy CLI v2.5.4                  ║'));
 console.log(chalk.cyan.bold('║   배포 • 분석 • 워크플로우 • 최적화           ║'));
 console.log(chalk.cyan.bold('╚═══════════════════════════════════════════════╝\n'));
 
 program
   .name('/we:')
   .description('/we: Web Deploy CLI - 7-Agent 시스템으로 배포, 분석, 워크플로우, 최적화')
-  .version('2.5.0');
+  .version('2.5.4');
 
 // Deploy Command
 program
   .command('deploy')
-  .description('Deploy project to staging/production/preview')
+  .description('Deploy project to staging/production/preview (auto-scans before deploy)')
   .argument('[project]', 'Project name to deploy')
   .option('-e, --environment <env>', 'Target environment (staging|production|preview)', 'staging')
   .option('-f, --file <path>', 'Docker compose file path', 'docker-compose.yml')
   .option('--no-cache', 'Build without cache')
   .option('--force', 'Force deployment even with warnings')
   .option('--dry-run', 'Show deployment plan without executing')
+  .option('--skip-scan', 'Skip pre-deploy scan')
   .action(deploy);
 
 // Analyze Command
@@ -139,7 +143,7 @@ program
 program
   .command('workflow')
   .description('Generate Quadlet and GitHub Actions CI/CD workflows with server infrastructure provisioning')
-  .argument('<action>', 'Action (init|quadlet|github-actions|dockerfile|update|scan|migrate|sync|add-service|add-resource|fix-network|port-validate|port-drift)')
+  .argument('<action>', 'Action (init|quadlet|github-actions|dockerfile|update|scan|migrate|sync|add-service|add-resource|fix-network|port-validate|port-drift|validate)')
   .argument('[target]', 'Project name or target')
   .option('-n, --name <name>', 'Project name')
   .option('-t, --type <type>', 'Project type (nextjs|remix|nodejs|static)', 'nextjs')
@@ -175,6 +179,8 @@ program
   .option('--force', 'Overwrite existing files')
   .option('--service <type>', 'Service type for add-service (postgres|redis)')
   .option('--restart', 'Restart services after sync')
+  .option('--fix', 'Auto-fix Quadlet compatibility issues (for validate action)')
+  .option('--skip-scan', 'Skip pre-deploy scan for init action')
   .action(workflow);
 
 // SSH Key Management Command
@@ -210,6 +216,58 @@ program
   .option('--ssh-key <path>', 'SSH key path')
   .option('--force', 'Force overwrite existing config')
   .action(mcp);
+
+// SSOT Command (Single Source of Truth)
+program
+  .command('ssot')
+  .description('SSOT (Single Source of Truth) management - central port/domain registry')
+  .argument('<action>', 'Action (status|projects|project|history|validate|sync|init)')
+  .option('--id <projectId>', 'Project ID for project action')
+  .option('-l, --limit <n>', 'Limit history entries', '10')
+  .option('--fix', 'Auto-fix validation issues')
+  .option('--dry-run', 'Preview sync changes without applying')
+  .option('--force', 'Force reinitialize SSOT')
+  .option('--migrate', 'Migrate existing registry (default: true)')
+  .option('--status <status>', 'Filter projects by status (all|active|inactive)', 'all')
+  .action(ssot);
+
+// Setup Command (통합 설치)
+program
+  .command('setup')
+  .description('통합 설치 - 규칙/MCP/CLI/Hooks를 한 번에 설치')
+  .option('-p, --path <path>', 'Target project path (default: current directory)')
+  .option('-y, --yes', 'Skip confirmation prompts')
+  .option('--admin', 'Force admin mode installation')
+  .option('--developer', 'Force developer mode installation')
+  .action(setup);
+
+// ENV Command (환경 변수 관리 - Vercel/Supabase 스타일)
+program
+  .command('env')
+  .description('Environment variable management - scan, pull, push')
+  .argument('<action>', 'Action (scan|pull|push|list)')
+  .argument('[project]', 'Project name (auto-detected from package.json)')
+  .option('--env <environment>', 'Target environment (staging|production)', 'production')
+  .option('--force', 'Force overwrite without prompts')
+  .action(async (action, project, options) => {
+    switch (action) {
+      case 'scan':
+        await envScan(project, options);
+        break;
+      case 'pull':
+        await envPull(project, options);
+        break;
+      case 'push':
+        await envPush(project, options);
+        break;
+      case 'list':
+        await envList(project, options);
+        break;
+      default:
+        console.log(chalk.red(`Unknown action: ${action}`));
+        console.log(chalk.gray('Available actions: scan, pull, push, list'));
+    }
+  });
 
 // Help/Doc Command
 program
@@ -277,6 +335,17 @@ program.on('--help', () => {
   console.log('  $ we ssh register --name "홍길동"');
   console.log('  $ we ssh list');
   console.log('  $ we ssh sync');
+  console.log('');
+  console.log(chalk.gray('  # SSOT (Single Source of Truth) management'));
+  console.log('  $ we ssot status                    # Check SSOT status');
+  console.log('  $ we ssot projects                  # List registered projects');
+  console.log('  $ we ssot validate                  # Validate SSOT integrity');
+  console.log('  $ we ssot history --limit 20        # View change history');
+  console.log('');
+  console.log(chalk.gray('  # 통합 설치 (규칙/MCP/Hooks 한 번에)'));
+  console.log('  $ we setup                          # 현재 프로젝트에 설치');
+  console.log('  $ we setup --path /path/to/project  # 특정 경로에 설치');
+  console.log('  $ we setup -y                       # 확인 없이 바로 설치');
   console.log('');
   console.log(chalk.cyan('Documentation: https://codeb.io/docs/cli'));
   console.log('');

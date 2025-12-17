@@ -16,53 +16,175 @@ import ora from 'ora';
 import inquirer from 'inquirer';
 import { writeFile, readFile, mkdir } from 'fs/promises';
 import { join, dirname } from 'path';
-import { existsSync } from 'fs';
+import { existsSync, readdirSync } from 'fs';
 import { getServerHost, getServerUser, getDbPassword, getBaseDomain } from '../lib/config.js';
+import { ssotClient } from '../lib/ssot-client.js';
+import { mcpClient } from '../lib/mcp-client.js';
+import {
+  getPodmanVersion,
+  validateQuadletContent,
+  convertQuadletForCompatibility,
+  validateQuadlet,
+  getVersionInfo
+} from '../lib/quadlet-validator.js';
 
 // ============================================================================
 // Server Infrastructure Provisioning Functions
 // ============================================================================
 
 /**
- * Read project registry from server
+ * Read project registry from server via MCP SSOT
+ * Falls back to SSH direct only when MCP is unavailable
  * @returns {Promise<Object>} Registry data or default structure
  */
 async function readProjectRegistry(serverHost, serverUser) {
-  const { execSync } = await import('child_process');
+  // Try MCP first (preferred path)
+  try {
+    const isConnected = await mcpClient.ensureConnected();
+    if (isConnected) {
+      const ssotData = await ssotClient.get();
+      if (ssotData && !ssotData.error) {
+        // Convert SSOT format to legacy registry format for compatibility
+        return convertSSOTToLegacyRegistry(ssotData);
+      }
+    }
+  } catch (mcpError) {
+    // MCP failed, will fall through to SSH fallback
+    console.log(chalk.gray(`  MCP not available, using SSH fallback...`));
+  }
 
+  // SSH Fallback (only when MCP unavailable)
+  const { execSync } = await import('child_process');
   try {
     const cmd = `ssh ${serverUser}@${serverHost} "cat /opt/codeb/config/project-registry.json 2>/dev/null"`;
     const output = execSync(cmd, { encoding: 'utf-8', timeout: 30000 });
     return JSON.parse(output);
   } catch {
     // Return default registry structure
-    return {
-      version: '2.0',
-      updated_at: new Date().toISOString(),
-      infrastructure: {
-        postgres: {
-          host: 'codeb-postgres',
-          port: 5432,
-          admin_user: 'postgres'
-        },
-        redis: {
-          host: 'codeb-redis',
-          port: 6379,
-          max_databases: 16
-        },
-        storage: {
-          base_path: '/opt/codeb/data'
-        }
-      },
-      projects: {}
-    };
+    return getDefaultRegistryStructure();
   }
 }
 
 /**
- * Write project registry to server
+ * Convert SSOT format to legacy registry format
+ */
+function convertSSOTToLegacyRegistry(ssotData) {
+  const registry = {
+    version: ssotData.version || '2.0',
+    updated_at: ssotData.lastModified || new Date().toISOString(),
+    infrastructure: {
+      postgres: {
+        host: 'codeb-postgres',
+        port: 5432,
+        admin_user: 'postgres'
+      },
+      redis: {
+        host: 'codeb-redis',
+        port: 6379,
+        max_databases: 16
+      },
+      storage: {
+        base_path: '/opt/codeb/data'
+      }
+    },
+    projects: {}
+  };
+
+  // Convert SSOT projects to legacy format
+  if (ssotData.projects) {
+    for (const [projectId, projectData] of Object.entries(ssotData.projects)) {
+      registry.projects[projectId] = {
+        created_at: projectData.createdAt || new Date().toISOString(),
+        type: projectData.type || 'nextjs',
+        resources: projectData.resources || {},
+        environments: {}
+      };
+
+      // Convert environments
+      if (projectData.environments) {
+        for (const [envName, envData] of Object.entries(projectData.environments)) {
+          registry.projects[projectId].environments[envName] = {
+            port: envData.ports?.app,
+            db_port: envData.ports?.db,
+            redis_port: envData.ports?.redis,
+            domain: envData.domain
+          };
+        }
+      }
+    }
+  }
+
+  return registry;
+}
+
+/**
+ * Get default registry structure
+ */
+function getDefaultRegistryStructure() {
+  return {
+    version: '2.0',
+    updated_at: new Date().toISOString(),
+    infrastructure: {
+      postgres: {
+        host: 'codeb-postgres',
+        port: 5432,
+        admin_user: 'postgres'
+      },
+      redis: {
+        host: 'codeb-redis',
+        port: 6379,
+        max_databases: 16
+      },
+      storage: {
+        base_path: '/opt/codeb/data'
+      }
+    },
+    projects: {}
+  };
+}
+
+/**
+ * Write project registry to server via MCP SSOT
+ * Falls back to SSH direct only when MCP is unavailable
  */
 async function writeProjectRegistry(serverHost, serverUser, registry) {
+  // Try MCP first (preferred path) - register/update projects via SSOT
+  try {
+    const isConnected = await mcpClient.ensureConnected();
+    if (isConnected) {
+      // Update each project in SSOT
+      for (const [projectId, projectData] of Object.entries(registry.projects || {})) {
+        const existingProject = await ssotClient.getProject(projectId);
+
+        if (!existingProject) {
+          // Register new project
+          await ssotClient.registerProject(projectId, projectData.type || 'nextjs', {
+            description: projectData.description,
+            gitRepo: projectData.git_repo
+          });
+        }
+
+        // Update environment ports/domains
+        for (const [envName, envData] of Object.entries(projectData.environments || {})) {
+          if (envData.port) {
+            await ssotClient.allocatePort(projectId, envName, 'app');
+          }
+          if (envData.domain) {
+            await ssotClient.setDomain(projectId, envName, envData.domain, envData.port);
+          }
+        }
+      }
+
+      // Clear SSOT cache to ensure fresh data on next read
+      ssotClient.clearCache();
+      return;
+    }
+  } catch (mcpError) {
+    // MCP failed, will fall through to SSH fallback
+    console.log(chalk.gray(`  MCP not available, using SSH fallback...`));
+  }
+
+  // SSH Fallback (only when MCP unavailable)
   const { execSync } = await import('child_process');
 
   registry.updated_at = new Date().toISOString();
@@ -119,27 +241,163 @@ function findNextAvailablePort(registry, basePort, usedPorts = []) {
 }
 
 // ============================================================================
+// Network Naming Functions (Project Isolation Support)
+// ============================================================================
+
+/**
+ * 프로젝트별 격리 네트워크 이름 생성
+ * MCP server의 podman-helpers.ts와 동일한 로직
+ *
+ * @param {string} projectName - 프로젝트 이름
+ * @param {string} environment - 환경 (staging|production|preview)
+ * @param {boolean} useIsolatedNetwork - 격리 네트워크 사용 여부 (기본: true)
+ * @returns {string} 네트워크 이름
+ */
+function getProjectNetworkName(projectName, environment, useIsolatedNetwork = true) {
+  if (useIsolatedNetwork && projectName && environment) {
+    return `codeb-net-${projectName}-${environment}`;
+  }
+  return 'codeb-network';  // 레거시 공유 네트워크
+}
+
+/**
+ * 네트워크가 존재하는지 확인하고 없으면 생성
+ * @param {string} networkName - 네트워크 이름
+ * @param {string} serverHost - 서버 호스트
+ * @param {string} serverUser - 서버 사용자
+ * @returns {Promise<{exists: boolean, created: boolean}>}
+ */
+async function ensureNetworkExists(networkName, serverHost, serverUser) {
+  try {
+    // 네트워크 존재 확인
+    const checkCmd = `ssh ${serverUser}@${serverHost} "podman network exists ${networkName} && echo 'exists' || echo 'not_found'"`;
+    const result = execSync(checkCmd, { encoding: 'utf-8', timeout: 10000 }).trim();
+
+    if (result === 'exists') {
+      return { exists: true, created: false };
+    }
+
+    // 네트워크 생성
+    const createCmd = `ssh ${serverUser}@${serverHost} "podman network create ${networkName} --label codeb.managed=true"`;
+    execSync(createCmd, { timeout: 30000 });
+
+    return { exists: true, created: true };
+  } catch (error) {
+    console.error(`Failed to ensure network ${networkName}: ${error.message}`);
+    return { exists: false, created: false };
+  }
+}
+
+// ============================================================================
 // Port Scanning & Validation Functions (Auto-detection)
 // ============================================================================
 
 /**
  * Port ranges by environment (GitOps standard)
  */
+// Port ranges aligned with MCP server (codeb-deploy) for consistency
+// Standard ports: PostgreSQL ~5432, Redis ~6379
 const PORT_RANGES = {
-  staging: { app: { min: 3000, max: 3499 }, db: { min: 15432, max: 15499 }, redis: { min: 16379, max: 16399 } },
-  production: { app: { min: 4000, max: 4499 }, db: { min: 25432, max: 25499 }, redis: { min: 26379, max: 26399 } },
-  preview: { app: { min: 5000, max: 5999 }, db: { min: 35432, max: 35499 }, redis: { min: 36379, max: 36399 } }
+  staging: {
+    app: { min: 3000, max: 3499 },
+    db: { min: 5432, max: 5449 },     // Aligned with MCP: port-registry.ts
+    redis: { min: 6379, max: 6399 }   // Aligned with MCP: port-registry.ts
+  },
+  production: {
+    app: { min: 4000, max: 4499 },
+    db: { min: 5450, max: 5469 },     // Aligned with MCP: port-registry.ts
+    redis: { min: 6400, max: 6419 }   // Aligned with MCP: port-registry.ts
+  },
+  preview: {
+    app: { min: 5000, max: 5999 },
+    db: { min: 5470, max: 5499 },     // Added for preview environment
+    redis: { min: 6420, max: 6439 }   // Added for preview environment
+  }
 };
 
 /**
- * Scan server for currently used ports
+ * Scan server for currently used ports via MCP
+ * Falls back to SSH direct only when MCP is unavailable
  * @returns {Promise<{usedPorts: Set<number>, portOwners: Map<number, string>, errors: string[]}>}
  */
 async function scanServerPorts(serverHost, serverUser) {
-  const { execSync } = await import('child_process');
   const usedPorts = new Set();
   const portOwners = new Map(); // port -> owner (container name or process)
   const errors = [];
+
+  // Try MCP first (preferred path)
+  try {
+    const isConnected = await mcpClient.ensureConnected();
+    if (isConnected) {
+      // Use MCP port_summary and sync_port_registry for comprehensive port data
+      const [portSummary, syncResult] = await Promise.all([
+        mcpClient.callTool('port_summary', {}),
+        mcpClient.callTool('sync_port_registry', { saveToServer: false })
+      ]);
+
+      // Process port summary data
+      if (portSummary && !portSummary.error) {
+        const summary = typeof portSummary === 'string' ? JSON.parse(portSummary) : portSummary;
+
+        // Add allocated ports from summary
+        if (summary.allocatedPorts) {
+          for (const allocation of summary.allocatedPorts) {
+            const port = parseInt(allocation.port);
+            if (!isNaN(port)) {
+              usedPorts.add(port);
+              portOwners.set(port, allocation.project || allocation.owner || 'allocated');
+            }
+          }
+        }
+      }
+
+      // Process sync result (actual server state)
+      if (syncResult && !syncResult.error) {
+        const sync = typeof syncResult === 'string' ? JSON.parse(syncResult) : syncResult;
+
+        if (sync.serverPorts) {
+          for (const portInfo of sync.serverPorts) {
+            const port = parseInt(portInfo.port);
+            if (!isNaN(port)) {
+              usedPorts.add(port);
+              if (!portOwners.has(port)) {
+                portOwners.set(port, portInfo.container || portInfo.process || 'server');
+              }
+            }
+          }
+        }
+      }
+
+      // Also get from SSOT for completeness
+      const ssotData = await ssotClient.get();
+      if (ssotData && ssotData.projects) {
+        for (const [projName, project] of Object.entries(ssotData.projects)) {
+          if (project.environments) {
+            for (const [envName, env] of Object.entries(project.environments)) {
+              if (env.ports) {
+                for (const [serviceType, port] of Object.entries(env.ports)) {
+                  if (port) {
+                    usedPorts.add(parseInt(port));
+                    if (!portOwners.has(parseInt(port))) {
+                      portOwners.set(parseInt(port), `${projName}/${envName}/${serviceType}`);
+                    }
+                  }
+                }
+              }
+            }
+          }
+        }
+      }
+
+      return { usedPorts, portOwners, errors };
+    }
+  } catch (mcpError) {
+    // MCP failed, will fall through to SSH fallback
+    errors.push(`MCP port scan failed, using SSH fallback: ${mcpError.message}`);
+  }
+
+  // SSH Fallback (only when MCP unavailable)
+  const { execSync } = await import('child_process');
 
   try {
     // 1. Get ports from running containers
@@ -150,7 +408,6 @@ async function scanServerPorts(serverHost, serverUser) {
       for (const line of containerOutput.split('\n')) {
         const [name, ports] = line.split('|');
         if (ports) {
-          // Parse port mappings like "0.0.0.0:3000->3000/tcp, 0.0.0.0:5432->5432/tcp"
           const portMatches = ports.matchAll(/:(\d+)->/g);
           for (const match of portMatches) {
             const port = parseInt(match[1]);
@@ -199,7 +456,7 @@ async function scanServerPorts(serverHost, serverUser) {
     }
 
   } catch (error) {
-    errors.push(`Port scan error: ${error.message}`);
+    errors.push(`SSH port scan error: ${error.message}`);
   }
 
   return { usedPorts, portOwners, errors };
@@ -320,15 +577,74 @@ async function autoScanAndValidatePorts(config, serverHost, serverUser, spinner)
 }
 
 /**
- * Provision PostgreSQL database and user for project
+ * Provision PostgreSQL database and user for project via MCP
+ * Falls back to SSH direct only when MCP is unavailable
  */
 async function provisionPostgresDatabase(config) {
-  const { execSync } = await import('child_process');
   const { projectName, serverHost, serverUser, dbPassword = 'postgres' } = config;
 
   const dbName = projectName.replace(/-/g, '_');
   const dbUser = `${dbName}_user`;
+
+  // 1. 먼저 레지스트리에서 기존 DB 정보 확인
+  try {
+    const registry = await readProjectRegistry(serverHost, serverUser);
+    const existingDb = registry.projects?.[projectName]?.resources?.database;
+
+    if (existingDb && existingDb.password) {
+      console.log(chalk.green(`  ✓ Found existing database credentials for ${projectName}`));
+      return {
+        database: existingDb.name || dbName,
+        user: existingDb.user || dbUser,
+        password: existingDb.password,
+        host: 'codeb-postgres',
+        port: 5432
+      };
+    }
+  } catch (e) {
+    // Registry not available, continue to create
+  }
+
+  // 2. 새 비밀번호 생성 (기존 DB가 없는 경우만)
   const userPassword = config.userPassword || generateSecurePassword();
+
+  // Try MCP first (preferred path)
+  try {
+    const isConnected = await mcpClient.ensureConnected();
+    if (isConnected) {
+      // Use MCP deploy_compose_project or analyze_server to check container status
+      const serverAnalysis = await mcpClient.callTool('analyze_server', {
+        includeContainers: true,
+        includeDatabases: true
+      });
+
+      // Check if postgres container exists
+      const analysis = typeof serverAnalysis === 'string' ? JSON.parse(serverAnalysis) : serverAnalysis;
+      const hasPostgres = analysis?.containers?.some(c =>
+        c.name?.includes('postgres') || c.name?.includes('codeb-postgres')
+      );
+
+      if (!hasPostgres) {
+        throw new Error('Shared PostgreSQL container (codeb-postgres) not found. Run "we workflow setup-infra" first.');
+      }
+
+      // MCP doesn't have direct psql execution, but we can register the database in SSOT
+      // The actual database creation still needs SSH (infrastructure limitation)
+      // However, we register the intent in SSOT first
+      await ssotClient.registerProject(projectName, config.projectType || 'nextjs', {
+        description: `Database: ${dbName}`,
+      });
+
+      // Fall through to SSH for actual database creation
+      // (MCP server would need a dedicated database provisioning tool for full MCP path)
+    }
+  } catch (mcpError) {
+    // MCP failed, will use SSH
+    console.log(chalk.gray(`  MCP check passed, using SSH for database creation...`));
+  }
+
+  // SSH for database creation (MCP doesn't have psql execution capability yet)
+  const { execSync } = await import('child_process');
 
   // Check if shared PostgreSQL container exists
   const containerCheck = `ssh ${serverUser}@${serverHost} "podman ps --filter name=codeb-postgres --format '{{.Names}}'" 2>/dev/null`;
@@ -491,6 +807,7 @@ async function provisionServerInfrastructure(config, spinner) {
         enabled: true,
         name: result.database.database,
         user: result.database.user,
+        password: result.database.password,  // ⚠️ 비밀번호 저장 (보안 주의)
         port: 5432
       };
     } catch (e) {
@@ -647,10 +964,10 @@ CACHE_PATH=./data/cache
 }
 
 /**
- * Scan project resources on server
+ * Scan project resources on server via MCP
+ * Falls back to SSH direct only when MCP is unavailable
  */
 async function scanProjectResources(config) {
-  const { execSync } = await import('child_process');
   const { projectName, serverHost, serverUser } = config;
 
   const dbName = projectName.replace(/-/g, '_');
@@ -663,6 +980,71 @@ async function scanProjectResources(config) {
     envFiles: { production: false, staging: false },
     registry: { exists: false, details: null }
   };
+
+  // Try MCP first (preferred path)
+  try {
+    const isConnected = await mcpClient.ensureConnected();
+    if (isConnected) {
+      // Get project from SSOT
+      const projectData = await ssotClient.getProject(projectName);
+      if (projectData) {
+        result.registry.exists = true;
+        result.registry.details = projectData;
+
+        // Check resources from SSOT
+        if (projectData.resources?.database) {
+          result.database.exists = true;
+          result.database.details = projectData.resources.database;
+        }
+        if (projectData.resources?.redis) {
+          result.redis.exists = true;
+          result.redis.details = projectData.resources.redis;
+        }
+        if (projectData.resources?.storage) {
+          result.storage.exists = true;
+          result.storage.details = projectData.resources.storage;
+        }
+      }
+
+      // Get server analysis for additional checks
+      const serverAnalysis = await mcpClient.callTool('analyze_server', {
+        includeContainers: true,
+        includeDatabases: true
+      });
+
+      const analysis = typeof serverAnalysis === 'string' ? JSON.parse(serverAnalysis) : serverAnalysis;
+
+      // Check env file status from manage_env MCP tool
+      try {
+        const prodEnv = await mcpClient.callTool('manage_env', {
+          action: 'list',
+          projectName,
+          environment: 'production'
+        });
+        if (prodEnv && !prodEnv.error) {
+          result.envFiles.production = true;
+        }
+      } catch { /* not found */ }
+
+      try {
+        const stagingEnv = await mcpClient.callTool('manage_env', {
+          action: 'list',
+          projectName,
+          environment: 'staging'
+        });
+        if (stagingEnv && !stagingEnv.error) {
+          result.envFiles.staging = true;
+        }
+      } catch { /* not found */ }
+
+      return result;
+    }
+  } catch (mcpError) {
+    // MCP failed, will fall through to SSH fallback
+  }
+
+  // SSH Fallback (only when MCP unavailable)
+  const { execSync } = await import('child_process');
 
   // Check database
   try {
@@ -1250,7 +1632,10 @@ ${includeTests ? `
 
           systemctl daemon-reload
           systemctl stop \${CONTAINER_NAME}.service 2>/dev/null || true
-          podman rm -f \${CONTAINER_NAME} 2>/dev/null || true
+          # 안전한 컨테이너 종료: graceful stop (30초) 후 제거
+          # 강제 삭제(-f) 대신 graceful 종료로 다른 서비스 영향 방지
+          podman stop \${CONTAINER_NAME} --time 30 2>/dev/null || true
+          podman rm \${CONTAINER_NAME} 2>/dev/null || true
           systemctl start \${CONTAINER_NAME}.service
 
           echo "Service restarted: \${CONTAINER_NAME}"
@@ -1457,6 +1842,9 @@ CMD ["node", "index.js"]
 // Main Command Handler
 // ============================================================================
 
+// Export fullPreDeployScan for use in other commands (deploy.js, etc.)
+export { fullPreDeployScan };
+
 export async function workflow(action, target, options) {
   console.log(chalk.blue.bold(`\n⚙️  CodeB Workflow Generator\n`));
 
@@ -1504,6 +1892,10 @@ export async function workflow(action, target, options) {
     case 'drift':
       await portDriftWorkflow(target, options);
       break;
+    case 'validate':
+    case 'check':
+      await validateQuadletWorkflow(target, options);
+      break;
     default:
       console.log(chalk.red(`Unknown action: ${action}`));
       console.log(chalk.gray('\nAvailable actions:'));
@@ -1520,6 +1912,7 @@ export async function workflow(action, target, options) {
       console.log(chalk.gray('  fix-network  - Fix network issues (migrate to codeb-network)'));
       console.log(chalk.gray('  port-validate- Validate port allocation before deployment (GitOps PortGuard)'));
       console.log(chalk.gray('  port-drift   - Detect drift between manifest and actual server state'));
+      console.log(chalk.gray('  validate     - Validate Quadlet files for Podman version compatibility'));
   }
 }
 
@@ -1531,6 +1924,70 @@ async function initWorkflow(projectName, options) {
   const spinner = ora('Initializing workflow configuration...').start();
 
   try {
+    // ================================================================
+    // STEP 0: Full Pre-Deploy Scan (auto-runs before init)
+    // ================================================================
+    if (options.skipScan !== true) {
+      spinner.stop();
+
+      // Try to get project name from package.json if not provided
+      let scanProjectName = projectName;
+      if (!scanProjectName) {
+        const pkgPath = join(process.cwd(), 'package.json');
+        if (existsSync(pkgPath)) {
+          try {
+            const pkg = JSON.parse(await readFile(pkgPath, 'utf-8'));
+            scanProjectName = pkg.name;
+          } catch (e) { /* ignore */ }
+        }
+      }
+
+      if (scanProjectName) {
+        const scanResult = await fullPreDeployScan(scanProjectName, {
+          host: options.host,
+          user: options.user,
+          silent: false
+        });
+
+        // If critical issues found, ask user to continue
+        const criticalIssues = scanResult.comparison.issues.filter(i => i.severity === 'critical');
+        if (criticalIssues.length > 0 && options.interactive !== false) {
+          const { continueInit } = await inquirer.prompt([{
+            type: 'confirm',
+            name: 'continueInit',
+            message: 'Critical issues detected. Continue anyway?',
+            default: false
+          }]);
+
+          if (!continueInit) {
+            console.log(chalk.gray('Aborted. Fix issues and retry.'));
+            return;
+          }
+        }
+
+        // If server has existing credentials, offer to use them
+        if (scanResult.server.projectInfo?.resources?.database && options.interactive !== false) {
+          const existingDb = scanResult.server.projectInfo.resources.database;
+          console.log(chalk.cyan(`\n📋 Found existing server credentials for '${scanProjectName}':`));
+          console.log(chalk.gray(`   Database: ${existingDb.name}`));
+          console.log(chalk.gray(`   User: ${existingDb.user}`));
+
+          const { useExisting } = await inquirer.prompt([{
+            type: 'confirm',
+            name: 'useExisting',
+            message: 'Use existing server credentials?',
+            default: true
+          }]);
+
+          if (useExisting) {
+            options.existingCredentials = scanResult.server.projectInfo.resources;
+          }
+        }
+      }
+
+      spinner.start('Initializing workflow configuration...');
+    }
+
     // Interactive configuration if not provided via options
     let config = {};
 
@@ -1985,6 +2442,23 @@ EOFENV"`, { timeout: 30000 });
       }
     }
 
+    // 10. Generate project rule files (if not exists)
+    // CLAUDE.md - Basic project rules
+    const claudeMdPath = join(outputDir, 'CLAUDE.md');
+    if (!existsSync(claudeMdPath)) {
+      const claudeMdContent = generateProjectClaudeMd(config.projectName);
+      await writeFile(claudeMdPath, claudeMdContent);
+      files.push(claudeMdPath);
+    }
+
+    // DEPLOYMENT_RULES.md - AI deployment rules
+    const deployRulesPath = join(outputDir, 'DEPLOYMENT_RULES.md');
+    if (!existsSync(deployRulesPath)) {
+      const deployRulesContent = generateDeploymentRules();
+      await writeFile(deployRulesPath, deployRulesContent);
+      files.push(deployRulesPath);
+    }
+
     spinner.succeed('Workflow initialization complete');
 
     console.log(chalk.green('\n✅ Workflow Initialization Complete\n'));
@@ -2134,7 +2608,8 @@ REDIS_URL=redis://${serverHost}:${redisPort}
 }
 
 /**
- * Create server environment files via SSH
+ * Create server environment files via MCP
+ * Falls back to SSH direct only when MCP is unavailable
  * Creates /opt/codeb/envs/{project}-{env}.env on the server
  */
 async function createServerEnvFiles(config) {
@@ -2153,8 +2628,66 @@ async function createServerEnvFiles(config) {
     stagingRedisPort = '6380'
   } = config;
 
-  const { execSync } = await import('child_process');
   const dbName = projectName.replace(/-/g, '_');
+
+  // Generate env content
+  const productionEnvVars = {
+    NODE_ENV: 'production',
+    PORT: '3000',
+    HOSTNAME: '0.0.0.0'
+  };
+
+  const stagingEnvVars = {
+    NODE_ENV: 'staging',
+    PORT: '3000',
+    HOSTNAME: '0.0.0.0'
+  };
+
+  if (useDatabase) {
+    productionEnvVars.DATABASE_URL = `postgresql://postgres:${dbPassword}@${projectName}-postgres:5432/${dbName}?schema=public`;
+    productionEnvVars.POSTGRES_USER = 'postgres';
+    productionEnvVars.POSTGRES_PASSWORD = dbPassword;
+    productionEnvVars.POSTGRES_DB = dbName;
+
+    stagingEnvVars.DATABASE_URL = `postgresql://postgres:${dbPassword}@${projectName}-staging-postgres:5432/${dbName}?schema=public`;
+    stagingEnvVars.POSTGRES_USER = 'postgres';
+    stagingEnvVars.POSTGRES_PASSWORD = dbPassword;
+    stagingEnvVars.POSTGRES_DB = dbName;
+  }
+
+  if (useRedis) {
+    productionEnvVars.REDIS_URL = `redis://${projectName}-redis:6379`;
+    stagingEnvVars.REDIS_URL = `redis://${projectName}-staging-redis:6379`;
+  }
+
+  // Try MCP first (preferred path)
+  try {
+    const isConnected = await mcpClient.ensureConnected();
+    if (isConnected) {
+      // Use MCP manage_env tool to set environment variables
+      await mcpClient.callTool('manage_env', {
+        action: 'set',
+        projectName,
+        environment: 'production',
+        envFile: productionEnvVars
+      });
+
+      await mcpClient.callTool('manage_env', {
+        action: 'set',
+        projectName,
+        environment: 'staging',
+        envFile: stagingEnvVars
+      });
+
+      return true;
+    }
+  } catch (mcpError) {
+    // MCP failed, will fall through to SSH fallback
+    console.log(chalk.gray(`  MCP env management failed, using SSH fallback...`));
+  }
+
+  // SSH Fallback (only when MCP unavailable)
+  const { execSync } = await import('child_process');
 
   // Ensure /opt/codeb/envs directory exists
   execSync(`ssh ${serverUser}@${serverHost} "mkdir -p /opt/codeb/envs"`, { timeout: 30000 });
@@ -2325,6 +2858,21 @@ async function generateQuadlet(projectName, options) {
   const spinner = ora('Generating Quadlet configuration...').start();
 
   try {
+    const serverHost = options.host || getServerHost();
+    const serverUser = options.user || getServerUser();
+
+    // Check target server's Podman version for compatibility
+    let podmanVersion = { major: 5, minor: 0, patch: 0, full: '5.0.0' }; // Default to 5.x
+    if (serverHost) {
+      spinner.text = 'Checking server Podman version...';
+      podmanVersion = await getPodmanVersion(serverHost, serverUser);
+      const versionInfo = getVersionInfo(podmanVersion);
+      console.log(chalk.gray(`\n   Server Podman: ${podmanVersion.full}`));
+      if (podmanVersion.major < 5) {
+        console.log(chalk.yellow(`   💡 ${versionInfo.recommendation}`));
+      }
+    }
+
     const config = {
       projectName: projectName || options.name || 'my-project',
       containerName: options.container || projectName,
@@ -2337,14 +2885,33 @@ async function generateQuadlet(projectName, options) {
       dependencies: options.depends ? options.depends.split(',') : []
     };
 
-    const content = generateQuadletTemplate(config);
+    let content = generateQuadletTemplate(config);
+
+    // Validate and auto-convert for Podman compatibility
+    const validation = validateQuadletContent(content, podmanVersion.major);
+    if (!validation.valid && validation.unsupportedKeys.length > 0) {
+      console.log(chalk.yellow(`\n⚠️  Quadlet compatibility issues detected:`));
+      validation.unsupportedKeys.forEach(({ key, line, alternative }) => {
+        console.log(chalk.gray(`   Line ${line}: '${key}' not supported in Podman ${podmanVersion.major}.x`));
+      });
+
+      // Auto-convert for compatibility
+      const { converted, changes } = convertQuadletForCompatibility(content, podmanVersion.major);
+      if (changes.length > 0) {
+        console.log(chalk.cyan(`\n   Auto-converting for Podman ${podmanVersion.major}.x compatibility:`));
+        changes.forEach(change => console.log(chalk.gray(`   • ${change}`)));
+        content = converted;
+      }
+    }
+
     const outputPath = options.output || `${config.projectName}.container`;
 
     await writeFile(outputPath, content);
     spinner.succeed(`Quadlet file generated: ${outputPath}`);
 
     console.log(chalk.green('\n✅ Quadlet Configuration Generated\n'));
-    console.log(chalk.gray('Install on server:'));
+    console.log(chalk.gray(`Target Podman version: ${podmanVersion.full}`));
+    console.log(chalk.gray('\nInstall on server:'));
     console.log(chalk.cyan(`  scp ${outputPath} root@server:/etc/containers/systemd/`));
     console.log(chalk.cyan('  ssh root@server "systemctl daemon-reload && systemctl start ' + config.projectName + '.service"'));
     console.log();
@@ -3303,6 +3870,7 @@ async function migrateWorkflow(projectName, options) {
 }
 
 // Internal scan function (returns result without console output)
+// Uses MCP first, falls back to SSH
 async function scanWorkflowInternal(projectName, options) {
   const serverHost = options.host || getServerHost();
   const serverUser = options.user || getServerUser();
@@ -3333,13 +3901,39 @@ async function scanWorkflowInternal(projectName, options) {
   report.local.dockerfile = existsSync('Dockerfile');
   report.local.env = existsSync('.env') || existsSync('.env.local');
 
-  // Scan server
-  const { execSync } = await import('child_process');
+  // Scan server - Try MCP first
   try {
-    const registryCmd = `ssh ${serverUser}@${serverHost} "cat /opt/codeb/config/project-registry.json 2>/dev/null"`;
-    const registryOutput = execSync(registryCmd, { encoding: 'utf-8', timeout: 30000 });
-    report.server.registry = JSON.parse(registryOutput);
-  } catch { /* ignore */ }
+    const isConnected = await mcpClient.ensureConnected();
+    if (isConnected) {
+      // Get SSOT data via MCP
+      const ssotData = await ssotClient.get();
+      if (ssotData && !ssotData.error) {
+        report.server.registry = convertSSOTToLegacyRegistry(ssotData);
+      }
+
+      // Get server analysis via MCP
+      const serverAnalysis = await mcpClient.callTool('analyze_server', {
+        includeContainers: true,
+        includePorts: true
+      });
+
+      const analysis = typeof serverAnalysis === 'string' ? JSON.parse(serverAnalysis) : serverAnalysis;
+      if (analysis?.containers) {
+        report.server.containers = analysis.containers;
+      }
+      if (analysis?.ports) {
+        report.server.ports = analysis.ports;
+      }
+    }
+  } catch (mcpError) {
+    // Fall back to SSH
+    const { execSync } = await import('child_process');
+    try {
+      const registryCmd = `ssh ${serverUser}@${serverHost} "cat /opt/codeb/config/project-registry.json 2>/dev/null"`;
+      const registryOutput = execSync(registryCmd, { encoding: 'utf-8', timeout: 30000 });
+      report.server.registry = JSON.parse(registryOutput);
+    } catch { /* ignore */ }
+  }
 
   // Analyze
   if (report.local.github && report.local.github.version !== '2.3.1') {
@@ -3352,6 +3946,395 @@ async function scanWorkflowInternal(projectName, options) {
   }
 
   return report;
+}
+
+// ============================================================================
+// Full Pre-Deploy Scan - Comprehensive server & local analysis
+// Runs before init/deploy to detect issues early
+// ============================================================================
+
+/**
+ * 전체 사전 배포 스캔 - 서버와 로컬 상태를 종합 분석
+ * @param {string} projectName - 프로젝트 이름
+ * @param {object} options - 옵션 (host, user, silent)
+ * @returns {Promise<object>} 스캔 결과
+ */
+async function fullPreDeployScan(projectName, options = {}) {
+  const { execSync } = await import('child_process');
+  const serverHost = options.host || getServerHost();
+  const serverUser = options.user || getServerUser();
+  const silent = options.silent || false;
+
+  if (!silent) {
+    console.log(chalk.cyan('\n🔍 Full Pre-Deploy Scan\n'));
+  }
+
+  const result = {
+    timestamp: new Date().toISOString(),
+    projectName,
+    server: {
+      reachable: false,
+      postgres: { containerExists: false, containerRunning: false, databases: [], users: [] },
+      redis: { containerExists: false, containerRunning: false, dbIndexes: [] },
+      containers: [],
+      ports: { used: [], available: [] },
+      registry: null
+    },
+    local: {
+      envFiles: {},
+      quadlet: [],
+      githubActions: null,
+      dockerfile: false,
+      packageJson: null,
+      database: null,
+      redis: null
+    },
+    comparison: {
+      issues: [],
+      warnings: [],
+      suggestions: []
+    }
+  };
+
+  // ================================================================
+  // 1. Server Scan
+  // ================================================================
+  if (serverHost) {
+    if (!silent) console.log(chalk.gray('  Scanning server...'));
+
+    // 1.1 Server reachability
+    try {
+      execSync(`ssh -o ConnectTimeout=5 ${serverUser}@${serverHost} "echo ok"`, {
+        encoding: 'utf-8', timeout: 10000, stdio: ['pipe', 'pipe', 'pipe']
+      });
+      result.server.reachable = true;
+    } catch (e) {
+      result.comparison.issues.push({
+        type: 'server_unreachable',
+        severity: 'critical',
+        message: `Cannot reach server ${serverHost}`
+      });
+      if (!silent) console.log(chalk.red('  ✗ Server unreachable'));
+      return result;
+    }
+
+    // 1.2 PostgreSQL container
+    try {
+      const pgStatus = execSync(
+        `ssh ${serverUser}@${serverHost} "podman ps -a --filter name=codeb-postgres --format '{{.Names}}|{{.Status}}'" 2>/dev/null`,
+        { encoding: 'utf-8', timeout: 30000 }
+      ).trim();
+
+      if (pgStatus) {
+        result.server.postgres.containerExists = true;
+        result.server.postgres.containerRunning = pgStatus.includes('Up');
+
+        if (result.server.postgres.containerRunning) {
+          // Get databases
+          const dbList = execSync(
+            `ssh ${serverUser}@${serverHost} "podman exec codeb-postgres psql -U postgres -t -c \\"SELECT datname FROM pg_database WHERE datistemplate = false AND datname != 'postgres';\\"" 2>/dev/null`,
+            { encoding: 'utf-8', timeout: 30000 }
+          ).trim();
+          result.server.postgres.databases = dbList.split('\n').map(d => d.trim()).filter(Boolean);
+
+          // Get users
+          const userList = execSync(
+            `ssh ${serverUser}@${serverHost} "podman exec codeb-postgres psql -U postgres -t -c \\"SELECT usename FROM pg_user WHERE usename != 'postgres';\\"" 2>/dev/null`,
+            { encoding: 'utf-8', timeout: 30000 }
+          ).trim();
+          result.server.postgres.users = userList.split('\n').map(u => u.trim()).filter(Boolean);
+        }
+      }
+    } catch (e) { /* ignore */ }
+
+    // 1.3 Redis container
+    try {
+      const redisStatus = execSync(
+        `ssh ${serverUser}@${serverHost} "podman ps -a --filter name=codeb-redis --format '{{.Names}}|{{.Status}}'" 2>/dev/null`,
+        { encoding: 'utf-8', timeout: 30000 }
+      ).trim();
+
+      if (redisStatus) {
+        result.server.redis.containerExists = true;
+        result.server.redis.containerRunning = redisStatus.includes('Up');
+
+        if (result.server.redis.containerRunning) {
+          const keyspace = execSync(
+            `ssh ${serverUser}@${serverHost} "podman exec codeb-redis redis-cli INFO keyspace" 2>/dev/null`,
+            { encoding: 'utf-8', timeout: 30000 }
+          ).trim();
+          const dbMatches = keyspace.match(/db(\d+):/g);
+          if (dbMatches) {
+            result.server.redis.dbIndexes = dbMatches.map(m => parseInt(m.replace('db', '').replace(':', '')));
+          }
+        }
+      }
+    } catch (e) { /* ignore */ }
+
+    // 1.4 All running containers
+    try {
+      const containers = execSync(
+        `ssh ${serverUser}@${serverHost} "podman ps --format '{{.Names}}|{{.Ports}}|{{.Status}}'" 2>/dev/null`,
+        { encoding: 'utf-8', timeout: 30000 }
+      ).trim();
+
+      result.server.containers = containers.split('\n').filter(Boolean).map(line => {
+        const [name, ports, status] = line.split('|');
+        return { name, ports, status };
+      });
+    } catch (e) { /* ignore */ }
+
+    // 1.5 Used ports
+    try {
+      const portsOutput = execSync(
+        `ssh ${serverUser}@${serverHost} "ss -tlnp | grep LISTEN | awk '{print \\$4}' | rev | cut -d: -f1 | rev | sort -n | uniq" 2>/dev/null`,
+        { encoding: 'utf-8', timeout: 30000 }
+      ).trim();
+      result.server.ports.used = portsOutput.split('\n').filter(Boolean).map(p => parseInt(p)).filter(p => !isNaN(p));
+    } catch (e) { /* ignore */ }
+
+    // 1.6 Project registry
+    try {
+      const registry = await readProjectRegistry(serverHost, serverUser);
+      result.server.registry = registry;
+
+      // Check if this project is already registered
+      if (registry?.projects?.[projectName]) {
+        result.server.projectInfo = registry.projects[projectName];
+        if (!silent) console.log(chalk.green(`  ✓ Project '${projectName}' found in registry`));
+      } else {
+        if (!silent) console.log(chalk.yellow(`  ⚠ Project '${projectName}' not in registry`));
+      }
+    } catch (e) { /* ignore */ }
+
+    // Server status summary
+    if (!silent) {
+      console.log(chalk.gray(`  PostgreSQL: ${result.server.postgres.containerRunning ? chalk.green('Running') : chalk.yellow('Stopped')}`));
+      if (result.server.postgres.databases.length > 0) {
+        console.log(chalk.gray(`    DBs: ${result.server.postgres.databases.join(', ')}`));
+      }
+      console.log(chalk.gray(`  Redis: ${result.server.redis.containerRunning ? chalk.green('Running') : chalk.yellow('Stopped')}`));
+      console.log(chalk.gray(`  Containers: ${result.server.containers.length} running`));
+      console.log(chalk.gray(`  Ports in use: ${result.server.ports.used.length}`));
+    }
+  }
+
+  // ================================================================
+  // 2. Local Scan
+  // ================================================================
+  if (!silent) console.log(chalk.gray('\n  Scanning local files...'));
+
+  // 2.1 package.json
+  const pkgPath = join(process.cwd(), 'package.json');
+  if (existsSync(pkgPath)) {
+    try {
+      const pkg = JSON.parse(await readFile(pkgPath, 'utf-8'));
+      result.local.packageJson = { name: pkg.name, version: pkg.version };
+    } catch (e) { /* ignore */ }
+  }
+
+  // 2.2 .env files
+  const envFiles = ['.env', '.env.local', '.env.development', '.env.production'];
+  for (const envFile of envFiles) {
+    const envPath = join(process.cwd(), envFile);
+    if (existsSync(envPath)) {
+      try {
+        const content = await readFile(envPath, 'utf-8');
+        const parsed = {};
+
+        content.split('\n').forEach(line => {
+          const trimmed = line.trim();
+          if (!trimmed || trimmed.startsWith('#')) return;
+          const match = trimmed.match(/^([A-Z_][A-Z0-9_]*)=["']?(.*)["']?$/i);
+          if (match) parsed[match[1]] = match[2].replace(/["']$/, '');
+        });
+
+        result.local.envFiles[envFile] = {
+          path: envPath,
+          hasDbUrl: !!parsed.DATABASE_URL,
+          hasRedisUrl: !!parsed.REDIS_URL,
+          parsed
+        };
+
+        // Extract DB info
+        if (parsed.DATABASE_URL && !result.local.database) {
+          const dbMatch = parsed.DATABASE_URL.match(/postgresql:\/\/([^:]+):([^@]+)@([^:\/]+):?(\d+)?\/([^?]+)/);
+          if (dbMatch) {
+            result.local.database = {
+              user: dbMatch[1],
+              password: dbMatch[2],
+              host: dbMatch[3],
+              port: dbMatch[4] || '5432',
+              database: dbMatch[5].split('?')[0],
+              sourceFile: envFile
+            };
+          }
+        }
+
+        // Extract Redis info
+        if (parsed.REDIS_URL && !result.local.redis) {
+          const redisMatch = parsed.REDIS_URL.match(/redis:\/\/([^:\/]+):?(\d+)?\/(\d+)?/);
+          if (redisMatch) {
+            result.local.redis = {
+              host: redisMatch[1],
+              port: redisMatch[2] || '6379',
+              dbIndex: redisMatch[3] || '0',
+              sourceFile: envFile
+            };
+          }
+        }
+      } catch (e) { /* ignore */ }
+    }
+  }
+
+  // 2.3 Quadlet files
+  const quadletDir = join(process.cwd(), 'quadlet');
+  if (existsSync(quadletDir)) {
+    try {
+      result.local.quadlet = readdirSync(quadletDir).filter(f => f.endsWith('.container'));
+    } catch (e) { /* ignore */ }
+  }
+
+  // 2.4 GitHub Actions
+  const ghPath = join(process.cwd(), '.github', 'workflows', 'deploy.yml');
+  if (existsSync(ghPath)) {
+    try {
+      const content = await readFile(ghPath, 'utf-8');
+      result.local.githubActions = {
+        exists: true,
+        hasHybridMode: content.includes('self-hosted'),
+        hasQuadlet: content.includes('Quadlet'),
+        version: content.match(/Generated by CodeB CLI v([\d.]+)/)?.[1] || 'unknown'
+      };
+    } catch (e) { /* ignore */ }
+  }
+
+  // 2.5 Dockerfile
+  result.local.dockerfile = existsSync(join(process.cwd(), 'Dockerfile'));
+
+  // Local summary
+  if (!silent) {
+    console.log(chalk.gray(`  .env files: ${Object.keys(result.local.envFiles).join(', ') || 'none'}`));
+    console.log(chalk.gray(`  Quadlet: ${result.local.quadlet.length} files`));
+    console.log(chalk.gray(`  GitHub Actions: ${result.local.githubActions ? 'yes' : 'no'}`));
+    console.log(chalk.gray(`  Dockerfile: ${result.local.dockerfile ? 'yes' : 'no'}`));
+  }
+
+  // ================================================================
+  // 3. Comparison & Issue Detection
+  // ================================================================
+  if (!silent) console.log(chalk.gray('\n  Analyzing...'));
+
+  const dbName = projectName.replace(/-/g, '_');
+
+  // 3.1 DB host mismatch
+  if (result.local.database) {
+    const localHost = result.local.database.host;
+    if ((localHost === 'localhost' || localHost === '127.0.0.1') && result.server.postgres.containerRunning) {
+      result.comparison.issues.push({
+        type: 'db_host_mismatch',
+        severity: 'error',
+        message: 'DATABASE_URL points to localhost but server has running PostgreSQL',
+        fix: 'Run "we env pull" to get server credentials'
+      });
+    }
+
+    // DB exists check
+    if (result.server.postgres.databases.length > 0) {
+      if (!result.server.postgres.databases.includes(result.local.database.database)) {
+        result.comparison.warnings.push({
+          type: 'db_not_found',
+          message: `Database '${result.local.database.database}' not found on server`,
+          availableDbs: result.server.postgres.databases
+        });
+      }
+    }
+
+    // Password mismatch with registry
+    const regDb = result.server.projectInfo?.resources?.database;
+    if (regDb?.password && result.local.database.password !== regDb.password) {
+      result.comparison.issues.push({
+        type: 'db_password_mismatch',
+        severity: 'error',
+        message: 'Database password mismatch between local .env and server registry',
+        fix: 'Run "we env pull" to sync credentials'
+      });
+    }
+  }
+
+  // 3.2 Redis host mismatch
+  if (result.local.redis) {
+    const localHost = result.local.redis.host;
+    if ((localHost === 'localhost' || localHost === '127.0.0.1') && result.server.redis.containerRunning) {
+      result.comparison.issues.push({
+        type: 'redis_host_mismatch',
+        severity: 'error',
+        message: 'REDIS_URL points to localhost but server has running Redis',
+        fix: 'Run "we env pull" to get server credentials'
+      });
+    }
+  }
+
+  // 3.3 No local env files but server has resources
+  if (Object.keys(result.local.envFiles).length === 0 && result.server.projectInfo) {
+    result.comparison.warnings.push({
+      type: 'no_local_env',
+      message: 'No local .env files but project is registered on server',
+      fix: 'Run "we env pull" to create .env.local'
+    });
+  }
+
+  // 3.4 Quadlet but no GitHub Actions
+  if (result.local.quadlet.length > 0 && !result.local.githubActions) {
+    result.comparison.warnings.push({
+      type: 'missing_github_actions',
+      message: 'Quadlet files exist but no deploy.yml workflow'
+    });
+  }
+
+  // 3.5 Suggestions
+  if (!result.server.postgres.containerRunning && !result.server.redis.containerRunning) {
+    result.comparison.suggestions.push('Server infrastructure not running. Run "we workflow init --provision" to set up.');
+  }
+
+  if (!result.server.projectInfo && result.server.reachable) {
+    result.comparison.suggestions.push(`Project '${projectName}' not registered. Init will create server resources.`);
+  }
+
+  // ================================================================
+  // 4. Output Summary
+  // ================================================================
+  if (!silent) {
+    console.log('');
+    if (result.comparison.issues.length > 0) {
+      console.log(chalk.red.bold('━━━ Issues ━━━'));
+      for (const issue of result.comparison.issues) {
+        console.log(chalk.red(`  ✗ ${issue.message}`));
+        if (issue.fix) console.log(chalk.yellow(`    Fix: ${issue.fix}`));
+      }
+    }
+
+    if (result.comparison.warnings.length > 0) {
+      console.log(chalk.yellow.bold('━━━ Warnings ━━━'));
+      for (const warning of result.comparison.warnings) {
+        console.log(chalk.yellow(`  ⚠ ${warning.message}`));
+      }
+    }
+
+    if (result.comparison.issues.length === 0 && result.comparison.warnings.length === 0) {
+      console.log(chalk.green('  ✓ No issues detected'));
+    }
+
+    if (result.comparison.suggestions.length > 0) {
+      console.log(chalk.cyan.bold('\n━━━ Suggestions ━━━'));
+      for (const suggestion of result.comparison.suggestions) {
+        console.log(chalk.cyan(`  💡 ${suggestion}`));
+      }
+    }
+    console.log('');
+  }
+
+  return result;
 }
 
 // ============================================================================
@@ -3430,9 +4413,64 @@ async function syncWorkflow(projectName, options) {
       }
     }
 
-    spinner.start('Syncing files to server...');
+    spinner.start('Checking Podman version on server...');
 
     const { execSync } = await import('child_process');
+
+    // 0. Check Podman version and validate Quadlet files
+    const podmanVersion = await getPodmanVersion(serverHost, serverUser);
+    const versionInfo = getVersionInfo(podmanVersion);
+    spinner.text = `Server Podman version: ${podmanVersion.full}`;
+
+    // Validate and potentially convert Quadlet files
+    let hasConversions = false;
+    const convertedFiles = [];
+
+    for (const file of projectFiles) {
+      const localPath = join(quadletDir, file);
+      const content = await readFile(localPath, 'utf-8');
+
+      // Validate Quadlet content against server's Podman version
+      const validation = validateQuadletContent(content, podmanVersion.major);
+
+      if (!validation.valid && validation.unsupportedKeys.length > 0) {
+        spinner.stop();
+        console.log(chalk.yellow(`\n⚠️  Quadlet compatibility issues in ${file}:`));
+        validation.unsupportedKeys.forEach(({ key, line, alternative }) => {
+          console.log(chalk.gray(`   Line ${line}: '${key}' not supported in Podman ${podmanVersion.major}.x`));
+          if (alternative) {
+            console.log(chalk.gray(`   → Use: ${alternative}`));
+          }
+        });
+
+        // Auto-convert for Podman 4.x
+        if (podmanVersion.major < 5) {
+          const { converted, changes } = convertQuadletForCompatibility(content, podmanVersion.major);
+          if (changes.length > 0) {
+            console.log(chalk.cyan(`\n   Auto-converting for Podman ${podmanVersion.major}.x compatibility:`));
+            changes.forEach(change => console.log(chalk.gray(`   • ${change}`)));
+
+            // Save converted file
+            await writeFile(localPath, converted);
+            convertedFiles.push({ file, changes });
+            hasConversions = true;
+          }
+        }
+        spinner.start('Continuing sync...');
+      }
+    }
+
+    if (hasConversions) {
+      console.log(chalk.green(`\n✅ Auto-converted ${convertedFiles.length} file(s) for Podman ${podmanVersion.major}.x compatibility\n`));
+    }
+
+    // Show version recommendation if using older Podman
+    if (podmanVersion.major < 5) {
+      console.log(chalk.yellow(`\n💡 ${versionInfo.recommendation}`));
+      console.log(chalk.gray(`   Current features: ${versionInfo.features.join(', ')}\n`));
+    }
+
+    spinner.start('Syncing files to server...');
 
     // 1. Copy quadlet files to server
     for (const file of projectFiles) {
@@ -3876,11 +4914,14 @@ async function fixNetworkWorkflow(projectName, options) {
           const addNetworkCmd = `ssh ${serverUser}@${serverHost} "grep -q '^Network=' ${quadletPath} || sed -i '/^\\[Container\\]/a Network=codeb-network' ${quadletPath}"`;
           execSync(addNetworkCmd, { timeout: 30000 });
 
-          // Reload systemd and restart service
+          // Reload systemd and restart service with graceful shutdown
           execSync(`ssh ${serverUser}@${serverHost} "systemctl daemon-reload"`, { timeout: 30000 });
 
           const serviceName = `${container.name}.service`;
-          execSync(`ssh ${serverUser}@${serverHost} "systemctl stop ${serviceName} 2>/dev/null; podman rm -f ${container.name} 2>/dev/null; systemctl start ${serviceName}"`, { timeout: 60000 });
+          // 안전한 컨테이너 교체: graceful stop (30초 대기) 후 제거
+          // 기존: podman rm -f (즉시 강제 삭제 - 타 프로젝트 영향 가능)
+          // 개선: 개별 컨테이너만 graceful 종료
+          execSync(`ssh ${serverUser}@${serverHost} "systemctl stop ${serviceName} 2>/dev/null; podman stop ${container.name} --time 30 2>/dev/null; podman rm ${container.name} 2>/dev/null; systemctl start ${serviceName}"`, { timeout: 90000 });
 
           results.success.push(container.name);
         } else {
@@ -4325,4 +5366,364 @@ function findNextPort(start, end, usedPorts) {
     if (!usedPorts.has(p)) return p;
   }
   return null;
+}
+
+// ============================================================================
+// Quadlet Validation Workflow
+// ============================================================================
+
+/**
+ * Validate Quadlet files for Podman version compatibility
+ * Usage: we workflow validate [project] [--fix] [--host <server>]
+ */
+async function validateQuadletWorkflow(target, options) {
+  const spinner = ora('Validating Quadlet files...').start();
+
+  try {
+    const serverHost = options.host || getServerHost();
+    const serverUser = options.user || getServerUser();
+    const quadletDir = 'quadlet';
+
+    // 1. Check Podman version on server
+    spinner.text = 'Checking server Podman version...';
+    const podmanVersion = await getPodmanVersion(serverHost, serverUser);
+    const versionInfo = getVersionInfo(podmanVersion);
+
+    spinner.stop();
+    console.log(chalk.blue.bold('\n🔍 Quadlet Compatibility Validation\n'));
+    console.log(chalk.gray(`Server: ${serverHost}`));
+    console.log(chalk.gray(`Podman Version: ${podmanVersion.full}`));
+    console.log(chalk.gray(`Features: ${versionInfo.features.join(', ')}`));
+    console.log();
+
+    // 2. Find quadlet files to validate
+    let filesToValidate = [];
+
+    if (target) {
+      // Validate specific file or project
+      if (target.endsWith('.container')) {
+        filesToValidate.push(target);
+      } else if (existsSync(quadletDir)) {
+        // Find files matching project name
+        const files = readdirSync(quadletDir).filter(f =>
+          f.endsWith('.container') && f.includes(target)
+        );
+        filesToValidate = files.map(f => join(quadletDir, f));
+      }
+    } else if (existsSync(quadletDir)) {
+      // Validate all quadlet files
+      const files = readdirSync(quadletDir).filter(f => f.endsWith('.container'));
+      filesToValidate = files.map(f => join(quadletDir, f));
+    }
+
+    if (filesToValidate.length === 0) {
+      console.log(chalk.yellow('No Quadlet files found to validate.'));
+      console.log(chalk.gray('\nUsage:'));
+      console.log(chalk.gray('  we workflow validate              # Validate all in ./quadlet/'));
+      console.log(chalk.gray('  we workflow validate <project>    # Validate specific project'));
+      console.log(chalk.gray('  we workflow validate file.container # Validate specific file'));
+      return;
+    }
+
+    console.log(chalk.gray(`Found ${filesToValidate.length} file(s) to validate\n`));
+
+    // 3. Validate each file
+    let totalIssues = 0;
+    let fixedIssues = 0;
+    const results = [];
+
+    for (const filePath of filesToValidate) {
+      const fileName = filePath.split('/').pop();
+      console.log(chalk.cyan(`📄 ${fileName}`));
+
+      const content = await readFile(filePath, 'utf-8');
+      const validation = validateQuadletContent(content, podmanVersion.major);
+
+      if (validation.valid) {
+        console.log(chalk.green('   ✅ Compatible with Podman ' + podmanVersion.major + '.x'));
+        results.push({ file: fileName, status: 'ok', issues: 0 });
+      } else {
+        const issueCount = validation.unsupportedKeys.length;
+        totalIssues += issueCount;
+
+        console.log(chalk.yellow(`   ⚠️  ${issueCount} compatibility issue(s):`));
+        validation.unsupportedKeys.forEach(({ key, line, alternative }) => {
+          console.log(chalk.gray(`      Line ${line}: '${key}' not supported`));
+          if (alternative) {
+            console.log(chalk.gray(`         → Use: ${alternative}`));
+          }
+        });
+
+        // Auto-fix if requested
+        if (options.fix) {
+          const { converted, changes } = convertQuadletForCompatibility(content, podmanVersion.major);
+          if (changes.length > 0) {
+            await writeFile(filePath, converted);
+            fixedIssues += changes.length;
+            console.log(chalk.green(`   🔧 Fixed ${changes.length} issue(s)`));
+            changes.forEach(change => console.log(chalk.gray(`      • ${change}`)));
+          }
+          results.push({ file: fileName, status: 'fixed', issues: issueCount, fixed: changes.length });
+        } else {
+          results.push({ file: fileName, status: 'issues', issues: issueCount });
+        }
+      }
+      console.log();
+    }
+
+    // 4. Summary
+    console.log(chalk.blue.bold('📊 Validation Summary\n'));
+    console.log(chalk.gray(`Files validated: ${filesToValidate.length}`));
+    console.log(chalk.gray(`Total issues: ${totalIssues}`));
+    if (options.fix) {
+      console.log(chalk.green(`Issues fixed: ${fixedIssues}`));
+    }
+
+    if (totalIssues > 0 && !options.fix) {
+      console.log(chalk.yellow('\n💡 Run with --fix to auto-convert incompatible keys:'));
+      console.log(chalk.cyan('   we workflow validate --fix'));
+    }
+
+    if (podmanVersion.major < 5) {
+      console.log(chalk.yellow(`\n📌 ${versionInfo.recommendation}`));
+    }
+
+    console.log();
+
+  } catch (error) {
+    spinner.fail('Validation failed');
+    console.log(chalk.red(`\n❌ Error: ${error.message}\n`));
+    process.exit(1);
+  }
+}
+
+// ============================================================================
+// Project CLAUDE.md Generator
+// ============================================================================
+
+/**
+ * Generate project-specific CLAUDE.md file
+ * Contains project rules for Claude Code AI assistant
+ * @param {string} projectName - Project name
+ * @returns {string} CLAUDE.md content
+ */
+function generateProjectClaudeMd(projectName) {
+  return `# CLAUDE.md - ${projectName} Project Rules
+
+## Project Info
+
+- **Name**: ${projectName}
+- **Generated by**: CodeB CLI v2.5.3
+- **Date**: ${new Date().toISOString().split('T')[0]}
+
+## Critical Rules
+
+### 1. NEVER Run Dangerous Commands Directly
+
+\`\`\`bash
+# 절대 금지 (Hooks가 차단함)
+podman rm -f <container>       # 직접 컨테이너 삭제
+podman volume rm <volume>      # 직접 볼륨 삭제
+docker-compose down -v         # 볼륨 포함 삭제
+rm -rf /opt/codeb/projects/*   # 프로젝트 폴더 삭제
+\`\`\`
+
+### 2. ALWAYS Use CLI Commands
+
+\`\`\`bash
+# 올바른 방법
+we workflow init ${projectName}     # 프로젝트 초기화
+we deploy ${projectName}            # 배포
+we workflow stop ${projectName}     # 서비스 중지
+we workflow scan ${projectName}     # 상태 확인
+we ssot sync                        # 서버 데이터 동기화
+\`\`\`
+
+### 3. SSH Only to Allowed Servers
+
+허용된 서버만 SSH 접속 가능:
+- 141.164.60.51 (CodeB Infra)
+- 158.247.203.55 (Videopick App)
+- 141.164.42.213 (Videopick Streaming)
+- 64.176.226.119 (Videopick Storage)
+- 141.164.37.63 (Videopick Backup)
+
+### 4. Environment File Protection
+
+- NEVER overwrite existing .env files without backup
+- Protected variables: DATABASE_URL, REDIS_URL, POSTGRES_*
+- Always check for existing .env before generating new one
+
+## Quick Reference
+
+\`\`\`bash
+# 프로젝트 초기화
+we workflow init ${projectName} --type nextjs --database --redis
+
+# 서버 상태 확인
+we ssot status
+we ssot projects
+we workflow scan ${projectName}
+
+# 배포
+we deploy ${projectName} --environment staging
+
+# 도메인 설정
+we domain setup ${projectName}.codeb.dev --ssl
+\`\`\`
+
+## Permission Model
+
+- **Admin**: SSH + deploy + server settings
+- **Developer**: Git Push only → GitHub Actions → auto deploy
+`;
+}
+
+/**
+ * Generate DEPLOYMENT_RULES.md file
+ * Contains rules that AI agents must follow during deployment
+ * @returns {string} DEPLOYMENT_RULES.md content
+ */
+function generateDeploymentRules() {
+  return `# CodeB Deployment Rules for AI Agents
+
+> **이 파일은 Claude Code 등 AI 에이전트가 배포 시 반드시 따라야 하는 규칙입니다.**
+
+## 🚨 절대 금지 규칙 (CRITICAL - 이 규칙 위반 시 배포 중단)
+
+### 1. 에러 우회 금지
+
+\`\`\`bash
+# ❌ 절대 금지
+command || true                    # 에러 무시
+command || echo "warning"          # 에러를 경고로 변환
+command || exit 0                  # 에러여도 성공 처리
+continue-on-error: true            # GitHub Actions 에러 무시
+\`\`\`
+
+\`\`\`typescript
+// ❌ 절대 금지
+try { riskyOperation() } catch {}           // 에러 삼키기
+try { riskyOperation() } catch { return }   // 에러 무시하고 리턴
+catch (e) { console.log(e) }                // 로그만 찍고 무시
+\`\`\`
+
+### 2. 코드 품질 우회 금지
+
+\`\`\`typescript
+// ❌ 절대 금지
+// @ts-ignore
+// @ts-nocheck
+// eslint-disable
+// eslint-disable-next-line
+any                                // any 타입 사용
+as any                             // any로 캐스팅
+\`\`\`
+
+### 3. 인프라 우회 금지
+
+\`\`\`bash
+# ❌ 절대 금지
+# --network 플래그 제거 (CNI 에러 시에도)
+podman run app  # 원래 --network codeb 있었으면 유지
+
+# IP 직접 하드코딩 금지
+DATABASE_URL="postgresql://10.88.0.5:5432/db"  # ❌
+DATABASE_URL="postgresql://postgres:5432/db"   # ✅ 서비스명 사용
+
+# 권한 문제 우회 금지
+chmod 777 /path                    # 보안 위험
+--privileged                       # 컨테이너 권한 상승
+
+# 포트 임의 변경 금지
+# 3000 충돌 시 3001로 변경 ❌
+# 포트 충돌 원인 해결 후 원래 포트 사용 ✅
+\`\`\`
+
+### 4. 삭제로 해결 금지
+
+\`\`\`typescript
+// ❌ 에러 나는 코드 삭제 금지
+// 기존에 있던 함수나 로직을 삭제하여 에러를 없애면 안됨
+
+// ❌ 테스트 skip/제거 금지
+test.skip("failing test")          // skip 금지
+// 테스트 파일 삭제 금지
+\`\`\`
+
+---
+
+## ✅ 허용되는 수정
+
+### 1. 타입 추가/수정
+\`\`\`typescript
+// ✅ 누락된 타입 정의 추가
+interface UserInput {
+  name: string;
+  email: string;
+}
+
+// ✅ 올바른 타입 캐스팅
+const user = response as User;  // 구체적 타입으로
+\`\`\`
+
+### 2. 누락된 코드 추가
+\`\`\`typescript
+// ✅ 누락된 import 추가
+import { validateEmail } from '@/utils/validation';
+
+// ✅ null/undefined 체크 추가
+if (user?.email) {
+  sendEmail(user.email);
+}
+\`\`\`
+
+### 3. 올바른 에러 처리
+\`\`\`typescript
+// ✅ 에러를 적절히 처리
+try {
+  await riskyOperation();
+} catch (error) {
+  logger.error('Operation failed', error);
+  throw new AppError('OPERATION_FAILED', error);  // 재throw
+}
+\`\`\`
+
+---
+
+## 🔍 에러 발생 시 올바른 대응
+
+### CNI 네트워크 에러
+\`\`\`
+❌ 잘못된 대응: --network 플래그 제거
+✅ 올바른 대응:
+1. podman network ls 로 네트워크 확인
+2. podman network create codeb 로 네트워크 생성
+3. 기존 컨테이너 재시작
+\`\`\`
+
+### DB 연결 에러
+\`\`\`
+❌ 잘못된 대응: || true 추가
+✅ 올바른 대응:
+1. DB 컨테이너 상태 확인: podman ps
+2. DB 로그 확인: podman logs postgres-container
+3. 네트워크 연결 확인: podman inspect postgres-container
+\`\`\`
+
+### 빌드 에러
+\`\`\`
+❌ 잘못된 대응: 에러 나는 코드 삭제
+✅ 올바른 대응:
+1. 에러 메시지 분석
+2. 타입 정의 추가 또는 수정
+3. 누락된 import 추가
+4. 로직 버그 수정
+\`\`\`
+
+---
+
+**Generated by**: CodeB CLI v2.5.4
+**Date**: ${new Date().toISOString().split('T')[0]}
+`;
 }

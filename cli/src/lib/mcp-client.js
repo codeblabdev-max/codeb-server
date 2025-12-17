@@ -1,293 +1,835 @@
 /**
- * MCP Client
+ * MCP Client - Hybrid Architecture
  *
- * Client for communicating with CodeB MCP servers
- * Primary: codeb-deploy MCP server
+ * 하이브리드 전략:
+ * 1. 정상 경로: MCP Server (codeb-deploy)를 통한 도구 호출
+ * 2. 폴백 경로: SSH 직접 통신 (긴급 상황)
+ *
+ * Claude Code와 Human 모두 동일한 MCP 경로 사용
+ * SSOT (Single Source of Truth)는 MCP Server가 관리
+ *
+ * @author CodeB Team
+ * @version 3.0.0
  */
 
-import axios from 'axios';
-import { readFile } from 'fs/promises';
+import { Client } from '@modelcontextprotocol/sdk/client/index.js';
+import { StdioClientTransport } from '@modelcontextprotocol/sdk/client/stdio.js';
+import { execSync, spawn } from 'child_process';
+import { readFileSync, existsSync } from 'fs';
 import { join } from 'path';
 import { homedir } from 'os';
+import chalk from 'chalk';
+import { getServerHost, getServerUser, getBaseDomain, getApiKey } from './config.js';
+
+// ============================================================================
+// 상수 및 설정
+// ============================================================================
+
+const MCP_SERVER_NAME = 'codeb-deploy';
+const CONNECTION_TIMEOUT = 30000; // 30초
+const HTTP_API_PORT = 9100; // MCP HTTP API 포트
+
+const FALLBACK_MODE_WARNING = `
+${chalk.bgYellow.black(' ⚠️  FALLBACK MODE ')}
+${chalk.yellow('MCP Server unavailable. Using SSH direct connection.')}
+${chalk.gray('Changes made in fallback mode may not be synced with SSOT.')}
+`;
+
+const HTTP_API_MODE_INFO = `
+${chalk.bgCyan.black(' 🌐 HTTP API MODE ')}
+${chalk.cyan('Using HTTP API for deployment (no SSH required)')}
+`;
+
+// ============================================================================
+// MCP Client 클래스 (Thin Client)
+// ============================================================================
 
 class MCPClient {
   constructor() {
+    this.client = null;
+    this.transport = null;
+    this.connected = false;
+    this.fallbackMode = false;
+    this.httpApiMode = false; // HTTP API 모드 (Developer용)
     this.config = null;
-    this.initialized = false;
+    this.serverHost = null;
+    this.serverUser = null;
+    this.baseDomain = null;
+    this.apiKey = null;
   }
 
-  async initialize() {
-    if (this.initialized) return;
+  /**
+   * MCP 설정 로드
+   */
+  loadConfig() {
+    if (this.config) return this.config;
+
+    // 설정 파일 우선순위
+    const configPaths = [
+      join(process.cwd(), '.mcp.json'),
+      join(homedir(), '.config', 'claude', 'claude_desktop_config.json'),
+      join(homedir(), 'Library', 'Application Support', 'Claude', 'claude_desktop_config.json'),
+    ];
+
+    for (const configPath of configPaths) {
+      try {
+        if (existsSync(configPath)) {
+          const content = readFileSync(configPath, 'utf8');
+          const config = JSON.parse(content);
+
+          if (config.mcpServers?.[MCP_SERVER_NAME]) {
+            this.config = config.mcpServers[MCP_SERVER_NAME];
+
+            // 환경변수에서 서버 정보 추출
+            if (this.config.env) {
+              this.serverHost = this.config.env.CODEB_SERVER_HOST;
+              this.serverUser = this.config.env.CODEB_SERVER_USER || 'root';
+            }
+
+            return this.config;
+          }
+        }
+      } catch (e) {
+        // 다음 설정 파일 시도
+      }
+    }
+
+    // Fallback: config.js에서 로드
+    this.serverHost = getServerHost();
+    this.serverUser = getServerUser();
+    this.baseDomain = getBaseDomain();
+
+    // API Key 로드 (Developer 모드용)
+    try {
+      this.apiKey = getApiKey();
+    } catch (e) {
+      // API Key 없으면 SSH 모드로 동작
+    }
+
+    return null;
+  }
+
+  /**
+   * SSH 접근 가능 여부 확인
+   */
+  async checkSSHAccess() {
+    if (!this.serverHost) {
+      this.loadConfig();
+    }
+
+    if (!this.serverHost) return false;
 
     try {
-      // Load MCP configuration
-      const mcpConfigPath = join(process.cwd(), '.mcp.json');
-      const configContent = await readFile(mcpConfigPath, 'utf8');
-      this.config = JSON.parse(configContent);
-
-      // Extract server configuration
-      this.serverConfig = this.config.mcpServers['codeb-deploy'];
-      this.serverHost = this.serverConfig.env.CODEB_SERVER_HOST;
-      this.serverUser = this.serverConfig.env.CODEB_SERVER_USER;
-
-      this.initialized = true;
-    } catch (error) {
-      console.error('Failed to initialize MCP client:', error.message);
-      throw new Error('MCP configuration not found. Run from project root.');
+      execSync(
+        `ssh -o StrictHostKeyChecking=no -o ConnectTimeout=5 -o BatchMode=yes ${this.serverUser}@${this.serverHost} "echo ok"`,
+        { encoding: 'utf8', timeout: 10000, stdio: ['pipe', 'pipe', 'pipe'] }
+      );
+      return true;
+    } catch {
+      return false;
     }
   }
 
   /**
-   * Deploy compose project via MCP
+   * HTTP API 모드 활성화 (Developer용)
    */
-  async deployComposeProject(params) {
-    await this.initialize();
-
-    // Simulate MCP tool call
-    // In production, this would invoke the actual MCP server
-    return {
-      success: true,
-      project: params.projectName,
-      version: 'v1.0.0',
-      containers: 3,
-      url: `https://${params.projectName}.codeb.io`,
-      duration: 45
-    };
+  enableHttpApiMode() {
+    this.httpApiMode = true;
+    console.log(HTTP_API_MODE_INFO);
   }
 
   /**
-   * Full health check via MCP
+   * HTTP API 호출 (Developer용 - SSH 없이 배포)
+   */
+  async callHttpApi(endpoint, method = 'POST', body = {}) {
+    if (!this.serverHost) {
+      this.loadConfig();
+    }
+
+    if (!this.serverHost) {
+      throw new Error('Server configuration not found. Run "we config init" first.');
+    }
+
+    const url = `http://${this.serverHost}:${HTTP_API_PORT}/api/${endpoint}`;
+
+    try {
+      const response = await fetch(url, {
+        method,
+        headers: {
+          'Content-Type': 'application/json',
+          'X-API-Key': this.apiKey || '',
+          'X-Client': 'we-cli',
+        },
+        body: method !== 'GET' ? JSON.stringify(body) : undefined,
+        signal: AbortSignal.timeout(CONNECTION_TIMEOUT),
+      });
+
+      if (!response.ok) {
+        const error = await response.json().catch(() => ({ message: response.statusText }));
+        throw new Error(error.message || `HTTP ${response.status}`);
+      }
+
+      return response.json();
+    } catch (error) {
+      if (error.name === 'TimeoutError') {
+        throw new Error('HTTP API request timeout');
+      }
+      throw error;
+    }
+  }
+
+  /**
+   * MCP Server 연결
+   */
+  async connect() {
+    if (this.connected) return true;
+
+    this.loadConfig();
+
+    if (!this.config) {
+      console.log(chalk.yellow('MCP config not found. Using fallback mode.'));
+      this.fallbackMode = true;
+      return false;
+    }
+
+    try {
+      // MCP Server 프로세스 시작
+      this.transport = new StdioClientTransport({
+        command: this.config.command,
+        args: this.config.args || [],
+        env: { ...process.env, ...this.config.env },
+      });
+
+      this.client = new Client({
+        name: 'we-cli',
+        version: '3.0.0',
+      }, {
+        capabilities: {},
+      });
+
+      await this.client.connect(this.transport);
+      this.connected = true;
+      this.fallbackMode = false;
+
+      return true;
+    } catch (error) {
+      console.log(chalk.yellow(`MCP connection failed: ${error.message}`));
+      console.log(chalk.yellow('Switching to fallback mode...'));
+      this.fallbackMode = true;
+      return false;
+    }
+  }
+
+  /**
+   * 연결 해제
+   */
+  async disconnect() {
+    if (this.client && this.connected) {
+      try {
+        await this.client.close();
+      } catch (e) {
+        // 무시
+      }
+    }
+    this.connected = false;
+    this.client = null;
+    this.transport = null;
+  }
+
+  /**
+   * MCP 도구 호출 (메인 메서드)
+   *
+   * 우선순위:
+   * 1. MCP Server (Stdio 연결)
+   * 2. HTTP API (Developer용 - SSH 없이)
+   * 3. SSH Fallback (Admin용)
+   *
+   * @param {string} toolName - MCP 도구 이름 (예: 'ssot_get', 'deploy')
+   * @param {object} params - 도구 파라미터
+   * @param {object} options - 옵션 (forceFallback, forceHttpApi)
+   * @returns {Promise<object>} 도구 실행 결과
+   */
+  async callTool(toolName, params = {}, options = {}) {
+    const { forceFallback = false, forceHttpApi = false } = options;
+
+    // HTTP API 모드 강제 (Developer용)
+    if (forceHttpApi || this.httpApiMode) {
+      return this.callToolViaHttpApi(toolName, params);
+    }
+
+    // SSH 폴백 모드 강제
+    if (forceFallback || this.fallbackMode) {
+      return this.callToolFallback(toolName, params);
+    }
+
+    // MCP 연결 시도
+    const connected = await this.connect();
+    if (!connected) {
+      // MCP 연결 실패 시 HTTP API 시도, 그 후 SSH Fallback
+      return this.callToolWithFallbackChain(toolName, params);
+    }
+
+    try {
+      // MCP 도구 호출
+      const result = await this.client.callTool({
+        name: toolName,
+        arguments: params,
+      });
+
+      // 결과 파싱
+      if (result.content && result.content.length > 0) {
+        const content = result.content[0];
+        if (content.type === 'text') {
+          try {
+            return JSON.parse(content.text);
+          } catch {
+            return { raw: content.text };
+          }
+        }
+      }
+
+      return result;
+    } catch (error) {
+      console.log(chalk.yellow(`MCP tool call failed: ${error.message}`));
+      return this.callToolWithFallbackChain(toolName, params);
+    }
+  }
+
+  /**
+   * HTTP API를 통한 도구 호출 (Developer용)
+   */
+  async callToolViaHttpApi(toolName, params = {}) {
+    if (!this._httpApiInfoShown) {
+      console.log(HTTP_API_MODE_INFO);
+      this._httpApiInfoShown = true;
+    }
+
+    try {
+      const result = await this.callHttpApi('tool', 'POST', {
+        tool: toolName,
+        params: params,
+      });
+
+      // HTTP API 응답에서 실제 결과 추출
+      if (result.success && result.result !== undefined) {
+        return result.result;
+      }
+
+      return result;
+    } catch (error) {
+      // HTTP API 실패 시 SSH Fallback은 시도하지 않음 (Developer는 SSH 없음)
+      throw new Error(`HTTP API failed: ${error.message}`);
+    }
+  }
+
+  /**
+   * 폴백 체인: HTTP API → SSH
+   */
+  async callToolWithFallbackChain(toolName, params) {
+    // 먼저 HTTP API 시도
+    if (this.apiKey) {
+      try {
+        return await this.callToolViaHttpApi(toolName, params);
+      } catch (httpError) {
+        console.log(chalk.yellow(`HTTP API failed: ${httpError.message}`));
+      }
+    }
+
+    // HTTP API 실패 또는 API Key 없으면 SSH Fallback
+    console.log(chalk.yellow('Falling back to SSH...'));
+    return this.callToolFallback(toolName, params);
+  }
+
+  /**
+   * SSH 폴백 도구 호출
+   */
+  async callToolFallback(toolName, params = {}) {
+    if (!this.serverHost) {
+      this.loadConfig();
+    }
+
+    if (!this.serverHost) {
+      throw new Error('Server configuration not found. Run "we config init" first.');
+    }
+
+    // 폴백 경고 (첫 번째 호출 시만)
+    if (!this._fallbackWarningShown) {
+      console.log(FALLBACK_MODE_WARNING);
+      this._fallbackWarningShown = true;
+    }
+
+    // SSH 기반 폴백 구현
+    return this._executeSSHFallback(toolName, params);
+  }
+
+  /**
+   * SSH 직접 실행 (폴백 전용)
+   */
+  async _executeSSHFallback(toolName, params) {
+    const command = this._buildFallbackCommand(toolName, params);
+
+    try {
+      const result = execSync(
+        `ssh -o StrictHostKeyChecking=no -o ConnectTimeout=10 ${this.serverUser}@${this.serverHost} "${command.replace(/"/g, '\\"')}"`,
+        {
+          encoding: 'utf8',
+          timeout: CONNECTION_TIMEOUT,
+          stdio: ['pipe', 'pipe', 'pipe'],
+          maxBuffer: 10 * 1024 * 1024,
+        }
+      );
+
+      try {
+        return JSON.parse(result.trim());
+      } catch {
+        return { raw: result.trim() };
+      }
+    } catch (error) {
+      throw new Error(`SSH command failed: ${error.message}`);
+    }
+  }
+
+  /**
+   * 폴백 명령 생성
+   */
+  _buildFallbackCommand(toolName, params) {
+    const ssotPath = '/opt/codeb/registry/ssot.json';
+
+    // 읽기 전용 작업만 폴백 지원
+    switch (toolName) {
+      case 'ssot_get':
+        return `cat ${ssotPath} 2>/dev/null || echo '{"error": "SSOT not initialized"}'`;
+
+      case 'ssot_get_project':
+        return `jq '.projects["${params.projectId}"]' ${ssotPath} 2>/dev/null || echo 'null'`;
+
+      case 'ssot_list_projects':
+        return `jq '.projects | keys' ${ssotPath} 2>/dev/null || echo '[]'`;
+
+      case 'full_health_check':
+        return this._buildHealthCheckCommand();
+
+      case 'analyze_server':
+        return this._buildAnalyzeServerCommand(params);
+
+      case 'list_projects':
+        return `cat /opt/codeb/config/project-registry.json 2>/dev/null || echo '{"projects":{}}'`;
+
+      default:
+        throw new Error(`Tool '${toolName}' requires MCP Server. Fallback not supported.`);
+    }
+  }
+
+  /**
+   * 헬스체크 명령 생성
+   */
+  _buildHealthCheckCommand() {
+    return `
+      echo '{'
+      echo '"timestamp": "'$(date -Iseconds)'",'
+      echo '"server": "'$(hostname)'",'
+      echo '"resources": {'
+
+      # CPU
+      cpu=$(vmstat 1 2 | tail -1 | awk '{print 100 - $15}')
+      echo '"cpu": {"usage": '$cpu'},'
+
+      # Memory
+      mem=$(free -m | awk '/Mem:/ {printf "%.1f", $3/$2*100}')
+      mem_used=$(free -h | awk '/Mem:/ {print $3}')
+      mem_total=$(free -h | awk '/Mem:/ {print $2}')
+      echo '"memory": {"usage": '$mem', "used": "'$mem_used'", "total": "'$mem_total'"},'
+
+      # Disk
+      disk=$(df / | awk 'NR==2 {print $5}' | tr -d '%')
+      disk_used=$(df -h / | awk 'NR==2 {print $3}')
+      disk_total=$(df -h / | awk 'NR==2 {print $2}')
+      echo '"disk": {"usage": '$disk', "used": "'$disk_used'", "total": "'$disk_total'"}'
+
+      echo '},'
+
+      # Services
+      echo '"services": {'
+      caddy_status=$(systemctl is-active caddy 2>/dev/null || echo "inactive")
+      echo '"caddy": {"running": '$([[ "$caddy_status" == "active" ]] && echo "true" || echo "false")', "status": "'$caddy_status'"}'
+      echo '}'
+
+      echo '}'
+    `.trim();
+  }
+
+  /**
+   * 서버 분석 명령 생성
+   */
+  _buildAnalyzeServerCommand(params) {
+    const parts = ['echo "{"'];
+    parts.push('echo \'"timestamp": "\'$(date -Iseconds)\'"\'');
+
+    if (params.includeContainers !== false) {
+      parts.push(`
+        echo ',"containers": ['
+        first=true
+        podman ps -a --format '{{.Names}}|{{.Status}}|{{.Image}}' 2>/dev/null | while read line; do
+          name=$(echo $line | cut -d'|' -f1)
+          status=$(echo $line | cut -d'|' -f2)
+          image=$(echo $line | cut -d'|' -f3)
+          if [ "$first" = true ]; then
+            first=false
+          else
+            echo ','
+          fi
+          echo '{"name": "'$name'", "status": "'$status'", "image": "'$image'"}'
+        done
+        echo ']'
+      `);
+    }
+
+    parts.push('echo "}"');
+    return parts.join('\n');
+  }
+
+  // ============================================================================
+  // 고수준 API (편의 메서드)
+  // ============================================================================
+
+  /**
+   * SSOT 상태 조회
+   */
+  async getSSOT() {
+    return this.callTool('ssot_get');
+  }
+
+  /**
+   * 프로젝트 목록 조회
+   */
+  async listProjects(status = 'all') {
+    return this.callTool('ssot_list_projects', { status });
+  }
+
+  /**
+   * 프로젝트 상세 조회
+   */
+  async getProject(projectId) {
+    return this.callTool('ssot_get_project', { projectId });
+  }
+
+  /**
+   * 전체 헬스체크
    */
   async fullHealthCheck() {
-    await this.initialize();
-
-    // Simulate health check
-    return {
-      components: {
-        'Web Server': { healthy: true, status: 'running', details: 'nginx:1.24' },
-        'API Server': { healthy: true, status: 'running', details: 'node:18' },
-        'Database': { healthy: true, status: 'running', details: 'postgres:15' },
-        'Redis': { healthy: true, status: 'running', details: 'redis:7' },
-        'Caddy': { healthy: true, status: 'running', details: 'caddy:2.7' }
-      },
-      resources: {
-        cpu: { usage: 45.2, cores: 4 },
-        memory: { usage: 62.5, used: '2.5GB', total: '4GB' },
-        disk: { usage: 35.8, used: '14.3GB', total: '40GB' }
-      },
-      network: {
-        latency: 12,
-        throughput: '1.2Gbps',
-        activeConnections: 145
-      },
-      services: {
-        'nginx': { running: true, status: 'healthy', port: 80 },
-        'node': { running: true, status: 'healthy', port: 3000 },
-        'postgres': { running: true, status: 'healthy', port: 5432 },
-        'redis': { running: true, status: 'healthy', port: 6379 }
-      },
-      warnings: [],
-      errors: []
-    };
+    return this.callTool('full_health_check');
   }
 
   /**
-   * DNS check via MCP
+   * 서버 분석
    */
-  async checkDNS(domain) {
-    await this.initialize();
-
-    // Simulate DNS check
-    return {
-      configured: true,
-      records: [
-        { type: 'A', value: this.serverHost },
-        { type: 'AAAA', value: '::1' }
-      ]
-    };
+  async analyzeServer(options = {}) {
+    return this.callTool('analyze_server', {
+      includeContainers: options.containers !== false,
+      includePm2: options.pm2 !== false,
+      includePorts: options.ports !== false,
+      includeDatabases: options.databases !== false,
+      includeRegistry: options.registry !== false,
+    });
   }
 
   /**
-   * Setup domain via MCP
+   * 프로젝트 배포
+   */
+  async deploy(projectName, environment, options = {}) {
+    return this.callTool('deploy', {
+      projectName,
+      environment,
+      strategy: options.strategy || 'rolling',
+      skipHealthcheck: options.skipHealthcheck || false,
+      skipTests: options.skipTests || false,
+    });
+  }
+
+  /**
+   * 도메인 설정
    */
   async setupDomain(params) {
-    await this.initialize();
-
-    return {
-      domain: params.domain,
-      ssl: params.ssl,
-      certificate: params.ssl ? 'Let\'s Encrypt' : null,
-      upstream: `${params.project}:3000`,
-      sslProvider: 'Let\'s Encrypt'
-    };
+    return this.callTool('setup_domain', params);
   }
 
   /**
-   * Remove domain via MCP
+   * 도메인 상태 확인
    */
-  async removeDomain(domain) {
-    await this.initialize();
-
-    return { success: true };
+  async checkDomainStatus(domain) {
+    return this.callTool('check_domain_status', { domain });
   }
 
   /**
-   * Check domain status via MCP
+   * 포트 검증
    */
-  async checkDomain(domain) {
-    await this.initialize();
-
-    return {
-      configured: true,
-      ssl: true,
-      dns: true,
-      reachable: true,
-      sslInfo: {
-        issuer: 'Let\'s Encrypt',
-        expiresAt: '2025-03-09',
-        valid: true
-      }
-    };
-  }
-
-  /**
-   * List domains via MCP
-   */
-  async listDomains() {
-    await this.initialize();
-
-    return [
-      {
-        name: 'example.com',
-        ssl: true,
-        active: true,
-        status: 'healthy',
-        upstream: 'web:3000'
-      },
-      {
-        name: 'api.example.com',
-        ssl: true,
-        active: true,
-        status: 'healthy',
-        upstream: 'api:4000'
-      }
-    ];
-  }
-
-  /**
-   * Analyze optimizations
-   */
-  async analyzeOptimizations(target) {
-    return [
-      {
-        id: 'bundle-minify',
-        name: 'Minify JavaScript bundles',
-        impact: 'high',
-        savings: '45% reduction',
-        effort: 'low'
-      },
-      {
-        id: 'image-optimize',
-        name: 'Optimize images',
-        impact: 'high',
-        savings: '60% reduction',
-        effort: 'low'
-      },
-      {
-        id: 'lazy-load',
-        name: 'Implement lazy loading',
-        impact: 'medium',
-        savings: '30% faster load',
-        effort: 'medium'
-      }
-    ];
-  }
-
-  /**
-   * Apply optimizations
-   */
-  async applyOptimizations(params) {
-    return {
-      bundleSize: {
-        before: '2.5MB',
-        after: '1.4MB',
-        reduction: '44%'
-      },
-      memory: {
-        before: '512MB',
-        after: '380MB',
-        reduction: '26%'
-      },
-      loadTime: {
-        before: '3.2s',
-        after: '1.8s',
-        reduction: '44%'
-      },
-      totalReduction: '38%'
-    };
-  }
-
-  /**
-   * Get metrics
-   */
-  async getMetrics(metricsArray) {
-    const data = {};
-
-    metricsArray.forEach(metric => {
-      switch (metric) {
-        case 'cpu':
-          data.cpu = Math.floor(Math.random() * 100);
-          break;
-        case 'memory':
-          data.memory = Math.floor(Math.random() * 100);
-          break;
-        case 'network':
-          data.network = Math.floor(Math.random() * 100);
-          break;
-        case 'disk':
-          data.disk = Math.floor(Math.random() * 100);
-          break;
-      }
+  async validatePort(projectName, port, environment, service = 'app') {
+    return this.callTool('port_validate', {
+      projectName,
+      port,
+      environment,
+      service,
     });
-
-    return data;
   }
 
   /**
-   * Rollback deployment
+   * 사용 가능한 포트 찾기
    */
-  async rollbackDeployment(params) {
+  async findAvailablePort(environment, service) {
+    return this.callTool('ssot_find_available_port', {
+      environment,
+      service,
+    });
+  }
+
+  /**
+   * 포트 할당
+   */
+  async allocatePort(projectId, environment, service) {
+    return this.callTool('ssot_allocate_port', {
+      projectId,
+      environment,
+      service,
+    });
+  }
+
+  /**
+   * 롤백
+   */
+  async rollback(projectName, environment, options = {}) {
+    return this.callTool('rollback', {
+      projectName,
+      environment,
+      targetVersion: options.version,
+      reason: options.reason,
+      dryRun: options.dryRun || false,
+    });
+  }
+
+  /**
+   * 프로젝트 초기화
+   */
+  async initProject(params) {
+    return this.callTool('init_project', params);
+  }
+
+  /**
+   * SSOT 프로젝트 등록
+   */
+  async registerProject(projectId, projectType, options = {}) {
+    return this.callTool('ssot_register_project', {
+      projectId,
+      projectType,
+      description: options.description,
+      gitRepo: options.gitRepo,
+    });
+  }
+
+  /**
+   * SSOT 도메인 설정
+   */
+  async setDomain(projectId, environment, domain, targetPort, prNumber = null) {
+    return this.callTool('ssot_set_domain', {
+      projectId,
+      environment,
+      domain,
+      targetPort,
+      prNumber,
+    });
+  }
+
+  /**
+   * SSOT 검증
+   */
+  async validateSSOT(autoFix = false) {
+    return this.callTool('ssot_validate', { autoFix });
+  }
+
+  /**
+   * SSOT 동기화
+   */
+  async syncSSOT(options = {}) {
+    return this.callTool('ssot_sync', {
+      dryRun: options.dryRun || false,
+      components: options.components || ['caddy', 'dns', 'containers'],
+    });
+  }
+
+  /**
+   * GitHub Actions 에러 조회
+   */
+  async getWorkflowErrors(owner, repo, options = {}) {
+    return this.callTool('get_workflow_errors', {
+      owner,
+      repo,
+      branch: options.branch,
+      limit: options.limit || 10,
+    });
+  }
+
+  /**
+   * 빌드 에러 분석
+   */
+  async analyzeBuildError(error, projectPath = null) {
+    return this.callTool('analyze_build_error', {
+      error,
+      projectPath,
+    });
+  }
+
+  /**
+   * 모니터링 상태
+   */
+  async getMonitoringStatus(action = 'status') {
+    return this.callTool('monitoring', { action });
+  }
+
+  /**
+   * Preview 환경 관리
+   */
+  async managePreview(action, projectName, options = {}) {
+    return this.callTool('preview', {
+      action,
+      projectName,
+      prNumber: options.prNumber,
+      gitRef: options.gitRef,
+      ttlHours: options.ttlHours,
+    });
+  }
+
+  // ============================================================================
+  // 유틸리티 메서드
+  // ============================================================================
+
+  /**
+   * 연결 보장 (연결되지 않았으면 연결 시도)
+   * @returns {Promise<boolean>} 연결 성공 여부
+   */
+  async ensureConnected() {
+    if (this.connected && !this.fallbackMode) {
+      return true;
+    }
+    return this.connect();
+  }
+
+  /**
+   * 연결 상태 확인
+   */
+  isConnected() {
+    return this.connected && !this.fallbackMode;
+  }
+
+  /**
+   * 폴백 모드 확인
+   */
+  isFallbackMode() {
+    return this.fallbackMode;
+  }
+
+  /**
+   * HTTP API 모드 확인
+   */
+  isHttpApiMode() {
+    return this.httpApiMode;
+  }
+
+  /**
+   * MCP 서버 정보 출력
+   */
+  getServerInfo() {
     return {
-      version: params.version || 'v1.0.0',
-      status: 'healthy'
+      connected: this.connected,
+      fallbackMode: this.fallbackMode,
+      httpApiMode: this.httpApiMode,
+      serverHost: this.serverHost,
+      serverUser: this.serverUser,
+      baseDomain: this.baseDomain || getBaseDomain(),
+      hasApiKey: !!this.apiKey,
     };
   }
 
   /**
-   * List versions
+   * 연결 모드 자동 감지 및 설정
+   * Admin (SSH 가능) vs Developer (HTTP API만)
    */
-  async listVersions(project, environment) {
-    return [
-      {
-        version: 'v1.2.0',
-        current: true,
-        deployedAt: '2025-01-08 14:30:00',
-        status: 'healthy'
-      },
-      {
-        version: 'v1.1.0',
-        current: false,
-        deployedAt: '2025-01-05 10:15:00',
-        status: 'archived'
-      },
-      {
-        version: 'v1.0.0',
-        current: false,
-        deployedAt: '2025-01-01 09:00:00',
-        status: 'archived'
+  async autoDetectMode() {
+    this.loadConfig();
+
+    // SSH 접근 체크
+    const hasSSH = await this.checkSSHAccess();
+
+    if (hasSSH) {
+      // Admin 모드: MCP → SSH Fallback
+      this.httpApiMode = false;
+      console.log(chalk.green('✓ Admin mode (SSH access available)'));
+      return 'admin';
+    } else if (this.apiKey) {
+      // Developer 모드: HTTP API만
+      this.httpApiMode = true;
+      console.log(chalk.cyan('✓ Developer mode (HTTP API)'));
+      return 'developer';
+    } else {
+      // 설정 필요
+      console.log(chalk.yellow('⚠ No access configured'));
+      console.log(chalk.gray('  Admin: Set up SSH key to server'));
+      console.log(chalk.gray('  Developer: Set CODEB_API_KEY in ~/.codeb/config.json'));
+      return 'none';
+    }
+  }
+
+  /**
+   * 사용 가능한 도구 목록 조회
+   */
+  async listTools() {
+    if (!this.connected) {
+      const connected = await this.connect();
+      if (!connected) {
+        return { error: 'Not connected to MCP server' };
       }
-    ];
+    }
+
+    try {
+      const tools = await this.client.listTools();
+      return tools;
+    } catch (error) {
+      return { error: error.message };
+    }
   }
 }
 
+// ============================================================================
+// Singleton Export
+// ============================================================================
+
 export const mcpClient = new MCPClient();
+
+// 기존 호환성을 위한 개별 함수 export
+export async function callTool(toolName, params = {}, options = {}) {
+  return mcpClient.callTool(toolName, params, options);
+}
+
+export async function getSSOT() {
+  return mcpClient.getSSOT();
+}
+
+export async function listProjects(status = 'all') {
+  return mcpClient.listProjects(status);
+}
+
+export async function getProject(projectId) {
+  return mcpClient.getProject(projectId);
+}
+
+export async function fullHealthCheck() {
+  return mcpClient.fullHealthCheck();
+}
+
+export async function analyzeServer(options = {}) {
+  return mcpClient.analyzeServer(options);
+}
+
+export async function deploy(projectName, environment, options = {}) {
+  return mcpClient.deploy(projectName, environment, options);
+}
+
+export default mcpClient;

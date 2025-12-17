@@ -3,17 +3,23 @@
  *
  * Handles project deployment with MCP codeb-deploy integration
  * Supports: staging, production, preview environments
+ *
+ * v2.5.2: Added auto full scan before deployment
  */
 
 import chalk from 'chalk';
 import ora from 'ora';
 import inquirer from 'inquirer';
+import { existsSync } from 'fs';
+import { readFile } from 'fs/promises';
+import { join } from 'path';
 import { mcpClient } from '../lib/mcp-client.js';
 import { logger } from '../lib/logger.js';
 import { validateEnvironment, validateDockerCompose } from '../lib/validators.js';
+import { fullPreDeployScan } from './workflow.js';
 
 export async function deploy(project, options) {
-  const { environment, file, cache, force, dryRun } = options;
+  const { environment, file, cache, force, dryRun, skipScan } = options;
 
   console.log(chalk.blue.bold(`\n🚀 CodeB Deployment\n`));
   console.log(chalk.gray(`Project: ${project || 'current directory'}`));
@@ -23,6 +29,57 @@ export async function deploy(project, options) {
 
   if (dryRun) {
     console.log(chalk.yellow('\n⚠️  Dry run mode - no actual deployment\n'));
+  }
+
+  // ================================================================
+  // STEP 0: Full Pre-Deploy Scan (auto-runs before deploy)
+  // ================================================================
+  if (!skipScan && !dryRun) {
+    // Try to get project name
+    let scanProjectName = project;
+    if (!scanProjectName) {
+      const pkgPath = join(process.cwd(), 'package.json');
+      if (existsSync(pkgPath)) {
+        try {
+          const pkg = JSON.parse(await readFile(pkgPath, 'utf-8'));
+          scanProjectName = pkg.name;
+        } catch (e) { /* ignore */ }
+      }
+    }
+
+    if (scanProjectName) {
+      const scanResult = await fullPreDeployScan(scanProjectName, {
+        silent: false
+      });
+
+      // Check for critical issues
+      const criticalIssues = scanResult.comparison.issues.filter(i => i.severity === 'critical' || i.severity === 'error');
+
+      if (criticalIssues.length > 0 && !force) {
+        console.log(chalk.red.bold('\n⛔ Deployment blocked due to critical issues:'));
+        for (const issue of criticalIssues) {
+          console.log(chalk.red(`   • ${issue.message}`));
+          if (issue.fix) console.log(chalk.yellow(`     Fix: ${issue.fix}`));
+        }
+
+        const { proceedDeploy } = await inquirer.prompt([{
+          type: 'confirm',
+          name: 'proceedDeploy',
+          message: 'Deploy anyway? (Not recommended)',
+          default: false
+        }]);
+
+        if (!proceedDeploy) {
+          console.log(chalk.gray('\nDeployment cancelled. Fix issues first.'));
+          process.exit(0);
+        }
+      }
+
+      // Warn about mismatched env files
+      if (scanResult.comparison.warnings.length > 0 && !force) {
+        console.log(chalk.yellow('\n⚠️  Warnings detected. Review before deploying.'));
+      }
+    }
   }
 
   const spinner = ora('Validating deployment configuration...').start();
@@ -81,15 +138,17 @@ export async function deploy(project, options) {
     // Step 4: Deploy via MCP
     spinner.start('Deploying via MCP codeb-deploy...');
 
-    const deploymentResult = await mcpClient.deployComposeProject({
-      projectName: project || 'default',
-      environment: environment,
-      composePath: file,
-      options: {
+    const deploymentResult = await mcpClient.deploy(
+      project || 'default',
+      environment,
+      {
+        strategy: 'rolling',
+        skipHealthcheck: false,
+        skipTests: false,
         noCache: !cache,
         force: force
       }
-    });
+    );
 
     if (deploymentResult.success) {
       spinner.succeed('Deployment completed successfully');

@@ -141,9 +141,19 @@ function displayResourceUsage(resources) {
 }
 
 function displayNetworkStatus(network) {
-  console.log(chalk.gray(`  Latency: ${network.latency}ms`));
-  console.log(chalk.gray(`  Throughput: ${network.throughput}`));
-  console.log(chalk.gray(`  Connections: ${network.activeConnections}`));
+  if (!network) {
+    console.log(chalk.gray('  No network data available'));
+    return;
+  }
+  const internetIcon = network.internet ? '🟢' : '🔴';
+  console.log(chalk.gray(`  Internet: ${internetIcon} ${network.internet ? 'Connected' : 'Disconnected'}`));
+  if (network.latency && network.latency !== 'N/A') {
+    console.log(chalk.gray(`  Latency: ${network.latency}ms`));
+  }
+  if (network.throughput && network.throughput !== 'N/A') {
+    console.log(chalk.gray(`  Throughput: ${network.throughput}`));
+  }
+  console.log(chalk.gray(`  Active Connections: ${network.activeConnections || 0}`));
 }
 
 function displayServicesStatus(services, verbose) {

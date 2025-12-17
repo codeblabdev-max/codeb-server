@@ -3,12 +3,16 @@
  *
  * Domain management: setup, remove, check, list
  * Integrates with Caddy for reverse proxy and SSL
+ *
+ * ⚠️ SSOT PROTECTED: All domain operations go through SSOT
+ * Watchdog will revert any unauthorized changes within 30 seconds
  */
 
 import chalk from 'chalk';
 import ora from 'ora';
 import inquirer from 'inquirer';
 import { mcpClient } from '../lib/mcp-client.js';
+import { ssotClient } from '../lib/ssot-client.js';
 import { validateDomain } from '../lib/validators.js';
 
 export async function domain(action, domainName, options) {
@@ -51,7 +55,40 @@ async function setupDomain(domainName, options) {
   const spinner = ora('Validating domain...').start();
 
   try {
+    // ========================================
+    // SSOT Protection Check
+    // ========================================
+    spinner.text = 'Checking SSOT status...';
+    const ssotStatus = await ssotClient.getStatus();
+
+    if (!ssotStatus.initialized) {
+      spinner.warn('SSOT not initialized');
+      console.log(chalk.yellow('\n⚠️  SSOT (Single Source of Truth) is not initialized on the server.'));
+      console.log(chalk.gray('All domain configurations are protected by SSOT.'));
+      console.log(chalk.gray('Run "ssot_initialize" via MCP to enable SSOT protection.\n'));
+
+      if (!force) {
+        const { proceed } = await inquirer.prompt([{
+          type: 'confirm',
+          name: 'proceed',
+          message: 'Continue without SSOT protection? (Changes may be lost)',
+          default: false
+        }]);
+
+        if (!proceed) {
+          console.log(chalk.gray('\nSetup cancelled\n'));
+          process.exit(0);
+        }
+      }
+    } else {
+      spinner.succeed('SSOT protection active');
+      console.log(chalk.gray(`  Last modified: ${ssotStatus.lastModified}`));
+      console.log(chalk.gray(`  Projects: ${ssotStatus.projectCount}`));
+    }
+    // ========================================
+
     // Validate domain format
+    spinner.start('Validating domain format...');
     const validation = validateDomain(domainName);
     if (!validation.valid) {
       spinner.fail('Domain validation failed');
@@ -88,9 +125,31 @@ async function setupDomain(domainName, options) {
       spinner.succeed('DNS configured');
     }
 
-    // Setup domain via MCP
-    spinner.start('Configuring domain...');
+    // ========================================
+    // Setup domain via SSOT (if available)
+    // ========================================
+    spinner.start('Configuring domain via SSOT...');
 
+    if (ssotStatus.initialized) {
+      // Use SSOT-protected setup
+      try {
+        const result = await ssotClient.setProjectDomain(
+          project || 'default',
+          'production',
+          domainName,
+          3000  // Default port, should be from project config
+        );
+        if (result.warning) {
+          spinner.warn('Domain registered (MCP required for full setup)');
+          console.log(chalk.yellow(`\n⚠️  ${result.warning}`));
+        }
+      } catch (ssotError) {
+        spinner.warn(`SSOT setup warning: ${ssotError.message}`);
+      }
+    }
+
+    // Fallback to legacy MCP setup
+    spinner.start('Applying Caddy configuration...');
     const setupResult = await mcpClient.setupDomain({
       domain: domainName,
       project: project || 'default',

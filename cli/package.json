@@ -1,6 +1,6 @@
 {
   "name": "we-cli",
-  "version": "2.5.0",
+  "version": "2.5.4",
   "description": "/we: Web Deploy CLI - Deploy, Analyze, Workflow, Optimize with 7-Agent System + Server Infrastructure Provisioning",
   "type": "module",
   "bin": {
@@ -10,8 +10,15 @@
   "files": [
     "bin",
     "src",
-    "commands"
+    "commands",
+    "scripts",
+    "rules"
   ],
+  "repository": {
+    "type": "git",
+    "url": "https://github.com/codeblabdev-max/codeb-server.git",
+    "directory": "cli"
+  },
   "scripts": {
     "test": "echo \"Tests coming soon\" && exit 0",
     "link": "npm link",
@@ -31,14 +38,15 @@
   "author": "CodeB Team",
   "license": "MIT",
   "dependencies": {
-    "chalk": "^5.3.0",
-    "commander": "^11.1.0",
-    "ora": "^7.0.1",
-    "inquirer": "^9.2.12",
+    "@modelcontextprotocol/sdk": "^1.25.0",
     "axios": "^1.6.2",
-    "dotenv": "^16.3.1",
-    "table": "^6.8.1",
+    "chalk": "^5.3.0",
     "cli-progress": "^3.12.0",
+    "commander": "^11.1.0",
+    "dotenv": "^16.3.1",
+    "inquirer": "^9.2.12",
+    "ora": "^7.0.1",
+    "table": "^6.8.1",
     "yaml": "^2.3.4"
   },
   "engines": {

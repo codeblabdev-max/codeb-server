@@ -30,7 +30,8 @@ const DEFAULTS = {
   CODEB_DB_PASSWORD: '',
   VULTR_API_KEY: '',
   GITHUB_TOKEN: '',
-  CODEB_DOMAIN: 'one-q.xyz'
+  CODEB_DOMAIN: 'one-q.xyz',
+  CODEB_API_KEY: '',  // Developer용 HTTP API 키
 };
 
 /**
@@ -129,6 +130,13 @@ export function getBaseDomain() {
 }
 
 /**
+ * API 키 가져오기 (Developer용 HTTP API 인증)
+ */
+export function getApiKey() {
+  return getConfig('CODEB_API_KEY');
+}
+
+/**
  * 설정 디렉토리 경로
  */
 export function getConfigDir() {
@@ -154,7 +162,8 @@ export function getAllConfig() {
     CODEB_DB_PASSWORD: getConfig('CODEB_DB_PASSWORD') ? '***' : '',
     VULTR_API_KEY: getConfig('VULTR_API_KEY') ? '***' : '',
     GITHUB_TOKEN: getConfig('GITHUB_TOKEN') ? '***' : '',
-    CODEB_DOMAIN: getConfig('CODEB_DOMAIN')
+    CODEB_DOMAIN: getConfig('CODEB_DOMAIN'),
+    CODEB_API_KEY: getConfig('CODEB_API_KEY') ? '***' : '',
   };
 }
 
@@ -167,6 +176,7 @@ export default {
   getVultrApiKey,
   getGithubToken,
   getBaseDomain,
+  getApiKey,
   getConfigDir,
   getConfigFile,
   getAllConfig
