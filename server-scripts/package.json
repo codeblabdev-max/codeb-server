@@ -1,0 +1,36 @@
+{
+  "name": "codeb-domain-manager",
+  "version": "1.0.0",
+  "description": "CodeB Domain Manager - PowerDNS + Caddy + SSL automation",
+  "main": "domain-manager.js",
+  "bin": {
+    "domain-cli": "./domain-cli.js"
+  },
+  "scripts": {
+    "start": "node domain-manager.js",
+    "dev": "nodemon domain-manager.js",
+    "test": "bash test-domain-manager.sh"
+  },
+  "keywords": [
+    "domain",
+    "dns",
+    "powerdns",
+    "caddy",
+    "ssl",
+    "reverse-proxy",
+    "automation"
+  ],
+  "author": "CodeB Team",
+  "license": "MIT",
+  "dependencies": {
+    "express": "^4.18.2",
+    "axios": "^1.6.0",
+    "commander": "^11.1.0"
+  },
+  "devDependencies": {
+    "nodemon": "^3.0.2"
+  },
+  "engines": {
+    "node": ">=18.0.0"
+  }
+}

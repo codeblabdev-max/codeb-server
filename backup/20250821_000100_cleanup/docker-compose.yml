@@ -1,0 +1,80 @@
+# Docker Compose for CodeB Local Development
+version: '3.8'
+
+services:
+  # CodeB Server
+  codeb-server:
+    build:
+      context: ./codeb-remix
+      dockerfile: Dockerfile
+    container_name: codeb-server
+    ports:
+      - "3000:3000"
+    environment:
+      - NODE_ENV=development
+      - PORT=3000
+      - DATABASE_PATH=/data/database.json
+      - STORAGE_PATH=/data
+      - JWT_SECRET=dev-secret-change-in-production
+      - PODMAN_SOCKET=/var/run/docker.sock
+    volumes:
+      - ./data:/data
+      - ./logs:/logs
+      - /var/run/docker.sock:/var/run/docker.sock
+    networks:
+      - codeb-network
+    depends_on:
+      - postgres
+      - redis
+
+  # PostgreSQL for development
+  postgres:
+    image: postgres:15-alpine
+    container_name: codeb-postgres
+    environment:
+      - POSTGRES_USER=codeb
+      - POSTGRES_PASSWORD=codeb123
+      - POSTGRES_DB=codeb
+    ports:
+      - "5432:5432"
+    volumes:
+      - postgres-data:/var/lib/postgresql/data
+    networks:
+      - codeb-network
+
+  # Redis for caching
+  redis:
+    image: redis:7-alpine
+    container_name: codeb-redis
+    ports:
+      - "6379:6379"
+    volumes:
+      - redis-data:/data
+    networks:
+      - codeb-network
+    command: redis-server --appendonly yes
+
+  # Caddy for reverse proxy (optional)
+  caddy:
+    image: caddy:2-alpine
+    container_name: codeb-caddy
+    ports:
+      - "80:80"
+      - "443:443"
+      - "2019:2019"
+    volumes:
+      - ./Caddyfile:/etc/caddy/Caddyfile
+      - caddy-data:/data
+      - caddy-config:/config
+    networks:
+      - codeb-network
+
+volumes:
+  postgres-data:
+  redis-data:
+  caddy-data:
+  caddy-config:
+
+networks:
+  codeb-network:
+    driver: bridge

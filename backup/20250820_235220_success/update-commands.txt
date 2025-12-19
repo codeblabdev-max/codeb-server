@@ -1,0 +1,26 @@
+# CodeB Server Update Commands
+# Execute these commands to update your global installation
+
+## 1. Update the global CLI tool (run with sudo):
+sudo cp /Users/admin/new_project/codeb-server/codeb-cli-v2.sh /opt/homebrew/bin/codeb
+sudo chmod +x /opt/homebrew/bin/codeb
+
+## 2. Server files already updated:
+- API Server: /root/codeb-api-server.js (✓ uploaded and restarted)
+- Environment Templates: /root/env-templates.json (✓ uploaded)
+
+## 3. Test the deployment with Git branch auto-detection:
+codeb deploy celly-creative https://github.com/dungeun/celly-creative.git
+
+## Server Status:
+- CodeB API Server: Running on PM2 (restarted with branch detection fix)
+- Port: 4000
+- Version: 2.0 with Git branch auto-detection
+
+## Key Improvements Applied:
+1. ✓ Git branch auto-detection (master/main)
+2. ✓ Resilient project creation with --resume
+3. ✓ Environment variable auto-generation
+4. ✓ Port mapping fixes (3000→4000+)
+5. ✓ Better error messages and logging
+6. ✓ 100% API-based (no SSH dependencies)

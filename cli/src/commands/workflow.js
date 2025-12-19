@@ -758,6 +758,162 @@ function generateSecurePassword(length = 24) {
   return password;
 }
 
+// ============================================================================
+// ENV Backup System - 백업 서버에 프로젝트별 ENV 보관
+// ============================================================================
+
+const BACKUP_SERVER = {
+  host: '141.164.37.63',  // backup.codeb.kr
+  user: 'root',
+  envPath: '/opt/codeb/env-backup'
+};
+
+/**
+ * Backup ENV to backup server
+ * 프로젝트별/환경별로 ENV 파일을 백업 서버에 저장
+ *
+ * @param {Object} config - 설정
+ * @param {string} config.projectName - 프로젝트 이름
+ * @param {string} config.environment - 환경 (production/staging)
+ * @param {string} config.envContent - ENV 파일 내용
+ * @param {boolean} config.isInitial - 최초 생성 여부 (true면 master로도 저장)
+ * @returns {Promise<{success: boolean, paths: Object}>}
+ */
+async function backupEnvToServer(config) {
+  const { execSync } = await import('child_process');
+  const { projectName, environment, envContent, isInitial = false } = config;
+
+  const timestamp = new Date().toISOString().replace(/[:.]/g, '-');
+  const projectDir = `${BACKUP_SERVER.envPath}/${projectName}`;
+  const envDir = `${projectDir}/${environment}`;
+
+  const paths = {
+    project: projectDir,
+    env: envDir,
+    current: `${envDir}/current.env`,
+    timestamped: `${envDir}/${timestamp}.env`,
+    master: isInitial ? `${envDir}/master.env` : null
+  };
+
+  try {
+    // 1. 디렉토리 생성
+    execSync(
+      `ssh ${BACKUP_SERVER.user}@${BACKUP_SERVER.host} "mkdir -p ${envDir}"`,
+      { timeout: 10000 }
+    );
+
+    // 2. ENV 내용을 백업 서버에 저장 (타임스탬프 버전)
+    const escapedContent = envContent.replace(/'/g, "'\\''");
+    execSync(
+      `ssh ${BACKUP_SERVER.user}@${BACKUP_SERVER.host} "cat > ${paths.timestamped}" << 'ENVEOF'
+${envContent}
+ENVEOF`,
+      { timeout: 30000 }
+    );
+
+    // 3. current.env로 심볼릭 링크 또는 복사
+    execSync(
+      `ssh ${BACKUP_SERVER.user}@${BACKUP_SERVER.host} "cp ${paths.timestamped} ${paths.current}"`,
+      { timeout: 10000 }
+    );
+
+    // 4. 최초 생성시 master.env로도 저장 (절대 변경 안되는 원본)
+    if (isInitial) {
+      execSync(
+        `ssh ${BACKUP_SERVER.user}@${BACKUP_SERVER.host} "cp ${paths.timestamped} ${paths.master}"`,
+        { timeout: 10000 }
+      );
+    }
+
+    // 5. 메타데이터 저장
+    const metadata = {
+      projectName,
+      environment,
+      createdAt: new Date().toISOString(),
+      isInitial,
+      backupPath: paths.timestamped
+    };
+
+    execSync(
+      `ssh ${BACKUP_SERVER.user}@${BACKUP_SERVER.host} "echo '${JSON.stringify(metadata)}' >> ${envDir}/backup-log.json"`,
+      { timeout: 10000 }
+    );
+
+    return { success: true, paths };
+
+  } catch (error) {
+    console.error(`ENV 백업 실패: ${error.message}`);
+    return { success: false, paths, error: error.message };
+  }
+}
+
+/**
+ * Restore ENV from backup server
+ * 백업된 ENV 파일 복구
+ *
+ * @param {Object} config - 설정
+ * @param {string} config.projectName - 프로젝트 이름
+ * @param {string} config.environment - 환경
+ * @param {string} config.version - 버전 (master, current, 또는 타임스탬프)
+ * @returns {Promise<{success: boolean, content: string}>}
+ */
+async function restoreEnvFromBackup(config) {
+  const { execSync } = await import('child_process');
+  const { projectName, environment, version = 'master' } = config;
+
+  const envDir = `${BACKUP_SERVER.envPath}/${projectName}/${environment}`;
+  let targetFile;
+
+  if (version === 'master') {
+    targetFile = `${envDir}/master.env`;
+  } else if (version === 'current') {
+    targetFile = `${envDir}/current.env`;
+  } else {
+    targetFile = `${envDir}/${version}.env`;
+  }
+
+  try {
+    const content = execSync(
+      `ssh ${BACKUP_SERVER.user}@${BACKUP_SERVER.host} "cat ${targetFile}"`,
+      { encoding: 'utf-8', timeout: 30000 }
+    );
+
+    return { success: true, content: content.trim() };
+
+  } catch (error) {
+    return { success: false, content: null, error: error.message };
+  }
+}
+
+/**
+ * List ENV backups for a project
+ * 프로젝트의 ENV 백업 목록 조회
+ */
+async function listEnvBackups(projectName, environment = null) {
+  const { execSync } = await import('child_process');
+
+  const projectDir = `${BACKUP_SERVER.envPath}/${projectName}`;
+
+  try {
+    // 환경별 백업 파일 목록
+    const cmd = environment
+      ? `ssh ${BACKUP_SERVER.user}@${BACKUP_SERVER.host} "ls -la ${projectDir}/${environment}/*.env 2>/dev/null || echo 'empty'"`
+      : `ssh ${BACKUP_SERVER.user}@${BACKUP_SERVER.host} "find ${projectDir} -name '*.env' -type f 2>/dev/null || echo 'empty'"`;
+
+    const output = execSync(cmd, { encoding: 'utf-8', timeout: 30000 });
+
+    if (output.trim() === 'empty') {
+      return { success: true, backups: [] };
+    }
+
+    const backups = output.trim().split('\n').filter(line => line.includes('.env'));
+    return { success: true, backups };
+
+  } catch (error) {
+    return { success: false, backups: [], error: error.message };
+  }
+}
+
 /**
  * Provision all server infrastructure for a project
  */
@@ -893,10 +1049,11 @@ REDIS_PORT=6379
 REDIS_DB=${redis.db_index}
 REDIS_PREFIX=${redis.prefix}
 
-# Socket.IO (Redis Adapter)
-SOCKETIO_REDIS_HOST=codeb-redis
-SOCKETIO_REDIS_PORT=6379
-SOCKETIO_REDIS_PREFIX=${redis.prefix}socket:
+# Centrifugo (실시간 메시징 - Socket.IO 대신 사용)
+CENTRIFUGO_URL=wss://ws.codeb.kr/connection/websocket
+CENTRIFUGO_API_URL=http://ws.codeb.kr:8000/api
+CENTRIFUGO_API_KEY=pRMupNs6HlGp7G6xkPsAFrI8hN4g6U0G
+CENTRIFUGO_SECRET=of0KuRFjjzhq5LlBURCuKqzTUAA08hwL
 `;
   }
 
@@ -946,10 +1103,11 @@ DATABASE_URL=postgresql://${database.user}:${database.password}@${serverHost}:${
 REDIS_URL=redis://${serverHost}:${redisExternalPort}/${redis.db_index}
 REDIS_PREFIX=${redis.prefix}
 
-# Socket.IO (개발 시 서버 Redis 사용)
-SOCKETIO_REDIS_HOST=${serverHost}
-SOCKETIO_REDIS_PORT=${redisExternalPort}
-SOCKETIO_REDIS_PREFIX=${redis.prefix}socket:
+# Centrifugo (실시간 메시징 - 개발 환경)
+CENTRIFUGO_URL=wss://ws.codeb.kr/connection/websocket
+CENTRIFUGO_API_URL=http://ws.codeb.kr:8000/api
+CENTRIFUGO_API_KEY=pRMupNs6HlGp7G6xkPsAFrI8hN4g6U0G
+CENTRIFUGO_SECRET=of0KuRFjjzhq5LlBURCuKqzTUAA08hwL
 `;
   }
 
@@ -1334,7 +1492,7 @@ function generateGitHubActionsWorkflow(config) {
     hybridMode = true,  // GitHub build + Self-hosted deploy
     useDatabase = true,
     useRedis = false,
-    baseDomain = 'one-q.xyz'
+    baseDomain = 'codeb.kr'
   } = config;
 
   // Hybrid Mode: GitHub-hosted (build) + Self-hosted (deploy)
@@ -2048,13 +2206,13 @@ async function initWorkflow(projectName, options) {
           type: 'input',
           name: 'stagingDomain',
           message: 'Staging domain:',
-          default: (answers) => `${answers.projectName}-staging.one-q.xyz`
+          default: (answers) => `${answers.projectName}-staging.codeb.kr`
         },
         {
           type: 'input',
           name: 'productionDomain',
           message: 'Production domain:',
-          default: (answers) => `${answers.projectName}.one-q.xyz`
+          default: (answers) => `${answers.projectName}.codeb.kr`
         },
         {
           type: 'confirm',
@@ -2221,8 +2379,8 @@ async function initWorkflow(projectName, options) {
         production: parseInt(config.productionPort)
       },
       domains: {
-        staging: config.stagingDomain || `${config.projectName}-staging.one-q.xyz`,
-        production: config.productionDomain || `${config.projectName}.one-q.xyz`
+        staging: config.stagingDomain || `${config.projectName}-staging.codeb.kr`,
+        production: config.productionDomain || `${config.projectName}.codeb.kr`
       },
       includeTests: config.includeTests,
       includeLint: config.includeLint,
@@ -2388,6 +2546,15 @@ async function initWorkflow(projectName, options) {
 ${prodEnvContent}
 EOFENV"`, { timeout: 30000 });
 
+        // Backup production ENV to backup server (master + timestamped)
+        spinner.text = 'Backing up production ENV to backup server...';
+        await backupEnvToServer({
+          projectName: config.projectName,
+          environment: 'production',
+          envContent: prodEnvContent,
+          isInitial: true  // master.env로도 저장
+        });
+
         // Staging env
         const stagingEnvContent = generateServerEnvContent({
           projectName: config.projectName,
@@ -2401,6 +2568,15 @@ EOFENV"`, { timeout: 30000 });
         execSync(`ssh ${serverUser}@${serverHost} "cat > /opt/codeb/envs/${config.projectName}-staging.env << 'EOFENV'
 ${stagingEnvContent}
 EOFENV"`, { timeout: 30000 });
+
+        // Backup staging ENV to backup server (master + timestamped)
+        spinner.text = 'Backing up staging ENV to backup server...';
+        await backupEnvToServer({
+          projectName: config.projectName,
+          environment: 'staging',
+          envContent: stagingEnvContent,
+          isInitial: true  // master.env로도 저장
+        });
 
         // 9. Update local .env.local with actual credentials (respecting protection)
         if ((provisionResult.database || provisionResult.redis) && !envFileProtected) {
@@ -2424,12 +2600,12 @@ EOFENV"`, { timeout: 30000 });
           provisionResult.registry.projects[config.projectName].environments = {
             production: {
               port: parseInt(config.productionPort),
-              domain: config.productionDomain || `${config.projectName}.one-q.xyz`,
+              domain: config.productionDomain || `${config.projectName}.codeb.kr`,
               env_file: `/opt/codeb/envs/${config.projectName}-production.env`
             },
             staging: {
               port: parseInt(config.stagingPort),
-              domain: config.stagingDomain || `${config.projectName}-staging.one-q.xyz`,
+              domain: config.stagingDomain || `${config.projectName}-staging.codeb.kr`,
               env_file: `/opt/codeb/envs/${config.projectName}-staging.env`
             }
           };
@@ -3822,8 +3998,8 @@ async function migrateWorkflow(projectName, options) {
         production: parseInt(config.productionPort)
       },
       domains: {
-        staging: options.stagingDomain || `${config.projectName}-staging.one-q.xyz`,
-        production: options.productionDomain || `${config.projectName}.one-q.xyz`
+        staging: options.stagingDomain || `${config.projectName}-staging.codeb.kr`,
+        production: options.productionDomain || `${config.projectName}.codeb.kr`
       },
       includeTests: config.includeTests,
       includeLint: config.includeLint,

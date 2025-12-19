@@ -1,0 +1,204 @@
+{
+  "version": "1.0.0",
+  "updatedAt": "2025-12-20T00:00:00.000Z",
+  "members": [
+    {
+      "id": "admin",
+      "name": "Admin",
+      "email": "admin@codeb.kr",
+      "role": "admin",
+      "permissions": {
+        "ssh": true,
+        "deploy": true,
+        "envManage": true,
+        "teamManage": true,
+        "serverConfig": true
+      },
+      "sshKeyPath": "~/.ssh/id_rsa",
+      "createdAt": "2025-12-20T00:00:00.000Z",
+      "active": true
+    },
+    {
+      "id": "dev1",
+      "name": "Developer 1",
+      "email": "dev1@codeb.kr",
+      "role": "developer",
+      "permissions": {
+        "ssh": false,
+        "deploy": true,
+        "envManage": false,
+        "teamManage": false,
+        "serverConfig": false
+      },
+      "createdAt": "2025-12-20T00:00:00.000Z",
+      "active": true
+    },
+    {
+      "id": "dev2",
+      "name": "Developer 2",
+      "email": "dev2@codeb.kr",
+      "role": "developer",
+      "permissions": {
+        "ssh": false,
+        "deploy": true,
+        "envManage": false,
+        "teamManage": false,
+        "serverConfig": false
+      },
+      "createdAt": "2025-12-20T00:00:00.000Z",
+      "active": true
+    },
+    {
+      "id": "dev3",
+      "name": "Developer 3",
+      "email": "dev3@codeb.kr",
+      "role": "developer",
+      "permissions": {
+        "ssh": false,
+        "deploy": true,
+        "envManage": false,
+        "teamManage": false,
+        "serverConfig": false
+      },
+      "createdAt": "2025-12-20T00:00:00.000Z",
+      "active": true
+    },
+    {
+      "id": "dev4",
+      "name": "Developer 4",
+      "email": "dev4@codeb.kr",
+      "role": "developer",
+      "permissions": {
+        "ssh": false,
+        "deploy": true,
+        "envManage": false,
+        "teamManage": false,
+        "serverConfig": false
+      },
+      "createdAt": "2025-12-20T00:00:00.000Z",
+      "active": true
+    },
+    {
+      "id": "dev5",
+      "name": "Developer 5",
+      "email": "dev5@codeb.kr",
+      "role": "developer",
+      "permissions": {
+        "ssh": false,
+        "deploy": true,
+        "envManage": false,
+        "teamManage": false,
+        "serverConfig": false
+      },
+      "createdAt": "2025-12-20T00:00:00.000Z",
+      "active": true
+    },
+    {
+      "id": "dev6",
+      "name": "Developer 6",
+      "email": "dev6@codeb.kr",
+      "role": "developer",
+      "permissions": {
+        "ssh": false,
+        "deploy": true,
+        "envManage": false,
+        "teamManage": false,
+        "serverConfig": false
+      },
+      "createdAt": "2025-12-20T00:00:00.000Z",
+      "active": true
+    },
+    {
+      "id": "dev7",
+      "name": "Developer 7",
+      "email": "dev7@codeb.kr",
+      "role": "developer",
+      "permissions": {
+        "ssh": false,
+        "deploy": true,
+        "envManage": false,
+        "teamManage": false,
+        "serverConfig": false
+      },
+      "createdAt": "2025-12-20T00:00:00.000Z",
+      "active": true
+    },
+    {
+      "id": "dev8",
+      "name": "Developer 8",
+      "email": "dev8@codeb.kr",
+      "role": "developer",
+      "permissions": {
+        "ssh": false,
+        "deploy": true,
+        "envManage": false,
+        "teamManage": false,
+        "serverConfig": false
+      },
+      "createdAt": "2025-12-20T00:00:00.000Z",
+      "active": true
+    },
+    {
+      "id": "dev9",
+      "name": "Developer 9",
+      "email": "dev9@codeb.kr",
+      "role": "developer",
+      "permissions": {
+        "ssh": false,
+        "deploy": true,
+        "envManage": false,
+        "teamManage": false,
+        "serverConfig": false
+      },
+      "createdAt": "2025-12-20T00:00:00.000Z",
+      "active": true
+    },
+    {
+      "id": "dev10",
+      "name": "Developer 10",
+      "email": "dev10@codeb.kr",
+      "role": "developer",
+      "permissions": {
+        "ssh": false,
+        "deploy": true,
+        "envManage": false,
+        "teamManage": false,
+        "serverConfig": false
+      },
+      "createdAt": "2025-12-20T00:00:00.000Z",
+      "active": true
+    }
+  ],
+  "roles": {
+    "admin": {
+      "description": "전체 관리자 - SSH 직접 접속 가능",
+      "defaultPermissions": {
+        "ssh": true,
+        "deploy": true,
+        "envManage": true,
+        "teamManage": true,
+        "serverConfig": true
+      }
+    },
+    "developer": {
+      "description": "개발자 - MCP API만 사용 (SSH 금지)",
+      "defaultPermissions": {
+        "ssh": false,
+        "deploy": true,
+        "envManage": false,
+        "teamManage": false,
+        "serverConfig": false
+      }
+    },
+    "viewer": {
+      "description": "뷰어 - 읽기 전용",
+      "defaultPermissions": {
+        "ssh": false,
+        "deploy": false,
+        "envManage": false,
+        "teamManage": false,
+        "serverConfig": false
+      }
+    }
+  }
+}

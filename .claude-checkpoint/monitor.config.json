@@ -1,0 +1,16 @@
+{
+  "enabled": true,
+  "interval": 5000,
+  "autoSave": true,
+  "triggers": {
+    "fileChange": ["capture_context", "check_patterns"],
+    "dependencyChange": ["verify_dependencies", "check_duplicates"],
+    "testChange": ["update_coverage", "generate_tests"]
+  },
+  "agents": {
+    "frontend": ["*.tsx", "*.jsx", "*.css"],
+    "backend": ["*.ts", "*.js", "api/*"],
+    "infrastructure": ["Dockerfile", "*.yml", "*.yaml"],
+    "quality": ["*.test.*", "*.spec.*"]
+  }
+}

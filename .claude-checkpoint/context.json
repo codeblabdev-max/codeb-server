@@ -1,0 +1,32 @@
+{
+  "version": "2.0.0",
+  "project": {
+    "name": "codeb-server",
+    "type": "Next.js + PostgreSQL + WebSocket + Podman",
+    "status": "active"
+  },
+  "lastSession": {
+    "timestamp": "2025-09-07T05:53:18+09:00",
+    "completedTasks": [],
+    "pendingTasks": [],
+    "confidence": 0.0
+  },
+  "agents": {
+    "orchestrator": {
+      "id": "orchestrator-001",
+      "status": "initializing"
+    },
+    "domainLeads": {
+      "frontend": {"id": "frontend-lead", "status": "ready"},
+      "backend": {"id": "backend-lead", "status": "ready"},
+      "infrastructure": {"id": "infra-lead", "status": "ready"},
+      "quality": {"id": "quality-lead", "status": "ready"}
+    }
+  },
+  "metrics": {
+    "codeReuse": 0,
+    "duplicateDependencies": 0,
+    "testCoverage": 0,
+    "agentConfidence": 0
+  }
+}

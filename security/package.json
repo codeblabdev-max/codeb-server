@@ -1,0 +1,35 @@
+{
+  "name": "codeb-security",
+  "version": "1.0.0",
+  "description": "CodeB Security System - 4-Layer Defense Architecture",
+  "private": true,
+  "scripts": {
+    "install": "./install.sh",
+    "uninstall": "./uninstall.sh",
+    "start:daemon": "node daemon/protection-daemon.js",
+    "start:proxy": "node mcp-proxy/mcp-proxy-gateway.js",
+    "test:client": "node cli/protection-client.js --status",
+    "test:validate": "node cli/protection-client.js",
+    "logs:daemon": "journalctl -u codeb-protection -f",
+    "logs:proxy": "journalctl -u codeb-mcp-proxy -f"
+  },
+  "repository": {
+    "type": "git",
+    "url": "https://github.com/codeb/codeb-server"
+  },
+  "keywords": [
+    "security",
+    "protection",
+    "codeb",
+    "claude",
+    "mcp"
+  ],
+  "author": "CodeB Team",
+  "license": "MIT",
+  "engines": {
+    "node": ">=18.0.0"
+  },
+  "dependencies": {
+    "better-sqlite3": "^9.0.0"
+  }
+}

@@ -30,7 +30,7 @@ const DEFAULTS = {
   CODEB_DB_PASSWORD: '',
   VULTR_API_KEY: '',
   GITHUB_TOKEN: '',
-  CODEB_DOMAIN: 'one-q.xyz',
+  CODEB_DOMAIN: 'codeb.kr',
   CODEB_API_KEY: '',  // Developer용 HTTP API 키
 };
 
@@ -126,7 +126,7 @@ export function getGithubToken() {
  * 기본 도메인 가져오기
  */
 export function getBaseDomain() {
-  return getConfig('CODEB_DOMAIN') || 'one-q.xyz';
+  return getConfig('CODEB_DOMAIN') || 'codeb.kr';
 }
 
 /**

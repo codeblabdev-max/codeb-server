@@ -1,0 +1,94 @@
+# CodeB App Container - Quadlet 설정 (3-Layer Architecture)
+# 위치: ~/.config/containers/systemd/<project>-<env>.container (rootless)
+# 적용: systemctl --user daemon-reload && systemctl --user enable --now <service>
+#
+# 파일명 예시: videopick-production.container → videopick-production 서비스
+#
+# Quadlet은 Podman 컨테이너를 systemd 서비스로 관리합니다.
+# - 서버 부팅 시 자동 시작
+# - 크래시 시 자동 재시작
+# - journalctl로 로그 통합
+# - SHA 태그로 이미지 버전 고정
+
+[Unit]
+Description=%N Application Container
+Documentation=https://github.com/your-org/codeb-server
+
+# 네트워크 필수, DB/Redis는 외부 서비스로 가정
+After=network-online.target
+Wants=network-online.target
+
+# 의존성이 있는 경우 (같은 서버에 DB 컨테이너가 있을 때)
+# Requires=%N-postgres.service %N-redis.service
+# After=%N-postgres.service %N-redis.service
+
+[Container]
+# 이미지 설정 - SHA 태그 사용 (latest 금지!)
+# CI/CD에서 이 파일을 sed로 업데이트
+Image=ghcr.io/your-org/%N:sha-abc1234
+ContainerName=%N
+
+# 포트 매핑 (환경별로 다른 포트 사용)
+# Production: 4000-4499, Staging: 3000-3499
+PublishPort=4000:3000
+
+# 환경변수 파일 (시크릿 포함)
+EnvironmentFile=/opt/codeb/envs/%N.env
+
+# 추가 환경변수 (non-secret)
+Environment=NODE_ENV=production
+Environment=PORT=3000
+
+# 볼륨 마운트 (필요시)
+# Volume=/opt/codeb/data/%N:/app/data:Z
+# Volume=/opt/codeb/uploads/%N:/app/uploads:Z
+
+# 네트워크 (기본 podman 네트워크 사용)
+# 커스텀 네트워크: Network=codeb-network
+
+# 헬스체크 - 필수!
+HealthCmd=curl -sf http://localhost:3000/api/health || exit 1
+HealthInterval=30s
+HealthTimeout=10s
+HealthRetries=3
+HealthStartPeriod=60s
+
+# 리소스 제한
+Memory=2G
+MemorySwap=4G
+# CPU 코어 2개 제한
+CPUQuota=200%
+
+# 보안 설정
+NoNewPrivileges=true
+ReadOnly=false
+# SELinux 비활성화 (필요시)
+# SecurityLabelDisable=true
+
+# 로깅
+LogDriver=journald
+
+[Service]
+# 재시작 정책 - 실패 시만 재시작 (무한 루프 방지)
+Restart=on-failure
+RestartSec=10s
+# 최대 재시작 대기 시간
+RestartMaxDelaySec=120s
+
+# 타임아웃
+TimeoutStartSec=300
+TimeoutStopSec=30
+
+# systemd 환경 변수
+Environment=PODMAN_SYSTEMD_UNIT=%n
+
+# 로그 설정
+StandardOutput=journal
+StandardError=journal
+
+# 실행 알림 (배포 스크립트에서 사용)
+ExecStartPost=/bin/sh -c 'echo "Container %N started at $(date)" | systemd-cat -t %N'
+ExecStopPost=/bin/sh -c 'echo "Container %N stopped at $(date)" | systemd-cat -t %N'
+
+[Install]
+WantedBy=multi-user.target default.target

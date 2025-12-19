@@ -1,0 +1,31 @@
+[Unit]
+Description=CodeB Deploy HTTP API Gateway
+Documentation=https://github.com/your-org/codeb-server
+After=network.target
+
+[Service]
+Type=simple
+User=root
+WorkingDirectory=/opt/codeb/mcp-server
+ExecStart=/usr/bin/node /opt/codeb/mcp-server/dist/http-api.js
+Restart=always
+RestartSec=10
+
+# Environment
+Environment=NODE_ENV=production
+Environment=CODEB_HTTP_API_PORT=9100
+EnvironmentFile=-/opt/codeb/mcp-server/.env
+
+# Logging
+StandardOutput=journal
+StandardError=journal
+SyslogIdentifier=codeb-http-api
+
+# Security
+NoNewPrivileges=true
+ProtectSystem=strict
+ProtectHome=read-only
+ReadWritePaths=/opt/codeb /var/log
+
+[Install]
+WantedBy=multi-user.target

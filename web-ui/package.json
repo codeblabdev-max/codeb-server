@@ -11,8 +11,10 @@
   "dependencies": {
     "@tanstack/react-query": "^5.90.12",
     "axios": "^1.13.2",
+    "centrifuge": "^5.2.2",
     "clsx": "^2.1.1",
     "date-fns": "^4.1.0",
+    "jose": "^5.9.6",
     "lucide-react": "^0.561.0",
     "next": "16.0.10",
     "react": "19.2.1",

@@ -1,0 +1,17 @@
+{
+    "base_domain": "your-domain.com",
+    "nameservers": [
+        "ns1.your-domain.com",
+        "ns2.your-domain.com"
+    ],
+    "default_ttl": 3600,
+    "ssl_enabled": true,
+    "ssl_provider": "letsencrypt",
+    "auto_www": true,
+    "subdomain_patterns": {
+        "api": "api.{domain}",
+        "app": "app.{domain}",
+        "admin": "admin.{domain}",
+        "staging": "staging.{domain}"
+    }
+}

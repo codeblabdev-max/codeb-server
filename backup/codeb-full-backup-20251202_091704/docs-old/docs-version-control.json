@@ -1,0 +1,115 @@
+{
+  "system_info": {
+    "name": "Docs 버전 관리 시스템",
+    "version": "1.0.0",
+    "created": "2024-09-04T15:50:00Z",
+    "description": "docs 하위폴더 전용 버전 관리 및 롤백 시스템"
+  },
+  "configuration": {
+    "auto_backup": true,
+    "max_versions": 50,
+    "compression": true,
+    "page_split_limit": 500,
+    "auto_split": true
+  },
+  "version_history": [
+    {
+      "version": "v1.0.0",
+      "timestamp": "2024-09-04T15:50:00Z",
+      "operation": "INITIAL_CREATION",
+      "files_affected": [
+        "test-items.md",
+        "ui-tests.md", 
+        "api-tests.md",
+        "db-tests.md",
+        "integration-tests.md"
+      ],
+      "description": "초기 docs 시스템 생성 - MCP Context 유지 기반 자동 문서화 시스템 적용",
+      "author": "MCP_AUTO_SYSTEM",
+      "changes_summary": {
+        "added": 5,
+        "modified": 0,
+        "deleted": 0,
+        "lines_added": 480,
+        "lines_deleted": 0
+      },
+      "rollback_data": null,
+      "context_info": {
+        "project_phase": "초기_설정",
+        "features_active": ["자동_테스트_기록", "Context_유지", "500줄_분할"],
+        "mcp_servers": ["sequential", "context7"],
+        "personas": ["scribe", "architect"]
+      }
+    }
+  ],
+  "file_tracking": {
+    "test-items.md": {
+      "current_version": "v1.0.0",
+      "line_count": 55,
+      "last_modified": "2024-09-04T15:50:00Z",
+      "auto_split": false,
+      "next_split_at": 500,
+      "backup_count": 1
+    },
+    "ui-tests.md": {
+      "current_version": "v1.0.0", 
+      "line_count": 59,
+      "last_modified": "2024-09-04T15:50:00Z",
+      "auto_split": false,
+      "next_split_at": 500,
+      "backup_count": 1
+    },
+    "api-tests.md": {
+      "current_version": "v1.0.0",
+      "line_count": 97,
+      "last_modified": "2024-09-04T15:50:00Z", 
+      "auto_split": false,
+      "next_split_at": 500,
+      "backup_count": 1
+    },
+    "db-tests.md": {
+      "current_version": "v1.0.0",
+      "line_count": 118,
+      "last_modified": "2024-09-04T15:50:00Z",
+      "auto_split": false,
+      "next_split_at": 500,
+      "backup_count": 1
+    },
+    "integration-tests.md": {
+      "current_version": "v1.0.0",
+      "line_count": 151,
+      "last_modified": "2024-09-04T15:50:00Z",
+      "auto_split": false,
+      "next_split_at": 500,
+      "backup_count": 1
+    }
+  },
+  "rollback_system": {
+    "rollback_enabled": true,
+    "max_rollback_depth": 20,
+    "emergency_backup_path": "./backup/emergency/",
+    "automatic_rollback_triggers": [
+      "file_corruption",
+      "encoding_error",
+      "structure_violation"
+    ]
+  },
+  "context_preservation": {
+    "active": true,
+    "capture_triggers": [
+      "new_component_creation",
+      "api_endpoint_addition", 
+      "database_table_creation",
+      "integration_completion"
+    ],
+    "context_storage": "./docs-context-db.json",
+    "auto_test_generation": true
+  },
+  "page_splitting": {
+    "enabled": true,
+    "line_limit": 500,
+    "split_strategy": "logical_sections",
+    "auto_navigation": true,
+    "index_generation": true
+  }
+}

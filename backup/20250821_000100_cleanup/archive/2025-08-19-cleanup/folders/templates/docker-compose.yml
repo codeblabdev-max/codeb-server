@@ -1,0 +1,33 @@
+version: '3.8'
+services:
+  app:
+    image: ${IMAGE_NAME:-nginx:alpine}
+    container_name: ${PROJECT_NAME:-app}
+    ports:
+      - "${PORT:-3000}:${INTERNAL_PORT:-80}"
+    environment:
+      - NODE_ENV=${NODE_ENV:-production}
+      - DOMAIN=${DOMAIN}
+      - DATABASE_URL=${DATABASE_URL:-}
+    labels:
+      - "traefik.enable=true"
+      - "traefik.http.routers.${PROJECT_NAME}.rule=Host(\`${DOMAIN}\`)"
+      - "traefik.http.routers.${PROJECT_NAME}.tls=true"
+      - "traefik.http.routers.${PROJECT_NAME}.tls.certresolver=letsencrypt"
+      - "coolify.managed=true"
+    restart: unless-stopped
+
+  # 데이터베이스 (필요시)
+  db:
+    image: postgres:15-alpine
+    container_name: ${PROJECT_NAME:-app}-db
+    environment:
+      - POSTGRES_DB=${DB_NAME:-app}
+      - POSTGRES_USER=${DB_USER:-app}
+      - POSTGRES_PASSWORD=${DB_PASSWORD:-changeme}
+    volumes:
+      - db_data:/var/lib/postgresql/data
+    restart: unless-stopped
+
+volumes:
+  db_data:

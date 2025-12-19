@@ -1,36 +1,59 @@
-This is a [Next.js](https://nextjs.org) project bootstrapped with [`create-next-app`](https://nextjs.org/docs/app/api-reference/cli/create-next-app).
+# CodeB Dashboard
 
-## Getting Started
+> Beautiful web dashboard for managing your deployment infrastructure across 4 Vultr servers
 
-First, run the development server:
+![Next.js](https://img.shields.io/badge/Next.js-16.0.10-black?logo=next.js)
+![React](https://img.shields.io/badge/React-19.2.1-61DAFB?logo=react)
+![Tailwind](https://img.shields.io/badge/Tailwind-v4-38B2AC?logo=tailwind-css)
+![TypeScript](https://img.shields.io/badge/TypeScript-5.0-3178C6?logo=typescript)
+
+## Features
+
+### 8 Complete Pages
+
+1. **Dashboard (/)** - Overview of servers, projects, and deployments
+2. **Projects (/projects)** - Manage and deploy projects
+3. **Servers (/servers)** - Monitor 4 servers with real-time metrics
+4. **Deployments (/deployments)** - View deployment history
+5. **Domains (/domains)** - Manage domains and SSL certificates
+6. **Environment Variables (/env)** - Secure env management
+7. **Real-time Monitoring (/monitoring)** - Live metrics
+8. **Settings (/settings)** - Configure API keys, users, notifications
+
+## Quick Start
 
 ```bash
+# Install dependencies
+npm install
+
+# Start development server
 npm run dev
-# or
-yarn dev
-# or
-pnpm dev
-# or
-bun dev
 ```
 
-Open [http://localhost:3000](http://localhost:3000) with your browser to see the result.
+Visit http://localhost:3000
 
-You can start editing the page by modifying `app/page.tsx`. The page auto-updates as you edit the file.
+## Tech Stack
 
-This project uses [`next/font`](https://nextjs.org/docs/app/building-your-application/optimizing/fonts) to automatically optimize and load [Geist](https://vercel.com/font), a new font family for Vercel.
+| Category | Technology | Version |
+|----------|-----------|---------|
+| Framework | Next.js | 16.0.10 |
+| UI Library | React | 19.2.1 |
+| Styling | Tailwind CSS | v4 |
+| State | @tanstack/react-query | 5.90.12 |
+| HTTP | axios | 1.13.2 |
+| Icons | lucide-react | 0.561.0 |
 
-## Learn More
+## API Integration
 
-To learn more about Next.js, take a look at the following resources:
+- **SSOT Registry**: http://localhost:3102
+- **MCP Agent**: http://localhost:3101 (each server)
 
-- [Next.js Documentation](https://nextjs.org/docs) - learn about Next.js features and API.
-- [Learn Next.js](https://nextjs.org/learn) - an interactive Next.js tutorial.
+## Documentation
 
-You can check out [the Next.js GitHub repository](https://github.com/vercel/next.js) - your feedback and contributions are welcome!
+- [Frontend UI Design](../docs/frontend-ui.md) - Complete design documentation
+- [Quick Start Guide](../docs/QUICK_START.md) - Getting started guide
+- [Dashboard Complete](../docs/DASHBOARD_COMPLETE.md) - Full completion report
 
-## Deploy on Vercel
+---
 
-The easiest way to deploy your Next.js app is to use the [Vercel Platform](https://vercel.com/new?utm_medium=default-template&filter=next.js&utm_source=create-next-app&utm_campaign=create-next-app-readme) from the creators of Next.js.
-
-Check out our [Next.js deployment documentation](https://nextjs.org/docs/app/building-your-application/deploying) for more details.
+**Built with ❤️ by CodeB Team**

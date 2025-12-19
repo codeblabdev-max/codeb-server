@@ -1,0 +1,56 @@
+[Unit]
+Description=CodeB Watchdog Monitor
+Documentation=https://github.com/codeb/codeb-server/security
+After=network.target codeb-protection.service
+Wants=codeb-protection.service
+
+[Service]
+Type=simple
+User=root
+Group=root
+
+# 작업 디렉토리
+WorkingDirectory=/opt/codeb/security/monitor
+
+# 실행 파일
+ExecStart=/usr/bin/node /opt/codeb/security/monitor/watchdog.js --start
+
+# 재시작 정책 (절대 죽지 않도록)
+Restart=always
+RestartSec=3
+StartLimitInterval=60
+StartLimitBurst=10
+
+# 환경변수
+Environment=NODE_ENV=production
+Environment=SLACK_WEBHOOK_URL=
+Environment=DISCORD_WEBHOOK_URL=
+
+# 로그
+StandardOutput=journal
+StandardError=journal
+SyslogIdentifier=codeb-watchdog
+
+# 보안 설정
+NoNewPrivileges=false
+ProtectSystem=false
+ProtectHome=read-only
+
+# 리소스 제한
+MemoryLimit=256M
+CPUQuota=50%
+
+# 시작 전 디렉토리 생성
+ExecStartPre=/bin/mkdir -p /var/run/codeb
+ExecStartPre=/bin/mkdir -p /var/log/codeb
+ExecStartPre=/bin/mkdir -p /var/lib/codeb/backups
+ExecStartPre=/bin/mkdir -p /var/lib/codeb/snapshots
+
+# 종료 시 정리
+ExecStopPost=/bin/rm -f /var/run/codeb/watchdog.pid
+
+# Watchdog 자체 감시
+WatchdogSec=60
+
+[Install]
+WantedBy=multi-user.target

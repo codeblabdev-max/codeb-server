@@ -1,0 +1,96 @@
+{
+  "context_database": {
+    "system_info": {
+      "name": "Docs Context 데이터베이스",
+      "version": "1.0.0",
+      "created": "2024-09-04T15:50:00Z",
+      "description": "Context 유지 기반 자동 문서화 및 테스트 항목 생성 시스템"
+    },
+    "project_context": {
+      "project_name": "codeb-server",
+      "project_type": "mcp_development",
+      "frameworks": ["nodejs", "mcp_protocol"],
+      "current_phase": "documentation_setup",
+      "active_patterns": ["test_automation", "context_preservation", "version_control"]
+    },
+    "captured_contexts": {
+      "test_documentation": {
+        "context_id": "test_doc_001",
+        "captured_at": "2024-09-04T15:50:00Z",
+        "type": "test_item_generation",
+        "components": {
+          "ui_components": [],
+          "api_endpoints": [],
+          "database_tables": [],
+          "integration_flows": []
+        },
+        "patterns": {
+          "test_case_templates": {
+            "ui_component": {
+              "template": "## 테스트 항목 - {component_name}\n**생성 시점**: {timestamp}\n**Context 정보**: {context_details}\n\n### 테스트 케이스\n{test_cases}",
+              "required_fields": ["component_name", "css_classes", "event_handlers", "state_management"]
+            },
+            "api_endpoint": {
+              "template": "## 테스트 항목 - {endpoint_path}\n**생성 시점**: {timestamp}\n**Context 정보**: {method}, {parameters}, {responses}\n\n### 테스트 케이스\n{crud_tests}",
+              "required_fields": ["endpoint_path", "http_method", "parameters", "response_codes"]
+            },
+            "database_table": {
+              "template": "## 테스트 항목 - {table_name} 테이블\n**생성 시점**: {timestamp}\n**Context 정보**: {schema_info}\n\n### 테스트 케이스\n{schema_tests}\n{crud_tests}\n{relationship_tests}",
+              "required_fields": ["table_name", "columns", "indexes", "relationships"]
+            }
+          }
+        }
+      }
+    },
+    "auto_generation_rules": {
+      "ui_components": {
+        "triggers": ["jsx_file_creation", "vue_file_creation", "component_export"],
+        "capture_elements": ["className", "id", "data-*", "onClick", "onSubmit", "useState", "useEffect"],
+        "test_generation": "automatic",
+        "priority": "high"
+      },
+      "api_endpoints": {
+        "triggers": ["route_handler_creation", "api_file_creation", "express_route", "nextjs_api"],
+        "capture_elements": ["method", "path", "params", "body", "response", "status_codes"],
+        "test_generation": "automatic", 
+        "priority": "high"
+      },
+      "database_operations": {
+        "triggers": ["schema_creation", "migration_file", "model_definition", "query_creation"],
+        "capture_elements": ["table_name", "columns", "indexes", "relationships", "constraints"],
+        "test_generation": "automatic",
+        "priority": "medium"
+      },
+      "integration_flows": {
+        "triggers": ["feature_completion", "workflow_implementation", "external_integration"],
+        "capture_elements": ["user_journey", "component_interactions", "api_calls", "database_operations"],
+        "test_generation": "semi_automatic",
+        "priority": "medium"
+      }
+    },
+    "learning_patterns": {
+      "successful_contexts": [],
+      "failed_patterns": [],
+      "optimization_suggestions": [],
+      "reuse_opportunities": []
+    },
+    "contest_continuity": {
+      "previous_projects": [],
+      "reusable_patterns": [],
+      "common_structures": [],
+      "optimization_history": []
+    }
+  },
+  "mcp_integration": {
+    "active_servers": ["sequential", "context7"],
+    "auto_activation_rules": {
+      "context7": ["library_documentation", "pattern_research"],
+      "sequential": ["complex_analysis", "systematic_documentation"]
+    },
+    "tool_coordination": {
+      "primary_tools": ["Read", "Write", "Edit", "TodoWrite"],
+      "context_tools": ["Grep", "Glob", "Task"],
+      "validation_tools": ["Bash"]
+    }
+  }
+}

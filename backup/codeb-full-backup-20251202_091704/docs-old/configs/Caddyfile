@@ -1,0 +1,126 @@
+# CodeB Server Caddy Configuration
+# Auto HTTPS with Let's Encrypt
+
+# Main domain - Landing page and API
+one-q.xyz, www.one-q.xyz {
+    # API routes
+    handle /api/* {
+        reverse_proxy localhost:3008
+    }
+    
+    # Health check
+    handle /health {
+        reverse_proxy localhost:3008/api/health
+    }
+    
+    # Serve static landing page
+    handle {
+        root * /var/www/codeb
+        file_server
+        try_files {path} index.html
+    }
+    
+    # Security headers
+    header {
+        X-Frame-Options "SAMEORIGIN"
+        X-XSS-Protection "1; mode=block"
+        X-Content-Type-Options "nosniff"
+        Referrer-Policy "no-referrer-when-downgrade"
+        Strict-Transport-Security "max-age=31536000; includeSubDomains"
+    }
+    
+    # Compression
+    encode gzip
+    
+    # Logging
+    log {
+        output file /var/log/caddy/main.log
+        format json
+    }
+}
+
+# Project subdomains
+test-nextjs.one-q.xyz {
+    reverse_proxy localhost:4001
+    encode gzip
+    log {
+        output file /var/log/caddy/test-nextjs.log
+        format json
+    }
+}
+
+video-platform.one-q.xyz, video.one-q.xyz {
+    reverse_proxy localhost:4002
+    encode gzip
+    log {
+        output file /var/log/caddy/video-platform.log
+        format json
+    }
+}
+
+test-cli-project.one-q.xyz, test-cli.one-q.xyz {
+    reverse_proxy localhost:4003
+    encode gzip
+    log {
+        output file /var/log/caddy/test-cli-project.log
+        format json
+    }
+}
+
+# Box subdomain - Points to port 3010
+box.one-q.xyz {
+    reverse_proxy localhost:3010
+    encode gzip
+
+    # Security headers
+    header {
+        X-Frame-Options "SAMEORIGIN"
+        X-XSS-Protection "1; mode=block"
+        X-Content-Type-Options "nosniff"
+        Referrer-Policy "no-referrer-when-downgrade"
+    }
+
+    log {
+        output file /var/log/caddy/box.log
+        format json
+    }
+}
+
+# Wildcard for future projects (manual DNS setup required)
+*.one-q.xyz {
+    # Extract subdomain
+    @subdomain host_regexp subdomain ([^.]+)\.one-q\.xyz
+    
+    # Default reverse proxy pattern (port = 4000 + project_id)
+    # This would need custom logic for dynamic routing
+    
+    # For now, respond with a maintenance page
+    respond "Project not configured. Contact administrator." 503
+    
+    log {
+        output file /var/log/caddy/wildcard.log
+        format json
+    }
+}
+
+# Admin interface (optional - for Caddy API access)
+# localhost:2019 {
+#     reverse_proxy localhost:2019
+# }
+
+# Global options
+{
+    # Email for Let's Encrypt
+    email admin@one-q.xyz
+    
+    # ACME CA (Let's Encrypt)
+    acme_ca https://acme-v02.api.letsencrypt.org/directory
+    
+    # Admin API
+    admin localhost:2019
+    
+    # Log level
+    log {
+        level INFO
+    }
+}

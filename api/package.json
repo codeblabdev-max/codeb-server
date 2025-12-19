@@ -1,0 +1,30 @@
+{
+  "name": "codeb-project-generator-api",
+  "version": "2.5.4",
+  "description": "CodeB Project Generator API - Auto-generate complete project infrastructure",
+  "type": "module",
+  "main": "project-generator.js",
+  "scripts": {
+    "start": "node project-generator.js",
+    "dev": "node --watch project-generator.js",
+    "test": "echo \"Tests coming soon\" && exit 0"
+  },
+  "keywords": [
+    "codeb",
+    "project-generator",
+    "api",
+    "quadlet",
+    "github-actions",
+    "docker",
+    "podman"
+  ],
+  "author": "CodeB Team",
+  "license": "MIT",
+  "dependencies": {
+    "express": "^4.18.2",
+    "chalk": "^5.3.0"
+  },
+  "engines": {
+    "node": ">=18.0.0"
+  }
+}

@@ -1,0 +1,28 @@
+# Vultr API Key
+vultr_api_key = "YOUR_VULTR_API_KEY_HERE"
+
+# Region (optional - defaults to Seoul)
+# region = "icn"
+
+# Server configuration (optional - using defaults)
+# server_config = {
+#   plan        = "vc2-2c-16gb"
+#   os_id       = 1743
+#   label       = "coolify-server"
+#   hostname    = "coolify"
+#   enable_ipv6 = false
+#   backups     = "disabled"
+#   ddos_protection = false
+# }
+
+# Block Storage configuration (optional - using defaults)
+# block_storage_config = {
+#   size_gb     = 100
+#   label       = "coolify-backup"
+#   block_type  = "storage_opt"
+# }
+
+# SSH Keys (optional - add your public keys)
+# ssh_keys = [
+#   "ssh-rsa AAAAB3NzaC1yc2EAAAADAQABAAABAQ... user@host"
+# ]

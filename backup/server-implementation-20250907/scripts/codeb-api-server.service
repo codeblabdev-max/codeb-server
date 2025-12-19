@@ -1,0 +1,38 @@
+[Unit]
+Description=CodeB API Server v2.0
+After=network.target
+Wants=network.target
+
+[Service]
+Type=simple
+User=root
+WorkingDirectory=/root
+ExecStart=/usr/bin/node /root/codeb-api-server.js
+Restart=always
+RestartSec=5
+StandardOutput=journal
+StandardError=journal
+SyslogIdentifier=codeb-api-server
+
+# 환경 변수 설정 (스토리지 기반)
+Environment=NODE_ENV=production
+Environment=SERVER_IP=141.164.60.51
+Environment=BASE_DOMAIN=one-q.xyz
+Environment=API_PORT=3008
+Environment=PORT_RANGE_START=4000
+Environment=PORT_RANGE_END=4999
+Environment=STORAGE_BASE=/mnt/blockstorage
+Environment=PROJECT_BASE=/mnt/blockstorage/projects
+Environment=DB_FILE=/mnt/blockstorage/projects.json
+Environment=LOG_LEVEL=info
+Environment=ENABLE_FILE_LOGGING=true
+Environment=LOG_DIR=/mnt/blockstorage/logs
+Environment=BACKUP_DIR=/mnt/blockstorage/backups
+Environment=ENABLE_AUTO_BACKUP=true
+Environment=BACKUP_RETENTION_DAYS=30
+Environment=ENABLE_CACHE=true
+Environment=CACHE_TTL=3600
+Environment=MAX_CONCURRENT_BUILDS=3
+
+[Install]
+WantedBy=multi-user.target

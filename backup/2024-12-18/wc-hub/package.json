@@ -1,0 +1,32 @@
+{
+  "name": "@wdot/control",
+  "version": "1.0.0",
+  "description": "wdot Control - Server Management API with Protection Layer",
+  "type": "module",
+  "main": "dist/index.js",
+  "scripts": {
+    "dev": "tsx watch src/index.ts",
+    "build": "tsc",
+    "start": "node dist/index.js",
+    "db:init": "tsx scripts/init-db.ts"
+  },
+  "dependencies": {
+    "hono": "^4.6.0",
+    "@hono/node-server": "^1.13.0",
+    "better-sqlite3": "^11.5.0",
+    "ssh2": "^1.16.0",
+    "zod": "^3.23.8",
+    "nanoid": "^5.0.9",
+    "dotenv": "^16.3.1"
+  },
+  "devDependencies": {
+    "@types/better-sqlite3": "^7.6.11",
+    "@types/node": "^22.10.0",
+    "@types/ssh2": "^1.15.1",
+    "tsx": "^4.19.0",
+    "typescript": "^5.6.0"
+  },
+  "engines": {
+    "node": ">=20.0.0"
+  }
+}

@@ -1,68 +1,86 @@
 #!/bin/bash
-# /we: CLI 설치 스크립트
-# 직원용 원클릭 설치
+#
+# CodeB we-cli 원라인 설치 스크립트
+#
+# 설치 명령어:
+#   curl -fsSL https://raw.githubusercontent.com/codeblabdev-max/codeb-server/main/cli/install.sh | bash
+#
+# 또는 npm 직접 설치:
+#   npm install -g @codeb/we-cli
+#
 
 set -e
 
+# 색상 정의
+RED='\033[0;31m'
+GREEN='\033[0;32m'
+YELLOW='\033[1;33m'
+CYAN='\033[0;36m'
+NC='\033[0m'
+
+echo -e "${CYAN}"
 echo "╔═══════════════════════════════════════════════╗"
-echo "║   /we: CLI v2.4.0 설치                        ║"
+echo "║   CodeB we-cli v2.6.0 설치                    ║"
+echo "║   배포 • 분석 • 워크플로우 • MCP 통합          ║"
 echo "╚═══════════════════════════════════════════════╝"
-echo ""
+echo -e "${NC}"
 
 # Node.js 버전 확인
-NODE_VERSION=$(node -v 2>/dev/null | cut -d'v' -f2 | cut -d'.' -f1)
-if [ -z "$NODE_VERSION" ] || [ "$NODE_VERSION" -lt 18 ]; then
-    echo "❌ Node.js 18 이상이 필요합니다."
-    echo "   설치: https://nodejs.org/"
+echo -e "${YELLOW}1. Node.js 버전 확인...${NC}"
+if ! command -v node &> /dev/null; then
+    echo -e "${RED}❌ Node.js가 설치되어 있지 않습니다.${NC}"
+    echo "   https://nodejs.org 에서 Node.js 18+ 버전을 설치하세요."
     exit 1
 fi
-echo "✅ Node.js v$(node -v | cut -d'v' -f2) 확인"
 
-# 설치 디렉토리
-INSTALL_DIR="$HOME/.we-cli"
+NODE_VERSION=$(node -v | cut -d'v' -f2 | cut -d'.' -f1)
+if [ "$NODE_VERSION" -lt 18 ]; then
+    echo -e "${RED}❌ Node.js 18+ 버전이 필요합니다. 현재: $(node -v)${NC}"
+    exit 1
+fi
+echo -e "${GREEN}   ✅ Node.js $(node -v)${NC}"
 
-# 기존 설치 제거
-if [ -d "$INSTALL_DIR" ]; then
-    echo "🔄 기존 설치 업데이트 중..."
-    cd "$INSTALL_DIR"
-    git pull origin main
+# npm 버전 확인
+echo -e "${YELLOW}2. npm 버전 확인...${NC}"
+NPM_VERSION=$(npm -v | cut -d'.' -f1)
+echo -e "${GREEN}   ✅ npm $(npm -v)${NC}"
+
+# we-cli 설치
+echo -e "${YELLOW}3. @codeb/we-cli 설치...${NC}"
+npm install -g @codeb/we-cli
+
+# 설치 확인
+echo -e "${YELLOW}4. 설치 확인...${NC}"
+if command -v we &> /dev/null; then
+    echo -e "${GREEN}   ✅ we 명령어 설치 완료${NC}"
 else
-    echo "📥 CLI 다운로드 중..."
-    git clone https://github.com/codeblabdev-max/codeb-server.git "$INSTALL_DIR"
+    echo -e "${RED}   ❌ we 명령어 설치 실패${NC}"
+    exit 1
 fi
 
-# CLI 디렉토리로 이동
-cd "$INSTALL_DIR/cli"
-
-# 의존성 설치
-echo "📦 CLI 의존성 설치 중..."
-npm install --silent
-
-# MCP 서버 빌드 (Claude Code 연동용)
-echo "🔧 MCP 서버 빌드 중..."
-MCP_DIR="$INSTALL_DIR/codeb-deploy-system/mcp-server"
-if [ -d "$MCP_DIR" ]; then
-    cd "$MCP_DIR"
-    npm install --silent 2>/dev/null || true
-    npm run build --silent 2>/dev/null || echo "   ⚠️  MCP 빌드 실패 (나중에 수동 빌드 가능)"
-    cd "$INSTALL_DIR/cli"
-else
-    echo "   ⚠️  MCP 서버 디렉토리 없음 (선택 사항)"
-fi
-
-# 전역 링크
-echo "🔗 전역 명령어 등록 중..."
-npm link --silent 2>/dev/null || sudo npm link --silent
-
+# 완료 메시지
 echo ""
-echo "╔═══════════════════════════════════════════════╗"
-echo "║   ✅ 설치 완료!                               ║"
-echo "╚═══════════════════════════════════════════════╝"
+echo -e "${GREEN}═══════════════════════════════════════════════════${NC}"
+echo -e "${GREEN}✅ 설치 완료!${NC}"
+echo -e "${GREEN}═══════════════════════════════════════════════════${NC}"
 echo ""
-echo "다음 단계:"
-echo "  1. 설정 초기화:    we config init"
-echo "  2. MCP 설정:       we mcp setup"
-echo "  3. Claude Code 재시작 (Cmd+Shift+P → Claude: Restart)"
-echo "  4. 버전 확인:      we --version"
-echo "  5. 도움말:         we help"
+echo -e "${CYAN}🚀 시작하기:${NC}"
+echo "   we help                    - 도움말 보기"
+echo "   we config init             - 설정 초기화"
+echo "   we workflow init myapp     - 프로젝트 생성"
+echo "   we deploy myapp            - 배포"
+echo ""
+echo -e "${CYAN}📦 자동 설치 항목:${NC}"
+echo "   ~/.claude/commands/we/     - Slash Commands"
+echo "   ~/.claude/CLAUDE.md        - AI 규칙 (Socket.IO 금지, Centrifugo 사용)"
+echo "   ~/.claude/hooks/           - 보안 Hooks"
+echo "   ~/.claude.json             - MCP 서버 설정"
+echo ""
+echo -e "${CYAN}🌐 서버 인프라:${NC}"
+echo "   n1.codeb.kr (158.247.203.55) - App Server"
+echo "   n2.codeb.kr (141.164.42.213) - Streaming (Centrifugo)"
+echo "   n3.codeb.kr (64.176.226.119) - Storage (PostgreSQL, Redis)"
+echo "   n4.codeb.kr (141.164.37.63)  - Backup"
+echo ""
+echo -e "${YELLOW}⚠️  Claude Code를 재시작하여 MCP와 명령어를 로드하세요.${NC}"
 echo ""

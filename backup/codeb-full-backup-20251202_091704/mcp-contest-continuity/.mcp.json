@@ -1,0 +1,12 @@
+{
+  "mcpServers": {
+    "contest-continuity": {
+      "type": "stdio",
+      "command": "node",
+      "args": [
+        "/Users/admin/new_project/codeb-server/mcp-contest-continuity/dist/simple-server.js"
+      ],
+      "env": {}
+    }
+  }
+}

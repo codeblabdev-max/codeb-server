@@ -23,7 +23,7 @@ import { formatRelativeTime } from "@/lib/utils";
 const domains = [
   {
     id: "1",
-    domain: "videopick.one-q.xyz",
+    domain: "videopick.codeb.kr",
     projectName: "videopick-web",
     environment: "production" as const,
     targetPort: 4001,
@@ -34,7 +34,7 @@ const domains = [
   },
   {
     id: "2",
-    domain: "videopick-staging.one-q.xyz",
+    domain: "videopick-staging.codeb.kr",
     projectName: "videopick-web",
     environment: "staging" as const,
     targetPort: 3001,
@@ -45,7 +45,7 @@ const domains = [
   },
   {
     id: "3",
-    domain: "api.one-q.xyz",
+    domain: "api.codeb.kr",
     projectName: "api-gateway",
     environment: "production" as const,
     targetPort: 4002,
@@ -56,7 +56,7 @@ const domains = [
   },
   {
     id: "4",
-    domain: "api-staging.one-q.xyz",
+    domain: "api-staging.codeb.kr",
     projectName: "api-gateway",
     environment: "staging" as const,
     targetPort: 3002,
@@ -67,7 +67,7 @@ const domains = [
   },
   {
     id: "5",
-    domain: "admin.one-q.xyz",
+    domain: "admin.codeb.kr",
     projectName: "admin-panel",
     environment: "production" as const,
     targetPort: 4003,

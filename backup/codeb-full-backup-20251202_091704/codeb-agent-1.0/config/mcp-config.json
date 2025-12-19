@@ -1,0 +1,83 @@
+{
+  "name": "codeb-agent",
+  "version": "1.0.0",
+  "description": "CodeB Agent MCP Server - 49 Agents System",
+  "commands": {
+    "analyze_project": {
+      "description": "Run 49-agent analysis on project",
+      "script": "./scripts/codeb-agent-executor.sh",
+      "returns": "Analysis report and SQLite results"
+    },
+    "save_analysis": {
+      "description": "Save analysis results to SQLite",
+      "handler": "sqlite",
+      "database": ".codeb-checkpoint/context.db"
+    },
+    "get_report": {
+      "description": "Get latest analysis report",
+      "handler": "file",
+      "path": ".codeb-checkpoint/analysis-report.md"
+    }
+  },
+  "tools": [
+    {
+      "name": "codeb_analyze",
+      "description": "Execute 49-agent analysis in 7 batches",
+      "inputSchema": {
+        "type": "object",
+        "properties": {
+          "projectPath": {
+            "type": "string",
+            "description": "Path to project to analyze"
+          }
+        }
+      }
+    },
+    {
+      "name": "codeb_optimize",
+      "description": "Run 5-wave optimization",
+      "inputSchema": {
+        "type": "object",
+        "properties": {
+          "waves": {
+            "type": "number",
+            "default": 5
+          },
+          "target": {
+            "type": "string",
+            "enum": ["all", "frontend", "backend", "deps", "docker"]
+          }
+        }
+      }
+    },
+    {
+      "name": "codeb_cleanup",
+      "description": "Clean up duplicate dependencies and code",
+      "inputSchema": {
+        "type": "object",
+        "properties": {
+          "target": {
+            "type": "string",
+            "enum": ["deps", "code", "all"]
+          }
+        }
+      }
+    }
+  ],
+  "integration": {
+    "claudeCode": {
+      "enabled": true,
+      "prefix": "@codeb-",
+      "avoidConflicts": true
+    },
+    "sqlite": {
+      "database": ".codeb-checkpoint/context.db",
+      "persistent": true
+    },
+    "batchProcessing": {
+      "maxParallel": 10,
+      "totalAgents": 49,
+      "batches": 7
+    }
+  }
+}

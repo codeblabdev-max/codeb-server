@@ -102,7 +102,7 @@ async function initConfig(options) {
         type: 'input',
         name: 'baseDomain',
         message: '기본 도메인:',
-        default: existingConfig.CODEB_DOMAIN || 'one-q.xyz'
+        default: existingConfig.CODEB_DOMAIN || 'codeb.kr'
       }
     ]);
 
@@ -151,7 +151,7 @@ function generateEnvTemplate(config) {
 CODEB_SERVER_HOST=${config.serverHost || ''}
 CODEB_SERVER_USER=${config.serverUser || 'root'}
 CODEB_DB_PASSWORD=${config.dbPassword || ''}
-CODEB_DOMAIN=${config.baseDomain || 'one-q.xyz'}
+CODEB_DOMAIN=${config.baseDomain || 'codeb.kr'}
 
 # 선택사항
 VULTR_API_KEY=${config.vultrApiKey || ''}

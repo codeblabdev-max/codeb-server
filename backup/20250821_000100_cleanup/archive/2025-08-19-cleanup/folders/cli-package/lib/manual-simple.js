@@ -1,0 +1,256 @@
+const chalk = require('chalk');
+
+const manualContent = {
+  ko: {
+    main: {
+      title: '📚 CodeB CLI 완전 사용 매뉴얼',
+      sections: [
+        { key: 'install', name: '설치 가이드', emoji: '📦' },
+        { key: 'deploy', name: '배포 가이드', emoji: '🚀' },
+        { key: 'config', name: '설정 관리', emoji: '⚙️' },
+        { key: 'examples', name: '실제 예시', emoji: '💡' },
+        { key: 'troubleshoot', name: '문제 해결', emoji: '🐛' },
+        { key: 'advanced', name: '고급 사용법', emoji: '🔧' }
+      ],
+      footer: '\n💡 특정 섹션 보기: codeb doc <섹션명>\n💡 영어 버전: codeb doc --lang en'
+    },
+    
+    install: {
+      title: '📦 설치 가이드',
+      content: [
+        chalk.bold('🚀 빠른 설치'),
+        '',
+        chalk.cyan('방법 1: npm 전역 설치 (추천)'),
+        'npm install -g codeb-cli',
+        '',
+        chalk.cyan('방법 2: 로컬 설치'),
+        'git clone https://github.com/your-username/codeb-cli.git',
+        'cd codeb-cli',
+        './install.sh',
+        '',
+        chalk.bold('📋 요구사항'),
+        '• Node.js 18.0.0 이상',
+        '• npm 9.0.0 이상',
+        '• Git (배포할 프로젝트용)',
+        '',
+        chalk.bold('🔧 설치 확인'),
+        'codeb --version',
+        'codeb health',
+        'codeb config --show',
+        '',
+        chalk.bold('🔄 업데이트'),
+        'npm update -g codeb-cli',
+        '',
+        chalk.bold('🗑️ 제거'),
+        'npm uninstall -g codeb-cli',
+        'codeb config --reset  # 설정 초기화'
+      ].join('\n')
+    },
+
+    deploy: {
+      title: '🚀 배포 가이드',
+      content: [
+        chalk.bold('✨ 기본 배포'),
+        '',
+        chalk.cyan('Git 저장소 배포'),
+        'codeb deploy my-app https://github.com/username/repository',
+        '→ https://my-app.one-q.xyz',
+        '',
+        chalk.cyan('현재 폴더 배포 (Git 저장소)'),
+        'cd /path/to/your/project',
+        'codeb init awesome-project',
+        '→ https://awesome-project.one-q.xyz',
+        '',
+        chalk.bold('🎯 고급 옵션'),
+        '',
+        chalk.cyan('브랜치 지정'),
+        'codeb deploy my-app https://github.com/user/repo --branch develop',
+        '',
+        chalk.cyan('포트 지정'),
+        'codeb deploy my-app https://github.com/user/repo --port 8080',
+        '',
+        chalk.cyan('빌드 타입'),
+        'codeb deploy my-app https://github.com/user/repo --type dockerfile',
+        '',
+        chalk.cyan('데이터베이스 추가'),
+        'codeb deploy my-app https://github.com/user/repo --db postgresql mysql redis',
+        '',
+        chalk.cyan('환경변수 설정'),
+        'codeb deploy my-app https://github.com/user/repo \\',
+        '  --env NODE_ENV=production \\',
+        '  --env API_KEY=secret123 \\',
+        '  --env DATABASE_URL=postgres://...',
+        '',
+        chalk.bold('📊 배포 후 관리'),
+        'codeb status                    # 모든 프로젝트 상태',
+        'codeb status my-app            # 특정 프로젝트 상태',
+        'codeb logs my-app              # 로그 확인',
+        'codeb delete my-app            # 프로젝트 삭제',
+        '',
+        chalk.bold('⏱️ 배포 시간'),
+        '• 일반적인 앱: 1-2분',
+        '• DNS 전파: 1-5분',
+        '• SSL 발급: 1-2분'
+      ].join('\n')
+    },
+
+    examples: {
+      title: '💡 실제 예시',
+      content: [
+        chalk.bold('🎯 실전 시나리오'),
+        '',
+        chalk.cyan('1. React 앱 배포'),
+        'codeb deploy react-todo https://github.com/username/react-todo-app',
+        '→ https://react-todo.one-q.xyz',
+        '',
+        chalk.cyan('2. Next.js + PostgreSQL'),
+        'codeb deploy blog-app https://github.com/username/nextjs-blog \\',
+        '  --db postgresql \\',
+        '  --env NEXTAUTH_SECRET=your-secret \\',
+        '  --env NEXTAUTH_URL=https://blog-app.one-q.xyz',
+        '→ https://blog-app.one-q.xyz + PostgreSQL 데이터베이스',
+        '',
+        chalk.cyan('3. 마이크로서비스'),
+        'codeb deploy user-service https://github.com/company/user-service --db postgresql',
+        'codeb deploy order-service https://github.com/company/order-service --db mysql',
+        'codeb deploy cache-service https://github.com/company/cache-service --db redis',
+        '',
+        chalk.cyan('4. 환경별 배포'),
+        'codeb deploy myapp-dev https://github.com/user/app --branch develop',
+        'codeb deploy myapp-staging https://github.com/user/app --branch staging',
+        'codeb deploy myapp-prod https://github.com/user/app --branch main',
+        '',
+        chalk.bold('🔄 완전한 워크플로우'),
+        '# 1. 개발',
+        'git clone https://github.com/username/my-project.git',
+        'cd my-project',
+        '# 개발 작업...',
+        '',
+        '# 2. 스테이징 배포',
+        'codeb deploy staging-project . --branch develop',
+        '',
+        '# 3. 프로덕션 배포',
+        'codeb deploy my-project . --branch main --env NODE_ENV=production',
+        '',
+        '# 4. 상태 모니터링',
+        'codeb status',
+        'codeb logs my-project'
+      ].join('\n')
+    },
+
+    troubleshoot: {
+      title: '🐛 문제 해결',
+      content: [
+        chalk.bold('🚨 자주 발생하는 문제'),
+        '',
+        chalk.cyan('1. 서버 연결 실패'),
+        '문제: "서버 연결을 확인할 수 없습니다"',
+        '해결:',
+        '  codeb health',
+        '  codeb config --server http://141.164.60.51:3007',
+        '',
+        chalk.cyan('2. Git 저장소 인식 실패'),
+        '문제: "Git 저장소가 아니거나 원격 저장소가 설정되지 않았습니다"',
+        '해결:',
+        '  git remote -v  # 원격 저장소 확인',
+        '  git remote add origin https://github.com/username/repo',
+        '',
+        chalk.cyan('3. 프로젝트 이름 오류'),
+        '문제: "프로젝트 이름은 영문 소문자, 숫자, 하이픈만 사용 가능"',
+        '해결:',
+        '  ✅ my-app, blog2024, api-server',
+        '  ❌ My-App, blog_2024, api.server',
+        '',
+        chalk.cyan('4. 배포 실패'),
+        '문제: 배포 중 오류 발생',
+        '해결:',
+        '  codeb status my-app    # 상태 확인',
+        '  codeb logs my-app      # 로그 확인',
+        '  codeb health           # 서버 상태',
+        '',
+        chalk.cyan('5. DNS 전파 지연'),
+        '문제: 도메인이 바로 접근되지 않음',
+        '해결:',
+        '  # 1-5분 대기 (정상)',
+        '  dig +short my-app.one-q.xyz  # DNS 확인',
+        '',
+        chalk.bold('🔧 고급 문제 해결'),
+        '',
+        chalk.cyan('권한 오류'),
+        'sudo npm install -g codeb-cli',
+        '# 또는 nvm 사용 권장',
+        '',
+        chalk.cyan('Node.js 버전 문제'),
+        'nvm install 18',
+        'nvm use 18',
+        'npm install -g codeb-cli'
+      ].join('\n')
+    }
+  },
+
+  en: {
+    main: {
+      title: '📚 CodeB CLI Complete Manual',
+      sections: [
+        { key: 'install', name: 'Installation Guide', emoji: '📦' },
+        { key: 'deploy', name: 'Deployment Guide', emoji: '🚀' },
+        { key: 'config', name: 'Configuration', emoji: '⚙️' },
+        { key: 'examples', name: 'Examples', emoji: '💡' },
+        { key: 'troubleshoot', name: 'Troubleshooting', emoji: '🐛' },
+        { key: 'advanced', name: 'Advanced Usage', emoji: '🔧' }
+      ],
+      footer: '\n💡 View specific section: codeb doc <section>\n💡 Korean version: codeb doc --lang ko'
+    },
+    
+    install: {
+      title: '📦 Installation Guide',
+      content: [
+        chalk.bold('🚀 Quick Installation'),
+        '',
+        chalk.cyan('Method 1: Global npm install (Recommended)'),
+        'npm install -g codeb-cli',
+        '',
+        chalk.cyan('Method 2: Local installation'),
+        'git clone https://github.com/your-username/codeb-cli.git',
+        'cd codeb-cli',
+        './install.sh',
+        '',
+        chalk.bold('📋 Requirements'),
+        '• Node.js 18.0.0 or higher',
+        '• npm 9.0.0 or higher',
+        '• Git (for projects to deploy)',
+        '',
+        chalk.bold('🔧 Verify Installation'),
+        'codeb --version',
+        'codeb health',
+        'codeb config --show'
+      ].join('\n')
+    },
+
+    deploy: {
+      title: '🚀 Deployment Guide',
+      content: [
+        chalk.bold('✨ Basic Deployment'),
+        '',
+        chalk.cyan('Deploy Git Repository'),
+        'codeb deploy my-app https://github.com/username/repository',
+        '→ https://my-app.one-q.xyz',
+        '',
+        chalk.cyan('Deploy Current Directory'),
+        'cd /path/to/your/project',
+        'codeb init awesome-project',
+        '→ https://awesome-project.one-q.xyz',
+        '',
+        chalk.bold('🎯 Advanced Options'),
+        '',
+        chalk.cyan('Specify Branch'),
+        'codeb deploy my-app https://github.com/user/repo --branch develop',
+        '',
+        chalk.cyan('Add Databases'),
+        'codeb deploy my-app https://github.com/user/repo --db postgresql mysql redis'
+      ].join('\n')
+    }
+  }
+};
+
+module.exports = manualContent;

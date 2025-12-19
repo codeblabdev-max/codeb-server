@@ -1,0 +1,404 @@
+openapi: 3.0.3
+info:
+  title: CodeB Notification System API
+  version: 1.0.0
+  description: |
+    Complete notification system for CodeB deployment infrastructure.
+    Supports Slack, Discord, Email notifications with event-based triggers.
+  contact:
+    name: CodeB Team
+    email: support@codeb.dev
+
+servers:
+  - url: http://localhost:7777/api/v1
+    description: Local Development
+  - url: http://141.164.60.51:7777/api/v1
+    description: Production Server
+
+tags:
+  - name: Notifications
+    description: Send notifications to various channels
+  - name: Configuration
+    description: Manage notification settings
+  - name: Templates
+    description: Notification template management
+  - name: Health
+    description: System health endpoints
+
+paths:
+  /notify:
+    post:
+      summary: Send notification
+      description: Send notification to configured channels (Slack, Discord, Email)
+      operationId: sendNotification
+      tags:
+        - Notifications
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/NotificationRequest'
+            examples:
+              deploymentSuccess:
+                summary: Deployment Success
+                value:
+                  event: deployment.success
+                  project: myapp
+                  environment: production
+                  data:
+                    version: "1.2.3"
+                    duration: "45s"
+                    deployer: "john@example.com"
+              serverDown:
+                summary: Server Down Alert
+                value:
+                  event: server.down
+                  severity: critical
+                  data:
+                    server: "web-01"
+                    lastSeen: "2025-12-19T10:30:00Z"
+              healthcheckFail:
+                summary: Healthcheck Failure
+                value:
+                  event: healthcheck.failed
+                  project: api-service
+                  severity: warning
+                  data:
+                    endpoint: "/health"
+                    statusCode: 500
+                    attempts: 3
+      responses:
+        '200':
+          description: Notification sent successfully
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/NotificationResponse'
+        '400':
+          description: Invalid request
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Error'
+        '500':
+          description: Internal server error
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Error'
+
+  /notify/test:
+    post:
+      summary: Test notification
+      description: Send test notification to verify channel configuration
+      operationId: testNotification
+      tags:
+        - Notifications
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required:
+                - channel
+              properties:
+                channel:
+                  type: string
+                  enum: [slack, discord, email, all]
+                message:
+                  type: string
+                  default: "This is a test notification from CodeB"
+      responses:
+        '200':
+          description: Test notification sent
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/NotificationResponse'
+
+  /config/notifications:
+    get:
+      summary: Get notification configuration
+      description: Retrieve current notification settings (sensitive data masked)
+      operationId: getNotificationConfig
+      tags:
+        - Configuration
+      responses:
+        '200':
+          description: Configuration retrieved
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/NotificationConfig'
+
+    put:
+      summary: Update notification configuration
+      description: Update notification settings
+      operationId: updateNotificationConfig
+      tags:
+        - Configuration
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/NotificationConfigUpdate'
+      responses:
+        '200':
+          description: Configuration updated
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  success:
+                    type: boolean
+                  message:
+                    type: string
+
+  /health/notifications:
+    get:
+      summary: Notification system health
+      description: Check health of all notification channels
+      operationId: notificationHealth
+      tags:
+        - Health
+      responses:
+        '200':
+          description: Health status
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/HealthResponse'
+
+components:
+  schemas:
+    NotificationRequest:
+      type: object
+      required:
+        - event
+      properties:
+        event:
+          type: string
+          description: Event type triggering the notification
+          enum:
+            - deployment.started
+            - deployment.success
+            - deployment.failed
+            - server.up
+            - server.down
+            - healthcheck.failed
+            - resource.threshold
+            - backup.completed
+            - backup.failed
+        project:
+          type: string
+          description: Project name
+          example: "myapp"
+        environment:
+          type: string
+          description: Environment name
+          enum: [development, staging, production]
+          default: production
+        severity:
+          type: string
+          description: Notification severity level
+          enum: [info, warning, error, critical]
+          default: info
+        channels:
+          type: array
+          description: Specific channels to notify (overrides default)
+          items:
+            type: string
+            enum: [slack, discord, email]
+        data:
+          type: object
+          description: Additional event-specific data
+          additionalProperties: true
+
+    NotificationResponse:
+      type: object
+      properties:
+        success:
+          type: boolean
+        messageId:
+          type: string
+          description: Unique notification ID
+        sentTo:
+          type: array
+          items:
+            type: object
+            properties:
+              channel:
+                type: string
+              status:
+                type: string
+                enum: [sent, failed, skipped]
+              error:
+                type: string
+        timestamp:
+          type: string
+          format: date-time
+
+    NotificationConfig:
+      type: object
+      properties:
+        enabled:
+          type: boolean
+        channels:
+          type: object
+          properties:
+            slack:
+              type: object
+              properties:
+                enabled:
+                  type: boolean
+                webhookUrl:
+                  type: string
+                  description: "Masked in responses"
+                defaultChannel:
+                  type: string
+                mentionOnCritical:
+                  type: boolean
+            discord:
+              type: object
+              properties:
+                enabled:
+                  type: boolean
+                webhookUrl:
+                  type: string
+                  description: "Masked in responses"
+                username:
+                  type: string
+                avatarUrl:
+                  type: string
+            email:
+              type: object
+              properties:
+                enabled:
+                  type: boolean
+                smtp:
+                  type: object
+                  properties:
+                    host:
+                      type: string
+                    port:
+                      type: integer
+                    secure:
+                      type: boolean
+                    auth:
+                      type: object
+                      properties:
+                        user:
+                          type: string
+                        pass:
+                          type: string
+                          description: "Masked in responses"
+                from:
+                  type: string
+                  format: email
+                to:
+                  type: array
+                  items:
+                    type: string
+                    format: email
+        rules:
+          type: object
+          description: Event-to-channel routing rules
+          additionalProperties:
+            type: array
+            items:
+              type: string
+        thresholds:
+          type: object
+          properties:
+            disk:
+              type: integer
+              description: Disk usage percentage threshold
+            memory:
+              type: integer
+              description: Memory usage percentage threshold
+            cpu:
+              type: integer
+              description: CPU usage percentage threshold
+
+    NotificationConfigUpdate:
+      type: object
+      properties:
+        enabled:
+          type: boolean
+        channels:
+          type: object
+        rules:
+          type: object
+        thresholds:
+          type: object
+
+    HealthResponse:
+      type: object
+      properties:
+        status:
+          type: string
+          enum: [healthy, degraded, unhealthy]
+        channels:
+          type: object
+          properties:
+            slack:
+              $ref: '#/components/schemas/ChannelHealth'
+            discord:
+              $ref: '#/components/schemas/ChannelHealth'
+            email:
+              $ref: '#/components/schemas/ChannelHealth'
+        lastNotification:
+          type: string
+          format: date-time
+
+    ChannelHealth:
+      type: object
+      properties:
+        enabled:
+          type: boolean
+        configured:
+          type: boolean
+        reachable:
+          type: boolean
+        lastSuccess:
+          type: string
+          format: date-time
+        lastError:
+          type: string
+
+    Error:
+      type: object
+      required:
+        - success
+        - error
+      properties:
+        success:
+          type: boolean
+          example: false
+        error:
+          type: object
+          properties:
+            code:
+              type: string
+              example: "INVALID_EVENT_TYPE"
+            message:
+              type: string
+              example: "Event type 'invalid.event' is not recognized"
+            details:
+              type: object
+            timestamp:
+              type: string
+              format: date-time
+
+  securitySchemes:
+    BearerAuth:
+      type: http
+      scheme: bearer
+      bearerFormat: JWT
+
+security:
+  - BearerAuth: []

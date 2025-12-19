@@ -1,7 +1,7 @@
 {
-  "name": "we-cli",
-  "version": "2.5.4",
-  "description": "/we: Web Deploy CLI - Deploy, Analyze, Workflow, Optimize with 7-Agent System + Server Infrastructure Provisioning",
+  "name": "@codeb/we-cli",
+  "version": "3.0.0",
+  "description": "/we: Web Deploy CLI - MCP-First Architecture (scan → up → deploy)",
   "type": "module",
   "bin": {
     "we": "./bin/we.js"
@@ -19,27 +19,36 @@
     "url": "https://github.com/codeblabdev-max/codeb-server.git",
     "directory": "cli"
   },
+  "homepage": "https://github.com/codeblabdev-max/codeb-server#readme",
+  "bugs": {
+    "url": "https://github.com/codeblabdev-max/codeb-server/issues"
+  },
   "scripts": {
     "test": "echo \"Tests coming soon\" && exit 0",
     "link": "npm link",
-    "unlink": "npm unlink -g we-cli",
-    "postinstall": "node scripts/install-commands.js",
-    "install-commands": "node scripts/install-commands.js"
+    "unlink": "npm unlink -g @codeb/we-cli",
+    "postinstall": "node scripts/install-commands.js || exit 0",
+    "install-commands": "node scripts/install-commands.js",
+    "prepublishOnly": "echo '🚀 Publishing @codeb/we-cli...'"
   },
   "keywords": [
     "codeb",
     "cli",
     "deployment",
-    "analysis",
-    "optimization",
     "mcp",
-    "agents"
+    "claude-code",
+    "centrifugo",
+    "websocket",
+    "devops",
+    "automation"
   ],
-  "author": "CodeB Team",
+  "author": "CodeB Team <dev@codeb.kr>",
   "license": "MIT",
   "dependencies": {
     "@modelcontextprotocol/sdk": "^1.25.0",
     "axios": "^1.6.2",
+    "blessed": "^0.1.81",
+    "blessed-contrib": "^4.11.0",
     "chalk": "^5.3.0",
     "cli-progress": "^3.12.0",
     "commander": "^11.1.0",
@@ -52,5 +61,8 @@
   "engines": {
     "node": ">=18.0.0",
     "npm": ">=9.0.0"
+  },
+  "publishConfig": {
+    "access": "public"
   }
 }

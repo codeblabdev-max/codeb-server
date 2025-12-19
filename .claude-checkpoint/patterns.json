@@ -1,0 +1,60 @@
+{
+  "version": "2.0.0",
+  "patterns": {
+    "components": {
+      "auth": {
+        "LoginForm": {
+          "usage": 0,
+          "lastUsed": null,
+          "template": "components/auth/LoginForm.template"
+        },
+        "AuthGuard": {
+          "usage": 0,
+          "lastUsed": null,
+          "template": "components/auth/AuthGuard.template"
+        }
+      },
+      "ui": {
+        "Button": {
+          "usage": 0,
+          "lastUsed": null,
+          "variants": ["primary", "secondary", "danger"]
+        },
+        "Modal": {
+          "usage": 0,
+          "lastUsed": null,
+          "variants": ["dialog", "fullscreen", "drawer"]
+        }
+      }
+    },
+    "api": {
+      "crud": {
+        "create": {"method": "POST", "pattern": "/api/[resource]"},
+        "read": {"method": "GET", "pattern": "/api/[resource]/[id]?"},
+        "update": {"method": "PUT", "pattern": "/api/[resource]/[id]"},
+        "delete": {"method": "DELETE", "pattern": "/api/[resource]/[id]"}
+      },
+      "websocket": {
+        "events": ["connect", "disconnect", "message", "error"],
+        "rooms": ["global", "user", "channel"]
+      }
+    },
+    "database": {
+      "schemas": {
+        "users": {
+          "fields": ["id", "email", "password", "createdAt", "updatedAt"],
+          "relations": ["sessions", "roles"]
+        },
+        "sessions": {
+          "fields": ["id", "userId", "token", "expiresAt"],
+          "relations": ["users"]
+        }
+      }
+    }
+  },
+  "statistics": {
+    "totalPatterns": 15,
+    "reuseRate": 0,
+    "lastExtraction": null
+  }
+}

@@ -1,0 +1,91 @@
+{
+  "timestamp": "2025-09-07T00:55:23.322Z",
+  "wave": 2,
+  "analysis": "performance-optimization",
+  "current_metrics": {
+    "bundle": {
+      "currentSize": 52778,
+      "targetReduction": 0.5,
+      "dependencies": [
+        "path",
+        "crypto",
+        "fs",
+        "./config",
+        "child_process",
+        "util",
+        "express",
+        "cors",
+        "../services/project.service",
+        "../core/server",
+        "../core/config",
+        "../core/database",
+        "../core/podman"
+      ],
+      "duplicates": []
+    },
+    "memory": {
+      "currentUsage": {
+        "heapUsed": 5402000,
+        "heapTotal": 6127616,
+        "external": 1725779,
+        "rss": 45121536
+      },
+      "targetReduction": 0.6,
+      "leaks": [],
+      "hotspots": [
+        {
+          "module": "podman.js",
+          "estimated": "8MB",
+          "reason": "컨테이너 상태 캐싱"
+        },
+        {
+          "module": "database.js",
+          "estimated": "3MB",
+          "reason": "연결 풀링"
+        },
+        {
+          "module": "server.js",
+          "estimated": "2MB",
+          "reason": "미들웨어 스택"
+        }
+      ]
+    },
+    "loadTime": {
+      "currentTime": 0.24350000000000094,
+      "targetImprovement": 0.4,
+      "bottlenecks": []
+    }
+  },
+  "optimization_targets": {
+    "bundle_reduction": "52778B → 26389B (50% 감소)",
+    "memory_reduction": "5MB → 2MB (60% 감소)",
+    "load_time_improvement": "0ms → 0ms (40% 개선)"
+  },
+  "recommendations": [
+    {
+      "priority": "HIGH",
+      "action": "코드 분할 및 lazy loading 구현",
+      "impact": "번들 크기 30-50% 감소"
+    },
+    {
+      "priority": "HIGH",
+      "action": "Tree shaking으로 미사용 코드 제거",
+      "impact": "번들 크기 20-30% 감소"
+    },
+    {
+      "priority": "MEDIUM",
+      "action": "메모리 풀링 및 캐싱 최적화",
+      "impact": "메모리 사용량 40-60% 감소"
+    },
+    {
+      "priority": "MEDIUM",
+      "action": "모듈 로딩 순서 최적화",
+      "impact": "초기 로딩 시간 20-40% 개선"
+    },
+    {
+      "priority": "LOW",
+      "action": "실시간 성능 모니터링 구현",
+      "impact": "지속적인 성능 개선"
+    }
+  ]
+}

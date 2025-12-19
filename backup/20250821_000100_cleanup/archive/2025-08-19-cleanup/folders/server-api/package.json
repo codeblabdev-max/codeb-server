@@ -1,0 +1,48 @@
+{
+  "name": "coolify-powerdns-deployment-server",
+  "version": "1.0.0",
+  "description": "Automated deployment server integrating Coolify PaaS with PowerDNS for one-command Git-to-website deployment",
+  "main": "coolify-final-server.js",
+  "scripts": {
+    "start": "node coolify-final-server.js",
+    "dev": "nodemon coolify-final-server.js",
+    "test": "echo \"Error: no test specified\" && exit 1",
+    "health": "curl http://localhost:3007/api/health",
+    "deploy-test": "curl -X POST http://localhost:3007/api/deploy/complete -H 'Content-Type: application/json' -d '{\"projectName\": \"test-app\", \"gitRepository\": \"https://github.com/dungeun/coolify-nextjs-login-app\"}'",
+    "cleanup": "./cleanup-all-test-projects.sh"
+  },
+  "keywords": [
+    "coolify",
+    "powerdns",
+    "deployment",
+    "paas",
+    "docker",
+    "automation",
+    "git",
+    "ssl",
+    "dns",
+    "devops",
+    "ci-cd"
+  ],
+  "author": "Claude Code Team",
+  "license": "MIT",
+  "dependencies": {
+    "express": "^4.18.2",
+    "axios": "^1.6.0",
+    "uuid": "^9.0.1"
+  },
+  "devDependencies": {
+    "nodemon": "^3.0.2"
+  },
+  "engines": {
+    "node": ">=18.0.0"
+  },
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/your-username/coolify-powerdns-deployment.git"
+  },
+  "bugs": {
+    "url": "https://github.com/your-username/coolify-powerdns-deployment/issues"
+  },
+  "homepage": "https://github.com/your-username/coolify-powerdns-deployment#readme"
+}

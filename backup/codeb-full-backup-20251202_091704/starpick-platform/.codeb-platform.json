@@ -1,0 +1,34 @@
+{
+  "project": "starpick-platform",
+  "template": "nextjs",
+  "created": "2025-09-05T05:26:00Z",
+  "host": "141.164.60.51",
+  "database": {
+    "host": "141.164.60.51",
+    "port": 5434,
+    "user": "user_starpick-platform",
+    "password": "5ce1db51308efcd766bf0405e1d4ee31",
+    "database": "db_starpick-platform",
+    "container": "codeb-db-starpick-platform"
+  },
+  "redis": {
+    "host": "141.164.60.51",
+    "port": 6381,
+    "password": "cd74a8473681352d60d2331b3050c18b",
+    "container": "codeb-redis-starpick-platform"
+  },
+  "storage": {
+    "path": "/mnt/blockstorage/projects/starpick-platform",
+    "url": "http://141.164.60.51:3008/storage/starpick-platform"
+  },
+  "ports": {
+    "db": 5434,
+    "redis": 6381,
+    "app": 3001
+  },
+  "status": {
+    "db": "running",
+    "redis": "pending",
+    "app": "not_deployed"
+  }
+}

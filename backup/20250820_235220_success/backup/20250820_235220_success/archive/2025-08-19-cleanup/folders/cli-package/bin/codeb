@@ -1,0 +1,110 @@
+#!/usr/bin/env node
+
+const { Command } = require('commander');
+const { deploy, init, status, logs, config } = require('../lib/commands');
+const { version } = require('../package.json');
+
+const program = new Command();
+
+program
+  .name('codeb')
+  .description('🚀 One-command deployment CLI using Coolify + PowerDNS')
+  .version(version);
+
+// Deploy command
+program
+  .command('deploy')
+  .alias('d')
+  .description('Deploy a Git repository to your server')
+  .argument('<name>', 'Project name (will be used as subdomain)')
+  .argument('[repository]', 'Git repository URL (optional if in git repo)')
+  .option('-b, --branch <branch>', 'Git branch to deploy', 'main')
+  .option('-p, --port <port>', 'Application port', '3000')
+  .option('-t, --type <type>', 'Build type (nixpacks/dockerfile)', 'nixpacks')
+  .option('--db <databases...>', 'Databases to create (postgresql, mysql, redis, mongodb)')
+  .option('--env <vars...>', 'Environment variables (KEY=VALUE)')
+  .action(deploy);
+
+// Init command - deploy with manual git URL input
+program
+  .command('init')
+  .alias('i')
+  .description('Deploy a project by entering git repository URL manually')
+  .argument('<name>', 'Project name (will be used as subdomain)')
+  .argument('<git-url>', 'Git repository URL (e.g., https://github.com/user/repo.git)')
+  .option('-b, --branch <branch>', 'Git branch to deploy', 'main')
+  .option('-p, --port <port>', 'Application port', '3000')
+  .option('-t, --type <type>', 'Build type (nixpacks/dockerfile)', 'nixpacks')
+  .option('--db <databases...>', 'Databases to create (postgresql, mysql, redis, mongodb)')
+  .option('--env <vars...>', 'Environment variables (KEY=VALUE)')
+  .action(init);
+
+// Status command
+program
+  .command('status')
+  .alias('s')
+  .description('Check deployment status')
+  .argument('[name]', 'Project name (optional - shows all if not specified)')
+  .action(status);
+
+// Logs command
+program
+  .command('logs')
+  .alias('l')
+  .description('View application logs')
+  .argument('<name>', 'Project name')
+  .option('-f, --follow', 'Follow log output')
+  .option('-n, --lines <number>', 'Number of lines to show', '100')
+  .action(logs);
+
+// Config command
+program
+  .command('config')
+  .alias('c')
+  .description('Manage configuration')
+  .option('--server <url>', 'Set server URL')
+  .option('--show', 'Show current configuration')
+  .option('--reset', 'Reset configuration')
+  .action(config);
+
+// List command
+program
+  .command('list')
+  .alias('ls')
+  .description('List all deployed projects')
+  .action(status);
+
+// Delete command
+program
+  .command('delete')
+  .alias('rm')
+  .description('Delete a deployed project')
+  .argument('<name>', 'Project name to delete')
+  .option('-f, --force', 'Force deletion without confirmation')
+  .action(async (name, options) => {
+    const { deleteProject } = require('../lib/commands');
+    await deleteProject(name, options);
+  });
+
+// Health command
+program
+  .command('health')
+  .description('Check server health')
+  .action(async () => {
+    const { healthCheck } = require('../lib/commands');
+    await healthCheck();
+  });
+
+// Documentation command
+program
+  .command('doc')
+  .alias('docs')
+  .description('Show detailed manual and documentation')
+  .argument('[section]', 'Specific documentation section (install, deploy, config, examples)')
+  .option('--lang <language>', 'Language (ko/en)', 'ko')
+  .action(async (section, options) => {
+    const { showDocumentation } = require('../lib/commands');
+    await showDocumentation(section, options);
+  });
+
+program.parse();

@@ -1,0 +1,47 @@
+{
+  "name": "@codeb/deploy-mcp",
+  "version": "1.0.0",
+  "description": "CodeB 100% CI/CD Deploy MCP Server - GitHub Actions + Self-hosted Runner",
+  "main": "dist/index.js",
+  "type": "module",
+  "scripts": {
+    "build": "tsc",
+    "start": "node dist/index.js",
+    "start:http": "node dist/http-api.js",
+    "dev": "tsx watch src/index.ts",
+    "dev:http": "tsx watch src/http-api.ts",
+    "lint": "eslint src/**/*.ts",
+    "test": "vitest"
+  },
+  "keywords": [
+    "mcp",
+    "claude",
+    "deployment",
+    "cicd",
+    "podman",
+    "github-actions"
+  ],
+  "author": "CodeB",
+  "license": "MIT",
+  "dependencies": {
+    "@modelcontextprotocol/sdk": "^0.5.0",
+    "@octokit/rest": "^20.0.0",
+    "ssh2": "^1.15.0",
+    "yaml": "^2.3.4",
+    "zod": "^3.22.4",
+    "node-fetch": "^3.3.2"
+  },
+  "devDependencies": {
+    "@types/node": "^20.10.0",
+    "@types/ssh2": "^1.11.19",
+    "@typescript-eslint/eslint-plugin": "^6.13.0",
+    "@typescript-eslint/parser": "^6.13.0",
+    "eslint": "^8.55.0",
+    "tsx": "^4.7.0",
+    "typescript": "^5.3.0",
+    "vitest": "^1.0.0"
+  },
+  "engines": {
+    "node": ">=18.0.0"
+  }
+}

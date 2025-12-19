@@ -1,0 +1,19 @@
+# 환경 변수
+.env.local
+.env.production
+
+# Podman 데이터
+podman/data/
+
+# 로그
+logs/
+*.log
+
+# 업로드
+uploads/
+
+# Node
+node_modules/
+.next/
+dist/
+build/

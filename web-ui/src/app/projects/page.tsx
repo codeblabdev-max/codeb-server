@@ -28,8 +28,8 @@ const projects = [
     gitRepo: "https://github.com/videopick/web",
     status: "active" as const,
     environments: [
-      { name: "staging", status: "running" as const, domain: "videopick-staging.one-q.xyz", port: 3001 },
-      { name: "production", status: "running" as const, domain: "videopick.one-q.xyz", port: 4001 },
+      { name: "staging", status: "running" as const, domain: "videopick-staging.codeb.kr", port: 3001 },
+      { name: "production", status: "running" as const, domain: "videopick.codeb.kr", port: 4001 },
     ],
     lastDeployed: "2024-12-17T10:30:00Z",
   },
@@ -40,8 +40,8 @@ const projects = [
     gitRepo: "https://github.com/videopick/api",
     status: "active" as const,
     environments: [
-      { name: "staging", status: "deploying" as const, domain: "api-staging.one-q.xyz", port: 3002 },
-      { name: "production", status: "running" as const, domain: "api.one-q.xyz", port: 4002 },
+      { name: "staging", status: "deploying" as const, domain: "api-staging.codeb.kr", port: 3002 },
+      { name: "production", status: "running" as const, domain: "api.codeb.kr", port: 4002 },
     ],
     lastDeployed: "2024-12-17T09:15:00Z",
   },
@@ -52,8 +52,8 @@ const projects = [
     gitRepo: "https://github.com/videopick/admin",
     status: "active" as const,
     environments: [
-      { name: "staging", status: "stopped" as const, domain: "admin-staging.one-q.xyz", port: 3003 },
-      { name: "production", status: "running" as const, domain: "admin.one-q.xyz", port: 4003 },
+      { name: "staging", status: "stopped" as const, domain: "admin-staging.codeb.kr", port: 3003 },
+      { name: "production", status: "running" as const, domain: "admin.codeb.kr", port: 4003 },
     ],
     lastDeployed: "2024-12-16T14:20:00Z",
   },
@@ -64,7 +64,7 @@ const projects = [
     gitRepo: "https://github.com/videopick/landing",
     status: "active" as const,
     environments: [
-      { name: "production", status: "running" as const, domain: "landing.one-q.xyz", port: 4004 },
+      { name: "production", status: "running" as const, domain: "landing.codeb.kr", port: 4004 },
     ],
     lastDeployed: "2024-12-15T08:00:00Z",
   },

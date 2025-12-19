@@ -17,19 +17,18 @@ const __dirname = dirname(__filename);
 
 // 경로 설정
 const CLAUDE_CONFIG_PATH = join(homedir(), '.claude.json');
-const WE_CLI_ROOT = join(homedir(), '.we-cli');
-const MCP_SERVER_PATH = join(WE_CLI_ROOT, 'codeb-deploy-system', 'mcp-server', 'dist', 'index.js');
 
-// 기본 MCP 서버 설정
+// 기본 MCP 서버 설정 - we mcp serve 사용
 function getMcpServerConfig(serverHost, serverUser, sshKeyPath) {
   return {
     "codeb-deploy": {
-      "command": "node",
-      "args": [MCP_SERVER_PATH],
+      "command": "we",
+      "args": ["mcp", "serve"],
       "env": {
-        "CODEB_SERVER_HOST": serverHost || "141.164.60.51",
+        "CODEB_SERVER_HOST": serverHost || "158.247.203.55",
         "CODEB_SERVER_USER": serverUser || "root",
-        "CODEB_SSH_KEY_PATH": sshKeyPath || join(homedir(), '.ssh', 'id_rsa')
+        "CODEB_SSH_KEY_PATH": sshKeyPath || join(homedir(), '.ssh', 'id_rsa'),
+        "CODEB_API_URL": "http://localhost:3000/api"
       }
     }
   };
@@ -40,15 +39,17 @@ export async function setupMcp(options = {}) {
 
   console.log('🔧 CodeB MCP 서버 설정 중...\n');
 
-  // 1. MCP 서버 파일 존재 확인
-  if (!existsSync(MCP_SERVER_PATH)) {
-    console.error('❌ MCP 서버를 찾을 수 없습니다:', MCP_SERVER_PATH);
+  // 1. we CLI 존재 확인
+  const wePath = '/opt/homebrew/bin/we';
+  const weExists = existsSync(wePath) || existsSync('/usr/local/bin/we');
+  if (!weExists) {
+    console.error('❌ we CLI를 찾을 수 없습니다.');
     console.log('\n💡 해결 방법:');
-    console.log('   cd codeb-deploy-system/mcp-server && npm run build');
-    return { success: false, error: 'MCP server not found' };
+    console.log('   npm install -g @codeb/we-cli');
+    return { success: false, error: 'we CLI not found' };
   }
 
-  console.log('✅ MCP 서버 파일 확인:', MCP_SERVER_PATH);
+  console.log('✅ we CLI 확인됨');
 
   // 2. Claude 설정 파일 읽기
   let claudeConfig = {};
@@ -135,17 +136,17 @@ export async function removeMcp() {
 export async function statusMcp() {
   console.log('🔍 CodeB MCP 서버 상태 확인...\n');
 
-  // MCP 서버 파일 확인
-  const serverExists = existsSync(MCP_SERVER_PATH);
-  console.log(`📦 MCP 서버 파일: ${serverExists ? '✅ 존재' : '❌ 없음'}`);
-  if (serverExists) {
-    console.log(`   경로: ${MCP_SERVER_PATH}`);
+  // we CLI 확인
+  const weExists = existsSync('/opt/homebrew/bin/we') || existsSync('/usr/local/bin/we');
+  console.log(`📦 we CLI: ${weExists ? '✅ 설치됨' : '❌ 없음'}`);
+  if (!weExists) {
+    console.log('   npm install -g @codeb/we-cli 로 설치하세요');
   }
 
   // Claude 설정 확인
   if (!existsSync(CLAUDE_CONFIG_PATH)) {
     console.log('📋 Claude 설정: ❌ 파일 없음');
-    return { configured: false, serverExists };
+    return { configured: false, serverExists: weExists };
   }
 
   try {
@@ -154,17 +155,17 @@ export async function statusMcp() {
 
     if (mcpConfig) {
       console.log('📋 Claude 설정: ✅ 설정됨');
+      console.log('   명령어:', mcpConfig.command, mcpConfig.args?.join(' ') || '');
       console.log('   서버 호스트:', mcpConfig.env?.CODEB_SERVER_HOST || '미설정');
       console.log('   SSH 사용자:', mcpConfig.env?.CODEB_SERVER_USER || '미설정');
-      console.log('   SSH 키 경로:', mcpConfig.env?.CODEB_SSH_KEY_PATH || '미설정');
-      return { configured: true, serverExists, config: mcpConfig };
+      return { configured: true, serverExists: weExists, config: mcpConfig };
     } else {
       console.log('📋 Claude 설정: ❌ codeb-deploy 미설정');
-      return { configured: false, serverExists };
+      return { configured: false, serverExists: weExists };
     }
   } catch (e) {
     console.log('📋 Claude 설정: ❌ 파싱 오류');
-    return { configured: false, serverExists, error: e.message };
+    return { configured: false, serverExists: weExists, error: e.message };
   }
 }
 

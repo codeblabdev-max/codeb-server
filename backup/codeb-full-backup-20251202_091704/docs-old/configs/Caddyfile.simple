@@ -1,0 +1,69 @@
+# CodeB Server Caddy Configuration (Simplified)
+# Auto HTTPS with Let's Encrypt
+
+# Global options
+{
+    email admin@one-q.xyz
+    admin localhost:2019
+}
+
+# Main domain - Landing page and API
+one-q.xyz, www.one-q.xyz {
+    # API routes
+    handle /api/* {
+        reverse_proxy localhost:3008
+    }
+    
+    # Health check
+    handle /health {
+        reverse_proxy localhost:3008/api/health
+    }
+    
+    # Serve static landing page
+    handle {
+        root * /var/www/codeb
+        file_server
+        try_files {path} index.html
+    }
+    
+    # Security headers
+    header {
+        X-Frame-Options "SAMEORIGIN"
+        X-Content-Type-Options "nosniff"
+        Strict-Transport-Security "max-age=31536000"
+    }
+    
+    encode gzip
+    log
+}
+
+# Project subdomains
+test-nextjs.one-q.xyz {
+    reverse_proxy localhost:4001
+    encode gzip
+    log
+}
+
+video-platform.one-q.xyz {
+    reverse_proxy localhost:4002
+    encode gzip
+    log
+}
+
+video.one-q.xyz {
+    reverse_proxy localhost:4002
+    encode gzip
+    log
+}
+
+test-cli-project.one-q.xyz {
+    reverse_proxy localhost:4003
+    encode gzip
+    log
+}
+
+test-cli.one-q.xyz {
+    reverse_proxy localhost:4003
+    encode gzip
+    log
+}

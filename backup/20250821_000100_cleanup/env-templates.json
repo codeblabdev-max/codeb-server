@@ -1,0 +1,54 @@
+{
+  "nextjs": {
+    "required": [
+      "DATABASE_URL",
+      "JWT_SECRET",
+      "JWT_REFRESH_SECRET", 
+      "NEXT_PUBLIC_API_URL",
+      "PORT"
+    ],
+    "optional": [
+      "ENCRYPTION_KEY",
+      "TOSS_SECRET_KEY",
+      "GOOGLE_TRANSLATE_API_KEY",
+      "REDIS_URL",
+      "NODE_ENV"
+    ],
+    "defaults": {
+      "DATABASE_URL": "postgresql://user:password@{PROJECT_NAME}-db:5432/{PROJECT_NAME}",
+      "JWT_SECRET": "{PROJECT_NAME}-jwt-secret-key-{RANDOM_STRING}",
+      "JWT_REFRESH_SECRET": "{PROJECT_NAME}-jwt-refresh-secret-key-{RANDOM_STRING}",
+      "ENCRYPTION_KEY": "{PROJECT_NAME}-encryption-key-{RANDOM_STRING}",
+      "TOSS_SECRET_KEY": "test_sk_{PROJECT_NAME}_payments_key",
+      "NEXT_PUBLIC_API_URL": "https://{DOMAIN}",
+      "REDIS_URL": "redis://:{REDIS_PASSWORD}@{PROJECT_NAME}-redis:6379",
+      "NODE_ENV": "production",
+      "PORT": "3000"
+    }
+  },
+  "nodejs": {
+    "required": [
+      "NODE_ENV",
+      "PORT"
+    ],
+    "optional": [
+      "DATABASE_URL",
+      "REDIS_URL"
+    ],
+    "defaults": {
+      "NODE_ENV": "production",
+      "PORT": "3000",
+      "DATABASE_URL": "postgresql://user:password@{PROJECT_NAME}-db:5432/{PROJECT_NAME}",
+      "REDIS_URL": "redis://:{REDIS_PASSWORD}@{PROJECT_NAME}-redis:6379"
+    }
+  },
+  "default": {
+    "required": [
+      "NODE_ENV"
+    ],
+    "optional": [],
+    "defaults": {
+      "NODE_ENV": "production"
+    }
+  }
+}

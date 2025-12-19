@@ -1,0 +1,49 @@
+version: '3.8'
+
+services:
+  postgres:
+    image: postgres:15-alpine
+    container_name: codeb-postgres
+    environment:
+      POSTGRES_DB: codeb_dev
+      POSTGRES_USER: codeb
+      POSTGRES_PASSWORD: codeb123
+      PGDATA: /var/lib/postgresql/data
+    ports:
+      - "5432:5432"
+    volumes:
+      - postgres_data:/var/lib/postgresql/data
+      - ./init:/docker-entrypoint-initdb.d
+    restart: unless-stopped
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U codeb -d codeb_dev"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+    networks:
+      - codeb-network
+
+  redis:
+    image: redis:7-alpine
+    container_name: codeb-redis
+    command: redis-server --appendonly yes --requirepass codeb123
+    ports:
+      - "6379:6379"
+    volumes:
+      - redis_data:/data
+    restart: unless-stopped
+    healthcheck:
+      test: ["CMD", "redis-cli", "--raw", "incr", "ping"]
+      interval: 10s
+      timeout: 3s
+      retries: 5
+    networks:
+      - codeb-network
+
+volumes:
+  postgres_data:
+  redis_data:
+
+networks:
+  codeb-network:
+    driver: bridge

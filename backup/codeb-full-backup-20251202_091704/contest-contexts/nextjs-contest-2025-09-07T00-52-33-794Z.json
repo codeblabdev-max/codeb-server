@@ -1,0 +1,2545 @@
+{
+  "context_id": "nextjs-contest-2025-09-07T00-52-33-794Z",
+  "contest_type": "nextjs",
+  "captured_at": "2025-09-07T00:52:34.707Z",
+  "project_info": {
+    "name": "codeb-server",
+    "framework": "general",
+    "structure": {
+      "folders": [
+        "api-servers",
+        "backup",
+        "backups 복사본",
+        "codeb-agent-1.0",
+        "codeb-cli",
+        "codeb-cli-v3.5",
+        "contest-contexts",
+        "deployment",
+        "docs",
+        "mcp-contest-continuity",
+        "scripts",
+        "src",
+        "starpick-platform",
+        "test-project",
+        "vultr",
+        "web-ui"
+      ],
+      "key_files": [],
+      "patterns": []
+    }
+  },
+  "development_patterns": {
+    "ui_components": [
+      {
+        "name": "page",
+        "type": "functional",
+        "file_path": "test-project/src/app/page.tsx",
+        "props": [],
+        "hooks": [],
+        "styling": "css-modules",
+        "dependencies": [],
+        "exports": [],
+        "complexity": 1,
+        "functions": [],
+        "state_management": []
+      },
+      {
+        "name": "layout",
+        "type": "functional",
+        "file_path": "test-project/src/app/layout.tsx",
+        "props": [],
+        "hooks": [],
+        "styling": "css-modules",
+        "dependencies": [
+          {
+            "type": "import",
+            "source": "next",
+            "specifiers": []
+          },
+          {
+            "type": "import",
+            "source": "next/font/google",
+            "specifiers": []
+          }
+        ],
+        "exports": [],
+        "complexity": 1,
+        "functions": [],
+        "state_management": []
+      },
+      {
+        "name": "root",
+        "type": "functional",
+        "file_path": "backup/20250820_235220_success/codeb-remix/app/root.tsx",
+        "props": [],
+        "hooks": [],
+        "styling": "css-modules",
+        "dependencies": [
+          {
+            "type": "import",
+            "source": "@remix-run/node",
+            "specifiers": []
+          },
+          {
+            "type": "import",
+            "source": "~/tailwind.css?url",
+            "specifiers": []
+          }
+        ],
+        "exports": [],
+        "complexity": 2,
+        "functions": [],
+        "state_management": []
+      },
+      {
+        "name": "root",
+        "type": "functional",
+        "file_path": "backup/20250821_000100_cleanup/codeb-remix/app/root.tsx",
+        "props": [],
+        "hooks": [],
+        "styling": "css-modules",
+        "dependencies": [
+          {
+            "type": "import",
+            "source": "@remix-run/node",
+            "specifiers": []
+          },
+          {
+            "type": "import",
+            "source": "~/tailwind.css?url",
+            "specifiers": []
+          }
+        ],
+        "exports": [],
+        "complexity": 2,
+        "functions": [],
+        "state_management": []
+      },
+      {
+        "name": "api.projects",
+        "type": "functional",
+        "file_path": "backup/20250820_235220_success/codeb-remix/app/routes/api.projects.tsx",
+        "props": [],
+        "hooks": [],
+        "styling": "css",
+        "dependencies": [
+          {
+            "type": "import",
+            "source": "@remix-run/node",
+            "specifiers": []
+          },
+          {
+            "type": "import",
+            "source": "~/services/project.server",
+            "specifiers": []
+          },
+          {
+            "type": "import",
+            "source": "~/services/auth.server",
+            "specifiers": []
+          },
+          {
+            "type": "import",
+            "source": "zod",
+            "specifiers": []
+          }
+        ],
+        "exports": [],
+        "complexity": 8,
+        "functions": [],
+        "state_management": []
+      },
+      {
+        "name": "api.projects.$name",
+        "type": "functional",
+        "file_path": "backup/20250820_235220_success/codeb-remix/app/routes/api.projects.$name.tsx",
+        "props": [],
+        "hooks": [],
+        "styling": "css",
+        "dependencies": [
+          {
+            "type": "import",
+            "source": "@remix-run/node",
+            "specifiers": []
+          },
+          {
+            "type": "import",
+            "source": "~/services/project.server",
+            "specifiers": []
+          }
+        ],
+        "exports": [],
+        "complexity": 18,
+        "functions": [],
+        "state_management": []
+      },
+      {
+        "name": "api.auth.keys",
+        "type": "functional",
+        "file_path": "backup/20250820_235220_success/codeb-remix/app/routes/api.auth.keys.tsx",
+        "props": [],
+        "hooks": [],
+        "styling": "css",
+        "dependencies": [
+          {
+            "type": "import",
+            "source": "@remix-run/node",
+            "specifiers": []
+          },
+          {
+            "type": "import",
+            "source": "@remix-run/node",
+            "specifiers": []
+          },
+          {
+            "type": "import",
+            "source": "~/services/auth.server",
+            "specifiers": []
+          }
+        ],
+        "exports": [],
+        "complexity": 23,
+        "functions": [],
+        "state_management": []
+      },
+      {
+        "name": "api.auth.init",
+        "type": "functional",
+        "file_path": "backup/20250820_235220_success/codeb-remix/app/routes/api.auth.init.tsx",
+        "props": [],
+        "hooks": [],
+        "styling": "css",
+        "dependencies": [
+          {
+            "type": "import",
+            "source": "@remix-run/node",
+            "specifiers": []
+          },
+          {
+            "type": "import",
+            "source": "@remix-run/node",
+            "specifiers": []
+          },
+          {
+            "type": "import",
+            "source": "~/services/auth.server",
+            "specifiers": []
+          },
+          {
+            "type": "import",
+            "source": "fs/promises",
+            "specifiers": []
+          },
+          {
+            "type": "import",
+            "source": "path",
+            "specifiers": []
+          }
+        ],
+        "exports": [],
+        "complexity": 9,
+        "functions": [],
+        "state_management": []
+      },
+      {
+        "name": "_index",
+        "type": "functional",
+        "file_path": "backup/20250820_235220_success/codeb-remix/app/routes/_index.tsx",
+        "props": [],
+        "hooks": [],
+        "styling": "css-modules",
+        "dependencies": [
+          {
+            "type": "import",
+            "source": "@remix-run/node",
+            "specifiers": []
+          },
+          {
+            "type": "import",
+            "source": "@remix-run/react",
+            "specifiers": []
+          }
+        ],
+        "exports": [],
+        "complexity": 1,
+        "functions": [],
+        "state_management": []
+      },
+      {
+        "name": "api.projects",
+        "type": "functional",
+        "file_path": "backup/20250821_000100_cleanup/codeb-remix/app/routes/api.projects.tsx",
+        "props": [],
+        "hooks": [],
+        "styling": "css",
+        "dependencies": [
+          {
+            "type": "import",
+            "source": "@remix-run/node",
+            "specifiers": []
+          },
+          {
+            "type": "import",
+            "source": "~/services/project.server",
+            "specifiers": []
+          },
+          {
+            "type": "import",
+            "source": "~/services/auth.server",
+            "specifiers": []
+          },
+          {
+            "type": "import",
+            "source": "zod",
+            "specifiers": []
+          }
+        ],
+        "exports": [],
+        "complexity": 8,
+        "functions": [],
+        "state_management": []
+      },
+      {
+        "name": "api.projects.$name",
+        "type": "functional",
+        "file_path": "backup/20250821_000100_cleanup/codeb-remix/app/routes/api.projects.$name.tsx",
+        "props": [],
+        "hooks": [],
+        "styling": "css",
+        "dependencies": [
+          {
+            "type": "import",
+            "source": "@remix-run/node",
+            "specifiers": []
+          },
+          {
+            "type": "import",
+            "source": "~/services/project.server",
+            "specifiers": []
+          }
+        ],
+        "exports": [],
+        "complexity": 18,
+        "functions": [],
+        "state_management": []
+      },
+      {
+        "name": "api.auth.keys",
+        "type": "functional",
+        "file_path": "backup/20250821_000100_cleanup/codeb-remix/app/routes/api.auth.keys.tsx",
+        "props": [],
+        "hooks": [],
+        "styling": "css",
+        "dependencies": [
+          {
+            "type": "import",
+            "source": "@remix-run/node",
+            "specifiers": []
+          },
+          {
+            "type": "import",
+            "source": "@remix-run/node",
+            "specifiers": []
+          },
+          {
+            "type": "import",
+            "source": "~/services/auth.server",
+            "specifiers": []
+          }
+        ],
+        "exports": [],
+        "complexity": 23,
+        "functions": [],
+        "state_management": []
+      },
+      {
+        "name": "api.auth.init",
+        "type": "functional",
+        "file_path": "backup/20250821_000100_cleanup/codeb-remix/app/routes/api.auth.init.tsx",
+        "props": [],
+        "hooks": [],
+        "styling": "css",
+        "dependencies": [
+          {
+            "type": "import",
+            "source": "@remix-run/node",
+            "specifiers": []
+          },
+          {
+            "type": "import",
+            "source": "@remix-run/node",
+            "specifiers": []
+          },
+          {
+            "type": "import",
+            "source": "~/services/auth.server",
+            "specifiers": []
+          },
+          {
+            "type": "import",
+            "source": "fs/promises",
+            "specifiers": []
+          },
+          {
+            "type": "import",
+            "source": "path",
+            "specifiers": []
+          }
+        ],
+        "exports": [],
+        "complexity": 9,
+        "functions": [],
+        "state_management": []
+      },
+      {
+        "name": "_index",
+        "type": "functional",
+        "file_path": "backup/20250821_000100_cleanup/codeb-remix/app/routes/_index.tsx",
+        "props": [],
+        "hooks": [],
+        "styling": "css-modules",
+        "dependencies": [
+          {
+            "type": "import",
+            "source": "@remix-run/node",
+            "specifiers": []
+          },
+          {
+            "type": "import",
+            "source": "@remix-run/react",
+            "specifiers": []
+          }
+        ],
+        "exports": [],
+        "complexity": 1,
+        "functions": [],
+        "state_management": []
+      }
+    ],
+    "api_endpoints": [],
+    "database_schema": [],
+    "common_utilities": [
+      {
+        "name": "format",
+        "file_path": "backup/20250821_000100_cleanup/codeb-cli/src/utils/format.js",
+        "purpose": "formatting",
+        "reuse_frequency": 0
+      },
+      {
+        "name": "string",
+        "file_path": "mcp-contest-continuity/node_modules/fast-glob/out/utils/string.js",
+        "purpose": "utility",
+        "reuse_frequency": 0
+      },
+      {
+        "name": "string.d",
+        "file_path": "mcp-contest-continuity/node_modules/fast-glob/out/utils/string.d.ts",
+        "purpose": "utility",
+        "reuse_frequency": 0
+      },
+      {
+        "name": "stream",
+        "file_path": "mcp-contest-continuity/node_modules/fast-glob/out/utils/stream.js",
+        "purpose": "utility",
+        "reuse_frequency": 0
+      },
+      {
+        "name": "stream.d",
+        "file_path": "mcp-contest-continuity/node_modules/fast-glob/out/utils/stream.d.ts",
+        "purpose": "utility",
+        "reuse_frequency": 0
+      },
+      {
+        "name": "pattern",
+        "file_path": "mcp-contest-continuity/node_modules/fast-glob/out/utils/pattern.js",
+        "purpose": "api-client",
+        "reuse_frequency": 0
+      },
+      {
+        "name": "pattern.d",
+        "file_path": "mcp-contest-continuity/node_modules/fast-glob/out/utils/pattern.d.ts",
+        "purpose": "utility",
+        "reuse_frequency": 0
+      },
+      {
+        "name": "path",
+        "file_path": "mcp-contest-continuity/node_modules/fast-glob/out/utils/path.js",
+        "purpose": "formatting",
+        "reuse_frequency": 0
+      },
+      {
+        "name": "path.d",
+        "file_path": "mcp-contest-continuity/node_modules/fast-glob/out/utils/path.d.ts",
+        "purpose": "utility",
+        "reuse_frequency": 0
+      },
+      {
+        "name": "index",
+        "file_path": "mcp-contest-continuity/node_modules/fast-glob/out/utils/index.js",
+        "purpose": "utility",
+        "reuse_frequency": 0
+      },
+      {
+        "name": "index.d",
+        "file_path": "mcp-contest-continuity/node_modules/fast-glob/out/utils/index.d.ts",
+        "purpose": "utility",
+        "reuse_frequency": 0
+      },
+      {
+        "name": "fs",
+        "file_path": "mcp-contest-continuity/node_modules/fast-glob/out/utils/fs.js",
+        "purpose": "utility",
+        "reuse_frequency": 0
+      },
+      {
+        "name": "fs.d",
+        "file_path": "mcp-contest-continuity/node_modules/fast-glob/out/utils/fs.d.ts",
+        "purpose": "utility",
+        "reuse_frequency": 0
+      },
+      {
+        "name": "errno",
+        "file_path": "mcp-contest-continuity/node_modules/fast-glob/out/utils/errno.js",
+        "purpose": "utility",
+        "reuse_frequency": 0
+      },
+      {
+        "name": "errno.d",
+        "file_path": "mcp-contest-continuity/node_modules/fast-glob/out/utils/errno.d.ts",
+        "purpose": "utility",
+        "reuse_frequency": 0
+      },
+      {
+        "name": "array",
+        "file_path": "mcp-contest-continuity/node_modules/fast-glob/out/utils/array.js",
+        "purpose": "utility",
+        "reuse_frequency": 0
+      },
+      {
+        "name": "array.d",
+        "file_path": "mcp-contest-continuity/node_modules/fast-glob/out/utils/array.d.ts",
+        "purpose": "utility",
+        "reuse_frequency": 0
+      },
+      {
+        "name": "ts-estree",
+        "file_path": "mcp-contest-continuity/node_modules/@typescript-eslint/utils/dist/ts-estree.js",
+        "purpose": "utility",
+        "reuse_frequency": 0
+      },
+      {
+        "name": "ts-estree.d",
+        "file_path": "mcp-contest-continuity/node_modules/@typescript-eslint/utils/dist/ts-estree.d.ts",
+        "purpose": "formatting",
+        "reuse_frequency": 0
+      },
+      {
+        "name": "json-schema",
+        "file_path": "mcp-contest-continuity/node_modules/@typescript-eslint/utils/dist/json-schema.js",
+        "purpose": "utility",
+        "reuse_frequency": 0
+      },
+      {
+        "name": "json-schema.d",
+        "file_path": "mcp-contest-continuity/node_modules/@typescript-eslint/utils/dist/json-schema.d.ts",
+        "purpose": "formatting",
+        "reuse_frequency": 0
+      },
+      {
+        "name": "index",
+        "file_path": "mcp-contest-continuity/node_modules/@typescript-eslint/utils/dist/index.js",
+        "purpose": "utility",
+        "reuse_frequency": 0
+      },
+      {
+        "name": "index.d",
+        "file_path": "mcp-contest-continuity/node_modules/@typescript-eslint/utils/dist/index.d.ts",
+        "purpose": "utility",
+        "reuse_frequency": 0
+      },
+      {
+        "name": "format",
+        "file_path": "backup/20250820_235220_success/codeb-cli/src/utils/format.js",
+        "purpose": "formatting",
+        "reuse_frequency": 0
+      },
+      {
+        "name": "flf-to-strings",
+        "file_path": "backup/20250821_000100_cleanup/codeb-cli/node_modules/figlet/utils/flf-to-strings.js",
+        "purpose": "utility",
+        "reuse_frequency": 0
+      },
+      {
+        "name": "merge",
+        "file_path": "backup/20250821_000100_cleanup/node_modules/nodemon/lib/utils/merge.js",
+        "purpose": "utility",
+        "reuse_frequency": 0
+      },
+      {
+        "name": "log",
+        "file_path": "backup/20250821_000100_cleanup/node_modules/nodemon/lib/utils/log.js",
+        "purpose": "utility",
+        "reuse_frequency": 0
+      },
+      {
+        "name": "index",
+        "file_path": "backup/20250821_000100_cleanup/node_modules/nodemon/lib/utils/index.js",
+        "purpose": "utility",
+        "reuse_frequency": 0
+      },
+      {
+        "name": "colour",
+        "file_path": "backup/20250821_000100_cleanup/node_modules/nodemon/lib/utils/colour.js",
+        "purpose": "utility",
+        "reuse_frequency": 0
+      },
+      {
+        "name": "clone",
+        "file_path": "backup/20250821_000100_cleanup/node_modules/nodemon/lib/utils/clone.js",
+        "purpose": "utility",
+        "reuse_frequency": 0
+      },
+      {
+        "name": "bus",
+        "file_path": "backup/20250821_000100_cleanup/node_modules/nodemon/lib/utils/bus.js",
+        "purpose": "utility",
+        "reuse_frequency": 0
+      },
+      {
+        "name": "which-module",
+        "file_path": "mcp-contest-continuity/node_modules/yargs/build/lib/utils/which-module.js",
+        "purpose": "utility",
+        "reuse_frequency": 0
+      },
+      {
+        "name": "set-blocking",
+        "file_path": "mcp-contest-continuity/node_modules/yargs/build/lib/utils/set-blocking.js",
+        "purpose": "utility",
+        "reuse_frequency": 0
+      },
+      {
+        "name": "process-argv",
+        "file_path": "mcp-contest-continuity/node_modules/yargs/build/lib/utils/process-argv.js",
+        "purpose": "utility",
+        "reuse_frequency": 0
+      },
+      {
+        "name": "obj-filter",
+        "file_path": "mcp-contest-continuity/node_modules/yargs/build/lib/utils/obj-filter.js",
+        "purpose": "utility",
+        "reuse_frequency": 0
+      },
+      {
+        "name": "maybe-async-result",
+        "file_path": "mcp-contest-continuity/node_modules/yargs/build/lib/utils/maybe-async-result.js",
+        "purpose": "utility",
+        "reuse_frequency": 0
+      },
+      {
+        "name": "levenshtein",
+        "file_path": "mcp-contest-continuity/node_modules/yargs/build/lib/utils/levenshtein.js",
+        "purpose": "utility",
+        "reuse_frequency": 0
+      },
+      {
+        "name": "is-promise",
+        "file_path": "mcp-contest-continuity/node_modules/yargs/build/lib/utils/is-promise.js",
+        "purpose": "utility",
+        "reuse_frequency": 0
+      },
+      {
+        "name": "apply-extends",
+        "file_path": "mcp-contest-continuity/node_modules/yargs/build/lib/utils/apply-extends.js",
+        "purpose": "utility",
+        "reuse_frequency": 0
+      },
+      {
+        "name": "isArray",
+        "file_path": "mcp-contest-continuity/node_modules/@typescript-eslint/utils/dist/ts-utils/isArray.js",
+        "purpose": "utility",
+        "reuse_frequency": 0
+      },
+      {
+        "name": "isArray.d",
+        "file_path": "mcp-contest-continuity/node_modules/@typescript-eslint/utils/dist/ts-utils/isArray.d.ts",
+        "purpose": "utility",
+        "reuse_frequency": 0
+      },
+      {
+        "name": "index",
+        "file_path": "mcp-contest-continuity/node_modules/@typescript-eslint/utils/dist/ts-utils/index.js",
+        "purpose": "utility",
+        "reuse_frequency": 0
+      },
+      {
+        "name": "index.d",
+        "file_path": "mcp-contest-continuity/node_modules/@typescript-eslint/utils/dist/ts-utils/index.d.ts",
+        "purpose": "utility",
+        "reuse_frequency": 0
+      },
+      {
+        "name": "index",
+        "file_path": "mcp-contest-continuity/node_modules/@typescript-eslint/utils/dist/ts-eslint/index.js",
+        "purpose": "utility",
+        "reuse_frequency": 0
+      },
+      {
+        "name": "index.d",
+        "file_path": "mcp-contest-continuity/node_modules/@typescript-eslint/utils/dist/ts-eslint/index.d.ts",
+        "purpose": "utility",
+        "reuse_frequency": 0
+      },
+      {
+        "name": "SourceCode",
+        "file_path": "mcp-contest-continuity/node_modules/@typescript-eslint/utils/dist/ts-eslint/SourceCode.js",
+        "purpose": "utility",
+        "reuse_frequency": 0
+      },
+      {
+        "name": "SourceCode.d",
+        "file_path": "mcp-contest-continuity/node_modules/@typescript-eslint/utils/dist/ts-eslint/SourceCode.d.ts",
+        "purpose": "formatting",
+        "reuse_frequency": 0
+      },
+      {
+        "name": "Scope",
+        "file_path": "mcp-contest-continuity/node_modules/@typescript-eslint/utils/dist/ts-eslint/Scope.js",
+        "purpose": "utility",
+        "reuse_frequency": 0
+      },
+      {
+        "name": "Scope.d",
+        "file_path": "mcp-contest-continuity/node_modules/@typescript-eslint/utils/dist/ts-eslint/Scope.d.ts",
+        "purpose": "utility",
+        "reuse_frequency": 0
+      },
+      {
+        "name": "RuleTester",
+        "file_path": "mcp-contest-continuity/node_modules/@typescript-eslint/utils/dist/ts-eslint/RuleTester.js",
+        "purpose": "utility",
+        "reuse_frequency": 0
+      },
+      {
+        "name": "RuleTester.d",
+        "file_path": "mcp-contest-continuity/node_modules/@typescript-eslint/utils/dist/ts-eslint/RuleTester.d.ts",
+        "purpose": "validation",
+        "reuse_frequency": 0
+      },
+      {
+        "name": "Rule",
+        "file_path": "mcp-contest-continuity/node_modules/@typescript-eslint/utils/dist/ts-eslint/Rule.js",
+        "purpose": "utility",
+        "reuse_frequency": 0
+      },
+      {
+        "name": "Rule.d",
+        "file_path": "mcp-contest-continuity/node_modules/@typescript-eslint/utils/dist/ts-eslint/Rule.d.ts",
+        "purpose": "formatting",
+        "reuse_frequency": 0
+      },
+      {
+        "name": "Processor",
+        "file_path": "mcp-contest-continuity/node_modules/@typescript-eslint/utils/dist/ts-eslint/Processor.js",
+        "purpose": "utility",
+        "reuse_frequency": 0
+      },
+      {
+        "name": "Processor.d",
+        "file_path": "mcp-contest-continuity/node_modules/@typescript-eslint/utils/dist/ts-eslint/Processor.d.ts",
+        "purpose": "formatting",
+        "reuse_frequency": 0
+      },
+      {
+        "name": "ParserOptions",
+        "file_path": "mcp-contest-continuity/node_modules/@typescript-eslint/utils/dist/ts-eslint/ParserOptions.js",
+        "purpose": "utility",
+        "reuse_frequency": 0
+      },
+      {
+        "name": "ParserOptions.d",
+        "file_path": "mcp-contest-continuity/node_modules/@typescript-eslint/utils/dist/ts-eslint/ParserOptions.d.ts",
+        "purpose": "utility",
+        "reuse_frequency": 0
+      },
+      {
+        "name": "Parser",
+        "file_path": "mcp-contest-continuity/node_modules/@typescript-eslint/utils/dist/ts-eslint/Parser.js",
+        "purpose": "utility",
+        "reuse_frequency": 0
+      },
+      {
+        "name": "Parser.d",
+        "file_path": "mcp-contest-continuity/node_modules/@typescript-eslint/utils/dist/ts-eslint/Parser.d.ts",
+        "purpose": "formatting",
+        "reuse_frequency": 0
+      },
+      {
+        "name": "Linter",
+        "file_path": "mcp-contest-continuity/node_modules/@typescript-eslint/utils/dist/ts-eslint/Linter.js",
+        "purpose": "utility",
+        "reuse_frequency": 0
+      },
+      {
+        "name": "Linter.d",
+        "file_path": "mcp-contest-continuity/node_modules/@typescript-eslint/utils/dist/ts-eslint/Linter.d.ts",
+        "purpose": "formatting",
+        "reuse_frequency": 0
+      },
+      {
+        "name": "ESLint",
+        "file_path": "mcp-contest-continuity/node_modules/@typescript-eslint/utils/dist/ts-eslint/ESLint.js",
+        "purpose": "utility",
+        "reuse_frequency": 0
+      },
+      {
+        "name": "ESLint.d",
+        "file_path": "mcp-contest-continuity/node_modules/@typescript-eslint/utils/dist/ts-eslint/ESLint.d.ts",
+        "purpose": "formatting",
+        "reuse_frequency": 0
+      },
+      {
+        "name": "Config",
+        "file_path": "mcp-contest-continuity/node_modules/@typescript-eslint/utils/dist/ts-eslint/Config.js",
+        "purpose": "utility",
+        "reuse_frequency": 0
+      },
+      {
+        "name": "Config.d",
+        "file_path": "mcp-contest-continuity/node_modules/@typescript-eslint/utils/dist/ts-eslint/Config.d.ts",
+        "purpose": "formatting",
+        "reuse_frequency": 0
+      },
+      {
+        "name": "CLIEngine",
+        "file_path": "mcp-contest-continuity/node_modules/@typescript-eslint/utils/dist/ts-eslint/CLIEngine.js",
+        "purpose": "formatting",
+        "reuse_frequency": 0
+      },
+      {
+        "name": "CLIEngine.d",
+        "file_path": "mcp-contest-continuity/node_modules/@typescript-eslint/utils/dist/ts-eslint/CLIEngine.d.ts",
+        "purpose": "formatting",
+        "reuse_frequency": 0
+      },
+      {
+        "name": "AST",
+        "file_path": "mcp-contest-continuity/node_modules/@typescript-eslint/utils/dist/ts-eslint/AST.js",
+        "purpose": "utility",
+        "reuse_frequency": 0
+      },
+      {
+        "name": "AST.d",
+        "file_path": "mcp-contest-continuity/node_modules/@typescript-eslint/utils/dist/ts-eslint/AST.d.ts",
+        "purpose": "utility",
+        "reuse_frequency": 0
+      },
+      {
+        "name": "parserPathSeemsToBeTSESLint",
+        "file_path": "mcp-contest-continuity/node_modules/@typescript-eslint/utils/dist/eslint-utils/parserPathSeemsToBeTSESLint.js",
+        "purpose": "utility",
+        "reuse_frequency": 0
+      },
+      {
+        "name": "parserPathSeemsToBeTSESLint.d",
+        "file_path": "mcp-contest-continuity/node_modules/@typescript-eslint/utils/dist/eslint-utils/parserPathSeemsToBeTSESLint.d.ts",
+        "purpose": "utility",
+        "reuse_frequency": 0
+      },
+      {
+        "name": "nullThrows",
+        "file_path": "mcp-contest-continuity/node_modules/@typescript-eslint/utils/dist/eslint-utils/nullThrows.js",
+        "purpose": "utility",
+        "reuse_frequency": 0
+      },
+      {
+        "name": "nullThrows.d",
+        "file_path": "mcp-contest-continuity/node_modules/@typescript-eslint/utils/dist/eslint-utils/nullThrows.d.ts",
+        "purpose": "utility",
+        "reuse_frequency": 0
+      },
+      {
+        "name": "index",
+        "file_path": "mcp-contest-continuity/node_modules/@typescript-eslint/utils/dist/eslint-utils/index.js",
+        "purpose": "utility",
+        "reuse_frequency": 0
+      },
+      {
+        "name": "index.d",
+        "file_path": "mcp-contest-continuity/node_modules/@typescript-eslint/utils/dist/eslint-utils/index.d.ts",
+        "purpose": "utility",
+        "reuse_frequency": 0
+      },
+      {
+        "name": "getParserServices",
+        "file_path": "mcp-contest-continuity/node_modules/@typescript-eslint/utils/dist/eslint-utils/getParserServices.js",
+        "purpose": "formatting",
+        "reuse_frequency": 0
+      },
+      {
+        "name": "getParserServices.d",
+        "file_path": "mcp-contest-continuity/node_modules/@typescript-eslint/utils/dist/eslint-utils/getParserServices.d.ts",
+        "purpose": "formatting",
+        "reuse_frequency": 0
+      },
+      {
+        "name": "deepMerge",
+        "file_path": "mcp-contest-continuity/node_modules/@typescript-eslint/utils/dist/eslint-utils/deepMerge.js",
+        "purpose": "utility",
+        "reuse_frequency": 0
+      },
+      {
+        "name": "deepMerge.d",
+        "file_path": "mcp-contest-continuity/node_modules/@typescript-eslint/utils/dist/eslint-utils/deepMerge.d.ts",
+        "purpose": "utility",
+        "reuse_frequency": 0
+      },
+      {
+        "name": "context",
+        "file_path": "mcp-contest-continuity/node_modules/@typescript-eslint/utils/dist/eslint-utils/context.js",
+        "purpose": "utility",
+        "reuse_frequency": 0
+      },
+      {
+        "name": "context.d",
+        "file_path": "mcp-contest-continuity/node_modules/@typescript-eslint/utils/dist/eslint-utils/context.d.ts",
+        "purpose": "utility",
+        "reuse_frequency": 0
+      },
+      {
+        "name": "applyDefault",
+        "file_path": "mcp-contest-continuity/node_modules/@typescript-eslint/utils/dist/eslint-utils/applyDefault.js",
+        "purpose": "utility",
+        "reuse_frequency": 0
+      },
+      {
+        "name": "applyDefault.d",
+        "file_path": "mcp-contest-continuity/node_modules/@typescript-eslint/utils/dist/eslint-utils/applyDefault.d.ts",
+        "purpose": "utility",
+        "reuse_frequency": 0
+      },
+      {
+        "name": "RuleCreator",
+        "file_path": "mcp-contest-continuity/node_modules/@typescript-eslint/utils/dist/eslint-utils/RuleCreator.js",
+        "purpose": "formatting",
+        "reuse_frequency": 0
+      },
+      {
+        "name": "RuleCreator.d",
+        "file_path": "mcp-contest-continuity/node_modules/@typescript-eslint/utils/dist/eslint-utils/RuleCreator.d.ts",
+        "purpose": "formatting",
+        "reuse_frequency": 0
+      },
+      {
+        "name": "InferTypesFromRule",
+        "file_path": "mcp-contest-continuity/node_modules/@typescript-eslint/utils/dist/eslint-utils/InferTypesFromRule.js",
+        "purpose": "utility",
+        "reuse_frequency": 0
+      },
+      {
+        "name": "InferTypesFromRule.d",
+        "file_path": "mcp-contest-continuity/node_modules/@typescript-eslint/utils/dist/eslint-utils/InferTypesFromRule.d.ts",
+        "purpose": "api-client",
+        "reuse_frequency": 0
+      },
+      {
+        "name": "predicates",
+        "file_path": "mcp-contest-continuity/node_modules/@typescript-eslint/utils/dist/ast-utils/predicates.js",
+        "purpose": "utility",
+        "reuse_frequency": 0
+      },
+      {
+        "name": "predicates.d",
+        "file_path": "mcp-contest-continuity/node_modules/@typescript-eslint/utils/dist/ast-utils/predicates.d.ts",
+        "purpose": "utility",
+        "reuse_frequency": 0
+      },
+      {
+        "name": "misc",
+        "file_path": "mcp-contest-continuity/node_modules/@typescript-eslint/utils/dist/ast-utils/misc.js",
+        "purpose": "utility",
+        "reuse_frequency": 0
+      },
+      {
+        "name": "misc.d",
+        "file_path": "mcp-contest-continuity/node_modules/@typescript-eslint/utils/dist/ast-utils/misc.d.ts",
+        "purpose": "utility",
+        "reuse_frequency": 0
+      },
+      {
+        "name": "index",
+        "file_path": "mcp-contest-continuity/node_modules/@typescript-eslint/utils/dist/ast-utils/index.js",
+        "purpose": "utility",
+        "reuse_frequency": 0
+      },
+      {
+        "name": "index.d",
+        "file_path": "mcp-contest-continuity/node_modules/@typescript-eslint/utils/dist/ast-utils/index.d.ts",
+        "purpose": "utility",
+        "reuse_frequency": 0
+      },
+      {
+        "name": "helpers",
+        "file_path": "mcp-contest-continuity/node_modules/@typescript-eslint/utils/dist/ast-utils/helpers.js",
+        "purpose": "utility",
+        "reuse_frequency": 0
+      },
+      {
+        "name": "helpers.d",
+        "file_path": "mcp-contest-continuity/node_modules/@typescript-eslint/utils/dist/ast-utils/helpers.d.ts",
+        "purpose": "utility",
+        "reuse_frequency": 0
+      },
+      {
+        "name": "regular-expressions",
+        "file_path": "mcp-contest-continuity/node_modules/eslint/lib/rules/utils/regular-expressions.js",
+        "purpose": "validation",
+        "reuse_frequency": 0
+      },
+      {
+        "name": "lazy-loading-rule-map",
+        "file_path": "mcp-contest-continuity/node_modules/eslint/lib/rules/utils/lazy-loading-rule-map.js",
+        "purpose": "utility",
+        "reuse_frequency": 0
+      },
+      {
+        "name": "keywords",
+        "file_path": "mcp-contest-continuity/node_modules/eslint/lib/rules/utils/keywords.js",
+        "purpose": "utility",
+        "reuse_frequency": 0
+      },
+      {
+        "name": "fix-tracker",
+        "file_path": "mcp-contest-continuity/node_modules/eslint/lib/rules/utils/fix-tracker.js",
+        "purpose": "utility",
+        "reuse_frequency": 0
+      },
+      {
+        "name": "ast-utils",
+        "file_path": "mcp-contest-continuity/node_modules/eslint/lib/rules/utils/ast-utils.js",
+        "purpose": "validation",
+        "reuse_frequency": 0
+      },
+      {
+        "name": "index",
+        "file_path": "mcp-contest-continuity/node_modules/@nodelib/fs.scandir/out/utils/index.js",
+        "purpose": "utility",
+        "reuse_frequency": 0
+      },
+      {
+        "name": "index.d",
+        "file_path": "mcp-contest-continuity/node_modules/@nodelib/fs.scandir/out/utils/index.d.ts",
+        "purpose": "utility",
+        "reuse_frequency": 0
+      },
+      {
+        "name": "fs",
+        "file_path": "mcp-contest-continuity/node_modules/@nodelib/fs.scandir/out/utils/fs.js",
+        "purpose": "utility",
+        "reuse_frequency": 0
+      },
+      {
+        "name": "fs.d",
+        "file_path": "mcp-contest-continuity/node_modules/@nodelib/fs.scandir/out/utils/fs.d.ts",
+        "purpose": "utility",
+        "reuse_frequency": 0
+      },
+      {
+        "name": "shallowEqual",
+        "file_path": "mcp-contest-continuity/node_modules/@babel/types/lib/utils/shallowEqual.js",
+        "purpose": "utility",
+        "reuse_frequency": 0
+      },
+      {
+        "name": "inherit",
+        "file_path": "mcp-contest-continuity/node_modules/@babel/types/lib/utils/inherit.js",
+        "purpose": "utility",
+        "reuse_frequency": 0
+      },
+      {
+        "name": "deprecationWarning",
+        "file_path": "mcp-contest-continuity/node_modules/@babel/types/lib/utils/deprecationWarning.js",
+        "purpose": "utility",
+        "reuse_frequency": 0
+      },
+      {
+        "name": "flf-to-strings",
+        "file_path": "backup/20250820_235220_success/codeb-cli/node_modules/figlet/utils/flf-to-strings.js",
+        "purpose": "utility",
+        "reuse_frequency": 0
+      },
+      {
+        "name": "merge",
+        "file_path": "backup/20250820_235220_success/node_modules/nodemon/lib/utils/merge.js",
+        "purpose": "utility",
+        "reuse_frequency": 0
+      },
+      {
+        "name": "log",
+        "file_path": "backup/20250820_235220_success/node_modules/nodemon/lib/utils/log.js",
+        "purpose": "utility",
+        "reuse_frequency": 0
+      },
+      {
+        "name": "index",
+        "file_path": "backup/20250820_235220_success/node_modules/nodemon/lib/utils/index.js",
+        "purpose": "utility",
+        "reuse_frequency": 0
+      },
+      {
+        "name": "colour",
+        "file_path": "backup/20250820_235220_success/node_modules/nodemon/lib/utils/colour.js",
+        "purpose": "utility",
+        "reuse_frequency": 0
+      },
+      {
+        "name": "clone",
+        "file_path": "backup/20250820_235220_success/node_modules/nodemon/lib/utils/clone.js",
+        "purpose": "utility",
+        "reuse_frequency": 0
+      },
+      {
+        "name": "bus",
+        "file_path": "backup/20250820_235220_success/node_modules/nodemon/lib/utils/bus.js",
+        "purpose": "utility",
+        "reuse_frequency": 0
+      },
+      {
+        "name": "merge",
+        "file_path": "backup/20250821_000100_cleanup/codeb-cli/node_modules/nodemon/lib/utils/merge.js",
+        "purpose": "utility",
+        "reuse_frequency": 0
+      },
+      {
+        "name": "log",
+        "file_path": "backup/20250821_000100_cleanup/codeb-cli/node_modules/nodemon/lib/utils/log.js",
+        "purpose": "utility",
+        "reuse_frequency": 0
+      },
+      {
+        "name": "index",
+        "file_path": "backup/20250821_000100_cleanup/codeb-cli/node_modules/nodemon/lib/utils/index.js",
+        "purpose": "utility",
+        "reuse_frequency": 0
+      },
+      {
+        "name": "colour",
+        "file_path": "backup/20250821_000100_cleanup/codeb-cli/node_modules/nodemon/lib/utils/colour.js",
+        "purpose": "utility",
+        "reuse_frequency": 0
+      },
+      {
+        "name": "clone",
+        "file_path": "backup/20250821_000100_cleanup/codeb-cli/node_modules/nodemon/lib/utils/clone.js",
+        "purpose": "utility",
+        "reuse_frequency": 0
+      },
+      {
+        "name": "bus",
+        "file_path": "backup/20250821_000100_cleanup/codeb-cli/node_modules/nodemon/lib/utils/bus.js",
+        "purpose": "utility",
+        "reuse_frequency": 0
+      },
+      {
+        "name": "utils",
+        "file_path": "backup/20250821_000100_cleanup/codeb-cli/node_modules/inquirer/lib/utils/utils.js",
+        "purpose": "api-client",
+        "reuse_frequency": 0
+      },
+      {
+        "name": "screen-manager",
+        "file_path": "backup/20250821_000100_cleanup/codeb-cli/node_modules/inquirer/lib/utils/screen-manager.js",
+        "purpose": "formatting",
+        "reuse_frequency": 0
+      },
+      {
+        "name": "readline",
+        "file_path": "backup/20250821_000100_cleanup/codeb-cli/node_modules/inquirer/lib/utils/readline.js",
+        "purpose": "utility",
+        "reuse_frequency": 0
+      },
+      {
+        "name": "paginator",
+        "file_path": "backup/20250821_000100_cleanup/codeb-cli/node_modules/inquirer/lib/utils/paginator.js",
+        "purpose": "utility",
+        "reuse_frequency": 0
+      },
+      {
+        "name": "incrementListIndex",
+        "file_path": "backup/20250821_000100_cleanup/codeb-cli/node_modules/inquirer/lib/utils/incrementListIndex.js",
+        "purpose": "utility",
+        "reuse_frequency": 0
+      },
+      {
+        "name": "events",
+        "file_path": "backup/20250821_000100_cleanup/codeb-cli/node_modules/inquirer/lib/utils/events.js",
+        "purpose": "utility",
+        "reuse_frequency": 0
+      },
+      {
+        "name": "string",
+        "file_path": "backup/20250821_000100_cleanup/codeb-cli/node_modules/fast-glob/out/utils/string.js",
+        "purpose": "utility",
+        "reuse_frequency": 0
+      },
+      {
+        "name": "string.d",
+        "file_path": "backup/20250821_000100_cleanup/codeb-cli/node_modules/fast-glob/out/utils/string.d.ts",
+        "purpose": "utility",
+        "reuse_frequency": 0
+      },
+      {
+        "name": "stream",
+        "file_path": "backup/20250821_000100_cleanup/codeb-cli/node_modules/fast-glob/out/utils/stream.js",
+        "purpose": "utility",
+        "reuse_frequency": 0
+      },
+      {
+        "name": "stream.d",
+        "file_path": "backup/20250821_000100_cleanup/codeb-cli/node_modules/fast-glob/out/utils/stream.d.ts",
+        "purpose": "utility",
+        "reuse_frequency": 0
+      },
+      {
+        "name": "pattern",
+        "file_path": "backup/20250821_000100_cleanup/codeb-cli/node_modules/fast-glob/out/utils/pattern.js",
+        "purpose": "api-client",
+        "reuse_frequency": 0
+      },
+      {
+        "name": "pattern.d",
+        "file_path": "backup/20250821_000100_cleanup/codeb-cli/node_modules/fast-glob/out/utils/pattern.d.ts",
+        "purpose": "utility",
+        "reuse_frequency": 0
+      },
+      {
+        "name": "path",
+        "file_path": "backup/20250821_000100_cleanup/codeb-cli/node_modules/fast-glob/out/utils/path.js",
+        "purpose": "formatting",
+        "reuse_frequency": 0
+      },
+      {
+        "name": "path.d",
+        "file_path": "backup/20250821_000100_cleanup/codeb-cli/node_modules/fast-glob/out/utils/path.d.ts",
+        "purpose": "utility",
+        "reuse_frequency": 0
+      },
+      {
+        "name": "index",
+        "file_path": "backup/20250821_000100_cleanup/codeb-cli/node_modules/fast-glob/out/utils/index.js",
+        "purpose": "utility",
+        "reuse_frequency": 0
+      },
+      {
+        "name": "index.d",
+        "file_path": "backup/20250821_000100_cleanup/codeb-cli/node_modules/fast-glob/out/utils/index.d.ts",
+        "purpose": "utility",
+        "reuse_frequency": 0
+      },
+      {
+        "name": "fs",
+        "file_path": "backup/20250821_000100_cleanup/codeb-cli/node_modules/fast-glob/out/utils/fs.js",
+        "purpose": "utility",
+        "reuse_frequency": 0
+      },
+      {
+        "name": "fs.d",
+        "file_path": "backup/20250821_000100_cleanup/codeb-cli/node_modules/fast-glob/out/utils/fs.d.ts",
+        "purpose": "utility",
+        "reuse_frequency": 0
+      },
+      {
+        "name": "errno",
+        "file_path": "backup/20250821_000100_cleanup/codeb-cli/node_modules/fast-glob/out/utils/errno.js",
+        "purpose": "utility",
+        "reuse_frequency": 0
+      },
+      {
+        "name": "errno.d",
+        "file_path": "backup/20250821_000100_cleanup/codeb-cli/node_modules/fast-glob/out/utils/errno.d.ts",
+        "purpose": "utility",
+        "reuse_frequency": 0
+      },
+      {
+        "name": "array",
+        "file_path": "backup/20250821_000100_cleanup/codeb-cli/node_modules/fast-glob/out/utils/array.js",
+        "purpose": "utility",
+        "reuse_frequency": 0
+      },
+      {
+        "name": "array.d",
+        "file_path": "backup/20250821_000100_cleanup/codeb-cli/node_modules/fast-glob/out/utils/array.d.ts",
+        "purpose": "utility",
+        "reuse_frequency": 0
+      },
+      {
+        "name": "temp",
+        "file_path": "backup/20250821_000100_cleanup/codeb-cli/node_modules/atomically/src/utils/temp.ts",
+        "purpose": "utility",
+        "reuse_frequency": 0
+      },
+      {
+        "name": "scheduler",
+        "file_path": "backup/20250821_000100_cleanup/codeb-cli/node_modules/atomically/src/utils/scheduler.ts",
+        "purpose": "utility",
+        "reuse_frequency": 0
+      },
+      {
+        "name": "lang",
+        "file_path": "backup/20250821_000100_cleanup/codeb-cli/node_modules/atomically/src/utils/lang.ts",
+        "purpose": "utility",
+        "reuse_frequency": 0
+      },
+      {
+        "name": "temp",
+        "file_path": "backup/20250821_000100_cleanup/codeb-cli/node_modules/atomically/dist/utils/temp.js",
+        "purpose": "utility",
+        "reuse_frequency": 0
+      },
+      {
+        "name": "temp.d",
+        "file_path": "backup/20250821_000100_cleanup/codeb-cli/node_modules/atomically/dist/utils/temp.d.ts",
+        "purpose": "utility",
+        "reuse_frequency": 0
+      },
+      {
+        "name": "scheduler",
+        "file_path": "backup/20250821_000100_cleanup/codeb-cli/node_modules/atomically/dist/utils/scheduler.js",
+        "purpose": "utility",
+        "reuse_frequency": 0
+      },
+      {
+        "name": "scheduler.d",
+        "file_path": "backup/20250821_000100_cleanup/codeb-cli/node_modules/atomically/dist/utils/scheduler.d.ts",
+        "purpose": "utility",
+        "reuse_frequency": 0
+      },
+      {
+        "name": "lang",
+        "file_path": "backup/20250821_000100_cleanup/codeb-cli/node_modules/atomically/dist/utils/lang.js",
+        "purpose": "utility",
+        "reuse_frequency": 0
+      },
+      {
+        "name": "lang.d",
+        "file_path": "backup/20250821_000100_cleanup/codeb-cli/node_modules/atomically/dist/utils/lang.d.ts",
+        "purpose": "utility",
+        "reuse_frequency": 0
+      },
+      {
+        "name": "scopeAnalysis",
+        "file_path": "mcp-contest-continuity/node_modules/@typescript-eslint/utils/dist/ast-utils/eslint-utils/scopeAnalysis.js",
+        "purpose": "api-client",
+        "reuse_frequency": 0
+      },
+      {
+        "name": "scopeAnalysis.d",
+        "file_path": "mcp-contest-continuity/node_modules/@typescript-eslint/utils/dist/ast-utils/eslint-utils/scopeAnalysis.d.ts",
+        "purpose": "api-client",
+        "reuse_frequency": 0
+      },
+      {
+        "name": "predicates",
+        "file_path": "mcp-contest-continuity/node_modules/@typescript-eslint/utils/dist/ast-utils/eslint-utils/predicates.js",
+        "purpose": "utility",
+        "reuse_frequency": 0
+      },
+      {
+        "name": "predicates.d",
+        "file_path": "mcp-contest-continuity/node_modules/@typescript-eslint/utils/dist/ast-utils/eslint-utils/predicates.d.ts",
+        "purpose": "utility",
+        "reuse_frequency": 0
+      },
+      {
+        "name": "index",
+        "file_path": "mcp-contest-continuity/node_modules/@typescript-eslint/utils/dist/ast-utils/eslint-utils/index.js",
+        "purpose": "utility",
+        "reuse_frequency": 0
+      },
+      {
+        "name": "index.d",
+        "file_path": "mcp-contest-continuity/node_modules/@typescript-eslint/utils/dist/ast-utils/eslint-utils/index.d.ts",
+        "purpose": "utility",
+        "reuse_frequency": 0
+      },
+      {
+        "name": "astUtilities",
+        "file_path": "mcp-contest-continuity/node_modules/@typescript-eslint/utils/dist/ast-utils/eslint-utils/astUtilities.js",
+        "purpose": "api-client",
+        "reuse_frequency": 0
+      },
+      {
+        "name": "astUtilities.d",
+        "file_path": "mcp-contest-continuity/node_modules/@typescript-eslint/utils/dist/ast-utils/eslint-utils/astUtilities.d.ts",
+        "purpose": "api-client",
+        "reuse_frequency": 0
+      },
+      {
+        "name": "ReferenceTracker",
+        "file_path": "mcp-contest-continuity/node_modules/@typescript-eslint/utils/dist/ast-utils/eslint-utils/ReferenceTracker.js",
+        "purpose": "api-client",
+        "reuse_frequency": 0
+      },
+      {
+        "name": "ReferenceTracker.d",
+        "file_path": "mcp-contest-continuity/node_modules/@typescript-eslint/utils/dist/ast-utils/eslint-utils/ReferenceTracker.d.ts",
+        "purpose": "api-client",
+        "reuse_frequency": 0
+      },
+      {
+        "name": "PatternMatcher",
+        "file_path": "mcp-contest-continuity/node_modules/@typescript-eslint/utils/dist/ast-utils/eslint-utils/PatternMatcher.js",
+        "purpose": "api-client",
+        "reuse_frequency": 0
+      },
+      {
+        "name": "PatternMatcher.d",
+        "file_path": "mcp-contest-continuity/node_modules/@typescript-eslint/utils/dist/ast-utils/eslint-utils/PatternMatcher.d.ts",
+        "purpose": "api-client",
+        "reuse_frequency": 0
+      },
+      {
+        "name": "letters",
+        "file_path": "mcp-contest-continuity/node_modules/eslint/lib/rules/utils/patterns/letters.js",
+        "purpose": "utility",
+        "reuse_frequency": 0
+      },
+      {
+        "name": "is-surrogate-pair",
+        "file_path": "mcp-contest-continuity/node_modules/eslint/lib/rules/utils/unicode/is-surrogate-pair.js",
+        "purpose": "utility",
+        "reuse_frequency": 0
+      },
+      {
+        "name": "is-regional-indicator-symbol",
+        "file_path": "mcp-contest-continuity/node_modules/eslint/lib/rules/utils/unicode/is-regional-indicator-symbol.js",
+        "purpose": "utility",
+        "reuse_frequency": 0
+      },
+      {
+        "name": "is-emoji-modifier",
+        "file_path": "mcp-contest-continuity/node_modules/eslint/lib/rules/utils/unicode/is-emoji-modifier.js",
+        "purpose": "utility",
+        "reuse_frequency": 0
+      },
+      {
+        "name": "is-combining-character",
+        "file_path": "mcp-contest-continuity/node_modules/eslint/lib/rules/utils/unicode/is-combining-character.js",
+        "purpose": "utility",
+        "reuse_frequency": 0
+      },
+      {
+        "name": "index",
+        "file_path": "mcp-contest-continuity/node_modules/eslint/lib/rules/utils/unicode/index.js",
+        "purpose": "utility",
+        "reuse_frequency": 0
+      },
+      {
+        "name": "cleanJSXElementLiteralChild",
+        "file_path": "mcp-contest-continuity/node_modules/@babel/types/lib/utils/react/cleanJSXElementLiteralChild.js",
+        "purpose": "utility",
+        "reuse_frequency": 0
+      },
+      {
+        "name": "merge",
+        "file_path": "backup/20250820_235220_success/codeb-cli/node_modules/nodemon/lib/utils/merge.js",
+        "purpose": "utility",
+        "reuse_frequency": 0
+      },
+      {
+        "name": "log",
+        "file_path": "backup/20250820_235220_success/codeb-cli/node_modules/nodemon/lib/utils/log.js",
+        "purpose": "utility",
+        "reuse_frequency": 0
+      },
+      {
+        "name": "index",
+        "file_path": "backup/20250820_235220_success/codeb-cli/node_modules/nodemon/lib/utils/index.js",
+        "purpose": "utility",
+        "reuse_frequency": 0
+      },
+      {
+        "name": "colour",
+        "file_path": "backup/20250820_235220_success/codeb-cli/node_modules/nodemon/lib/utils/colour.js",
+        "purpose": "utility",
+        "reuse_frequency": 0
+      },
+      {
+        "name": "clone",
+        "file_path": "backup/20250820_235220_success/codeb-cli/node_modules/nodemon/lib/utils/clone.js",
+        "purpose": "utility",
+        "reuse_frequency": 0
+      },
+      {
+        "name": "bus",
+        "file_path": "backup/20250820_235220_success/codeb-cli/node_modules/nodemon/lib/utils/bus.js",
+        "purpose": "utility",
+        "reuse_frequency": 0
+      },
+      {
+        "name": "utils",
+        "file_path": "backup/20250820_235220_success/codeb-cli/node_modules/inquirer/lib/utils/utils.js",
+        "purpose": "api-client",
+        "reuse_frequency": 0
+      },
+      {
+        "name": "screen-manager",
+        "file_path": "backup/20250820_235220_success/codeb-cli/node_modules/inquirer/lib/utils/screen-manager.js",
+        "purpose": "formatting",
+        "reuse_frequency": 0
+      },
+      {
+        "name": "readline",
+        "file_path": "backup/20250820_235220_success/codeb-cli/node_modules/inquirer/lib/utils/readline.js",
+        "purpose": "utility",
+        "reuse_frequency": 0
+      },
+      {
+        "name": "paginator",
+        "file_path": "backup/20250820_235220_success/codeb-cli/node_modules/inquirer/lib/utils/paginator.js",
+        "purpose": "utility",
+        "reuse_frequency": 0
+      },
+      {
+        "name": "incrementListIndex",
+        "file_path": "backup/20250820_235220_success/codeb-cli/node_modules/inquirer/lib/utils/incrementListIndex.js",
+        "purpose": "utility",
+        "reuse_frequency": 0
+      },
+      {
+        "name": "events",
+        "file_path": "backup/20250820_235220_success/codeb-cli/node_modules/inquirer/lib/utils/events.js",
+        "purpose": "utility",
+        "reuse_frequency": 0
+      },
+      {
+        "name": "string",
+        "file_path": "backup/20250820_235220_success/codeb-cli/node_modules/fast-glob/out/utils/string.js",
+        "purpose": "utility",
+        "reuse_frequency": 0
+      },
+      {
+        "name": "string.d",
+        "file_path": "backup/20250820_235220_success/codeb-cli/node_modules/fast-glob/out/utils/string.d.ts",
+        "purpose": "utility",
+        "reuse_frequency": 0
+      },
+      {
+        "name": "stream",
+        "file_path": "backup/20250820_235220_success/codeb-cli/node_modules/fast-glob/out/utils/stream.js",
+        "purpose": "utility",
+        "reuse_frequency": 0
+      },
+      {
+        "name": "stream.d",
+        "file_path": "backup/20250820_235220_success/codeb-cli/node_modules/fast-glob/out/utils/stream.d.ts",
+        "purpose": "utility",
+        "reuse_frequency": 0
+      },
+      {
+        "name": "pattern",
+        "file_path": "backup/20250820_235220_success/codeb-cli/node_modules/fast-glob/out/utils/pattern.js",
+        "purpose": "api-client",
+        "reuse_frequency": 0
+      },
+      {
+        "name": "pattern.d",
+        "file_path": "backup/20250820_235220_success/codeb-cli/node_modules/fast-glob/out/utils/pattern.d.ts",
+        "purpose": "utility",
+        "reuse_frequency": 0
+      },
+      {
+        "name": "path",
+        "file_path": "backup/20250820_235220_success/codeb-cli/node_modules/fast-glob/out/utils/path.js",
+        "purpose": "formatting",
+        "reuse_frequency": 0
+      },
+      {
+        "name": "path.d",
+        "file_path": "backup/20250820_235220_success/codeb-cli/node_modules/fast-glob/out/utils/path.d.ts",
+        "purpose": "utility",
+        "reuse_frequency": 0
+      },
+      {
+        "name": "index",
+        "file_path": "backup/20250820_235220_success/codeb-cli/node_modules/fast-glob/out/utils/index.js",
+        "purpose": "utility",
+        "reuse_frequency": 0
+      },
+      {
+        "name": "index.d",
+        "file_path": "backup/20250820_235220_success/codeb-cli/node_modules/fast-glob/out/utils/index.d.ts",
+        "purpose": "utility",
+        "reuse_frequency": 0
+      },
+      {
+        "name": "fs",
+        "file_path": "backup/20250820_235220_success/codeb-cli/node_modules/fast-glob/out/utils/fs.js",
+        "purpose": "utility",
+        "reuse_frequency": 0
+      },
+      {
+        "name": "fs.d",
+        "file_path": "backup/20250820_235220_success/codeb-cli/node_modules/fast-glob/out/utils/fs.d.ts",
+        "purpose": "utility",
+        "reuse_frequency": 0
+      },
+      {
+        "name": "errno",
+        "file_path": "backup/20250820_235220_success/codeb-cli/node_modules/fast-glob/out/utils/errno.js",
+        "purpose": "utility",
+        "reuse_frequency": 0
+      },
+      {
+        "name": "errno.d",
+        "file_path": "backup/20250820_235220_success/codeb-cli/node_modules/fast-glob/out/utils/errno.d.ts",
+        "purpose": "utility",
+        "reuse_frequency": 0
+      },
+      {
+        "name": "array",
+        "file_path": "backup/20250820_235220_success/codeb-cli/node_modules/fast-glob/out/utils/array.js",
+        "purpose": "utility",
+        "reuse_frequency": 0
+      },
+      {
+        "name": "array.d",
+        "file_path": "backup/20250820_235220_success/codeb-cli/node_modules/fast-glob/out/utils/array.d.ts",
+        "purpose": "utility",
+        "reuse_frequency": 0
+      },
+      {
+        "name": "temp",
+        "file_path": "backup/20250820_235220_success/codeb-cli/node_modules/atomically/src/utils/temp.ts",
+        "purpose": "utility",
+        "reuse_frequency": 0
+      },
+      {
+        "name": "scheduler",
+        "file_path": "backup/20250820_235220_success/codeb-cli/node_modules/atomically/src/utils/scheduler.ts",
+        "purpose": "utility",
+        "reuse_frequency": 0
+      },
+      {
+        "name": "lang",
+        "file_path": "backup/20250820_235220_success/codeb-cli/node_modules/atomically/src/utils/lang.ts",
+        "purpose": "utility",
+        "reuse_frequency": 0
+      },
+      {
+        "name": "temp",
+        "file_path": "backup/20250820_235220_success/codeb-cli/node_modules/atomically/dist/utils/temp.js",
+        "purpose": "utility",
+        "reuse_frequency": 0
+      },
+      {
+        "name": "temp.d",
+        "file_path": "backup/20250820_235220_success/codeb-cli/node_modules/atomically/dist/utils/temp.d.ts",
+        "purpose": "utility",
+        "reuse_frequency": 0
+      },
+      {
+        "name": "scheduler",
+        "file_path": "backup/20250820_235220_success/codeb-cli/node_modules/atomically/dist/utils/scheduler.js",
+        "purpose": "utility",
+        "reuse_frequency": 0
+      },
+      {
+        "name": "scheduler.d",
+        "file_path": "backup/20250820_235220_success/codeb-cli/node_modules/atomically/dist/utils/scheduler.d.ts",
+        "purpose": "utility",
+        "reuse_frequency": 0
+      },
+      {
+        "name": "lang",
+        "file_path": "backup/20250820_235220_success/codeb-cli/node_modules/atomically/dist/utils/lang.js",
+        "purpose": "utility",
+        "reuse_frequency": 0
+      },
+      {
+        "name": "lang.d",
+        "file_path": "backup/20250820_235220_success/codeb-cli/node_modules/atomically/dist/utils/lang.d.ts",
+        "purpose": "utility",
+        "reuse_frequency": 0
+      },
+      {
+        "name": "which-module",
+        "file_path": "backup/20250821_000100_cleanup/codeb-cli/node_modules/yargs/build/lib/utils/which-module.js",
+        "purpose": "utility",
+        "reuse_frequency": 0
+      },
+      {
+        "name": "set-blocking",
+        "file_path": "backup/20250821_000100_cleanup/codeb-cli/node_modules/yargs/build/lib/utils/set-blocking.js",
+        "purpose": "utility",
+        "reuse_frequency": 0
+      },
+      {
+        "name": "process-argv",
+        "file_path": "backup/20250821_000100_cleanup/codeb-cli/node_modules/yargs/build/lib/utils/process-argv.js",
+        "purpose": "utility",
+        "reuse_frequency": 0
+      },
+      {
+        "name": "obj-filter",
+        "file_path": "backup/20250821_000100_cleanup/codeb-cli/node_modules/yargs/build/lib/utils/obj-filter.js",
+        "purpose": "utility",
+        "reuse_frequency": 0
+      },
+      {
+        "name": "levenshtein",
+        "file_path": "backup/20250821_000100_cleanup/codeb-cli/node_modules/yargs/build/lib/utils/levenshtein.js",
+        "purpose": "utility",
+        "reuse_frequency": 0
+      },
+      {
+        "name": "is-promise",
+        "file_path": "backup/20250821_000100_cleanup/codeb-cli/node_modules/yargs/build/lib/utils/is-promise.js",
+        "purpose": "utility",
+        "reuse_frequency": 0
+      },
+      {
+        "name": "apply-extends",
+        "file_path": "backup/20250821_000100_cleanup/codeb-cli/node_modules/yargs/build/lib/utils/apply-extends.js",
+        "purpose": "utility",
+        "reuse_frequency": 0
+      },
+      {
+        "name": "index",
+        "file_path": "backup/20250821_000100_cleanup/codeb-cli/node_modules/@nodelib/fs.scandir/out/utils/index.js",
+        "purpose": "utility",
+        "reuse_frequency": 0
+      },
+      {
+        "name": "index.d",
+        "file_path": "backup/20250821_000100_cleanup/codeb-cli/node_modules/@nodelib/fs.scandir/out/utils/index.d.ts",
+        "purpose": "utility",
+        "reuse_frequency": 0
+      },
+      {
+        "name": "fs",
+        "file_path": "backup/20250821_000100_cleanup/codeb-cli/node_modules/@nodelib/fs.scandir/out/utils/fs.js",
+        "purpose": "utility",
+        "reuse_frequency": 0
+      },
+      {
+        "name": "fs.d",
+        "file_path": "backup/20250821_000100_cleanup/codeb-cli/node_modules/@nodelib/fs.scandir/out/utils/fs.d.ts",
+        "purpose": "utility",
+        "reuse_frequency": 0
+      },
+      {
+        "name": "toFunctionName",
+        "file_path": "backup/20250821_000100_cleanup/codeb-cli/node_modules/@babel/types/scripts/utils/toFunctionName.js",
+        "purpose": "utility",
+        "reuse_frequency": 0
+      },
+      {
+        "name": "stringifyValidator",
+        "file_path": "backup/20250821_000100_cleanup/codeb-cli/node_modules/@babel/types/scripts/utils/stringifyValidator.js",
+        "purpose": "validation",
+        "reuse_frequency": 0
+      },
+      {
+        "name": "lowerFirst",
+        "file_path": "backup/20250821_000100_cleanup/codeb-cli/node_modules/@babel/types/scripts/utils/lowerFirst.js",
+        "purpose": "utility",
+        "reuse_frequency": 0
+      },
+      {
+        "name": "formatBuilderName",
+        "file_path": "backup/20250821_000100_cleanup/codeb-cli/node_modules/@babel/types/scripts/utils/formatBuilderName.js",
+        "purpose": "formatting",
+        "reuse_frequency": 0
+      },
+      {
+        "name": "shallowEqual",
+        "file_path": "backup/20250821_000100_cleanup/codeb-cli/node_modules/@babel/types/lib/utils/shallowEqual.js",
+        "purpose": "utility",
+        "reuse_frequency": 0
+      },
+      {
+        "name": "inherit",
+        "file_path": "backup/20250821_000100_cleanup/codeb-cli/node_modules/@babel/types/lib/utils/inherit.js",
+        "purpose": "utility",
+        "reuse_frequency": 0
+      },
+      {
+        "name": "which-module",
+        "file_path": "backup/20250820_235220_success/codeb-cli/node_modules/yargs/build/lib/utils/which-module.js",
+        "purpose": "utility",
+        "reuse_frequency": 0
+      },
+      {
+        "name": "set-blocking",
+        "file_path": "backup/20250820_235220_success/codeb-cli/node_modules/yargs/build/lib/utils/set-blocking.js",
+        "purpose": "utility",
+        "reuse_frequency": 0
+      },
+      {
+        "name": "process-argv",
+        "file_path": "backup/20250820_235220_success/codeb-cli/node_modules/yargs/build/lib/utils/process-argv.js",
+        "purpose": "utility",
+        "reuse_frequency": 0
+      },
+      {
+        "name": "obj-filter",
+        "file_path": "backup/20250820_235220_success/codeb-cli/node_modules/yargs/build/lib/utils/obj-filter.js",
+        "purpose": "utility",
+        "reuse_frequency": 0
+      },
+      {
+        "name": "levenshtein",
+        "file_path": "backup/20250820_235220_success/codeb-cli/node_modules/yargs/build/lib/utils/levenshtein.js",
+        "purpose": "utility",
+        "reuse_frequency": 0
+      },
+      {
+        "name": "is-promise",
+        "file_path": "backup/20250820_235220_success/codeb-cli/node_modules/yargs/build/lib/utils/is-promise.js",
+        "purpose": "utility",
+        "reuse_frequency": 0
+      },
+      {
+        "name": "apply-extends",
+        "file_path": "backup/20250820_235220_success/codeb-cli/node_modules/yargs/build/lib/utils/apply-extends.js",
+        "purpose": "utility",
+        "reuse_frequency": 0
+      },
+      {
+        "name": "index",
+        "file_path": "backup/20250820_235220_success/codeb-cli/node_modules/@nodelib/fs.scandir/out/utils/index.js",
+        "purpose": "utility",
+        "reuse_frequency": 0
+      },
+      {
+        "name": "index.d",
+        "file_path": "backup/20250820_235220_success/codeb-cli/node_modules/@nodelib/fs.scandir/out/utils/index.d.ts",
+        "purpose": "utility",
+        "reuse_frequency": 0
+      },
+      {
+        "name": "fs",
+        "file_path": "backup/20250820_235220_success/codeb-cli/node_modules/@nodelib/fs.scandir/out/utils/fs.js",
+        "purpose": "utility",
+        "reuse_frequency": 0
+      },
+      {
+        "name": "fs.d",
+        "file_path": "backup/20250820_235220_success/codeb-cli/node_modules/@nodelib/fs.scandir/out/utils/fs.d.ts",
+        "purpose": "utility",
+        "reuse_frequency": 0
+      },
+      {
+        "name": "toFunctionName",
+        "file_path": "backup/20250820_235220_success/codeb-cli/node_modules/@babel/types/scripts/utils/toFunctionName.js",
+        "purpose": "utility",
+        "reuse_frequency": 0
+      },
+      {
+        "name": "stringifyValidator",
+        "file_path": "backup/20250820_235220_success/codeb-cli/node_modules/@babel/types/scripts/utils/stringifyValidator.js",
+        "purpose": "validation",
+        "reuse_frequency": 0
+      },
+      {
+        "name": "lowerFirst",
+        "file_path": "backup/20250820_235220_success/codeb-cli/node_modules/@babel/types/scripts/utils/lowerFirst.js",
+        "purpose": "utility",
+        "reuse_frequency": 0
+      },
+      {
+        "name": "formatBuilderName",
+        "file_path": "backup/20250820_235220_success/codeb-cli/node_modules/@babel/types/scripts/utils/formatBuilderName.js",
+        "purpose": "formatting",
+        "reuse_frequency": 0
+      },
+      {
+        "name": "shallowEqual",
+        "file_path": "backup/20250820_235220_success/codeb-cli/node_modules/@babel/types/lib/utils/shallowEqual.js",
+        "purpose": "utility",
+        "reuse_frequency": 0
+      },
+      {
+        "name": "inherit",
+        "file_path": "backup/20250820_235220_success/codeb-cli/node_modules/@babel/types/lib/utils/inherit.js",
+        "purpose": "utility",
+        "reuse_frequency": 0
+      },
+      {
+        "name": "cleanJSXElementLiteralChild",
+        "file_path": "backup/20250821_000100_cleanup/codeb-cli/node_modules/@babel/types/lib/utils/react/cleanJSXElementLiteralChild.js",
+        "purpose": "utility",
+        "reuse_frequency": 0
+      },
+      {
+        "name": "cleanJSXElementLiteralChild",
+        "file_path": "backup/20250820_235220_success/codeb-cli/node_modules/@babel/types/lib/utils/react/cleanJSXElementLiteralChild.js",
+        "purpose": "utility",
+        "reuse_frequency": 0
+      },
+      {
+        "name": "merge",
+        "file_path": "backup/20250821_000100_cleanup/archive/2025-08-19-cleanup/folders/server-api/node_modules/nodemon/lib/utils/merge.js",
+        "purpose": "utility",
+        "reuse_frequency": 0
+      },
+      {
+        "name": "log",
+        "file_path": "backup/20250821_000100_cleanup/archive/2025-08-19-cleanup/folders/server-api/node_modules/nodemon/lib/utils/log.js",
+        "purpose": "utility",
+        "reuse_frequency": 0
+      },
+      {
+        "name": "index",
+        "file_path": "backup/20250821_000100_cleanup/archive/2025-08-19-cleanup/folders/server-api/node_modules/nodemon/lib/utils/index.js",
+        "purpose": "utility",
+        "reuse_frequency": 0
+      },
+      {
+        "name": "colour",
+        "file_path": "backup/20250821_000100_cleanup/archive/2025-08-19-cleanup/folders/server-api/node_modules/nodemon/lib/utils/colour.js",
+        "purpose": "utility",
+        "reuse_frequency": 0
+      },
+      {
+        "name": "clone",
+        "file_path": "backup/20250821_000100_cleanup/archive/2025-08-19-cleanup/folders/server-api/node_modules/nodemon/lib/utils/clone.js",
+        "purpose": "utility",
+        "reuse_frequency": 0
+      },
+      {
+        "name": "bus",
+        "file_path": "backup/20250821_000100_cleanup/archive/2025-08-19-cleanup/folders/server-api/node_modules/nodemon/lib/utils/bus.js",
+        "purpose": "utility",
+        "reuse_frequency": 0
+      },
+      {
+        "name": "utils",
+        "file_path": "backup/20250821_000100_cleanup/archive/2025-08-19-cleanup/folders/cli-package/node_modules/inquirer/lib/utils/utils.js",
+        "purpose": "api-client",
+        "reuse_frequency": 0
+      },
+      {
+        "name": "screen-manager",
+        "file_path": "backup/20250821_000100_cleanup/archive/2025-08-19-cleanup/folders/cli-package/node_modules/inquirer/lib/utils/screen-manager.js",
+        "purpose": "formatting",
+        "reuse_frequency": 0
+      },
+      {
+        "name": "readline",
+        "file_path": "backup/20250821_000100_cleanup/archive/2025-08-19-cleanup/folders/cli-package/node_modules/inquirer/lib/utils/readline.js",
+        "purpose": "utility",
+        "reuse_frequency": 0
+      },
+      {
+        "name": "paginator",
+        "file_path": "backup/20250821_000100_cleanup/archive/2025-08-19-cleanup/folders/cli-package/node_modules/inquirer/lib/utils/paginator.js",
+        "purpose": "utility",
+        "reuse_frequency": 0
+      },
+      {
+        "name": "incrementListIndex",
+        "file_path": "backup/20250821_000100_cleanup/archive/2025-08-19-cleanup/folders/cli-package/node_modules/inquirer/lib/utils/incrementListIndex.js",
+        "purpose": "utility",
+        "reuse_frequency": 0
+      },
+      {
+        "name": "events",
+        "file_path": "backup/20250821_000100_cleanup/archive/2025-08-19-cleanup/folders/cli-package/node_modules/inquirer/lib/utils/events.js",
+        "purpose": "utility",
+        "reuse_frequency": 0
+      },
+      {
+        "name": "temp",
+        "file_path": "backup/20250821_000100_cleanup/archive/2025-08-19-cleanup/folders/cli-package/node_modules/atomically/src/utils/temp.ts",
+        "purpose": "utility",
+        "reuse_frequency": 0
+      },
+      {
+        "name": "scheduler",
+        "file_path": "backup/20250821_000100_cleanup/archive/2025-08-19-cleanup/folders/cli-package/node_modules/atomically/src/utils/scheduler.ts",
+        "purpose": "utility",
+        "reuse_frequency": 0
+      },
+      {
+        "name": "retryify_queue",
+        "file_path": "backup/20250821_000100_cleanup/archive/2025-08-19-cleanup/folders/cli-package/node_modules/atomically/src/utils/retryify_queue.ts",
+        "purpose": "utility",
+        "reuse_frequency": 0
+      },
+      {
+        "name": "retryify",
+        "file_path": "backup/20250821_000100_cleanup/archive/2025-08-19-cleanup/folders/cli-package/node_modules/atomically/src/utils/retryify.ts",
+        "purpose": "utility",
+        "reuse_frequency": 0
+      },
+      {
+        "name": "lang",
+        "file_path": "backup/20250821_000100_cleanup/archive/2025-08-19-cleanup/folders/cli-package/node_modules/atomically/src/utils/lang.ts",
+        "purpose": "utility",
+        "reuse_frequency": 0
+      },
+      {
+        "name": "fs_handlers",
+        "file_path": "backup/20250821_000100_cleanup/archive/2025-08-19-cleanup/folders/cli-package/node_modules/atomically/src/utils/fs_handlers.ts",
+        "purpose": "utility",
+        "reuse_frequency": 0
+      },
+      {
+        "name": "fs",
+        "file_path": "backup/20250821_000100_cleanup/archive/2025-08-19-cleanup/folders/cli-package/node_modules/atomically/src/utils/fs.ts",
+        "purpose": "utility",
+        "reuse_frequency": 0
+      },
+      {
+        "name": "attemptify",
+        "file_path": "backup/20250821_000100_cleanup/archive/2025-08-19-cleanup/folders/cli-package/node_modules/atomically/src/utils/attemptify.ts",
+        "purpose": "utility",
+        "reuse_frequency": 0
+      },
+      {
+        "name": "temp",
+        "file_path": "backup/20250821_000100_cleanup/archive/2025-08-19-cleanup/folders/cli-package/node_modules/atomically/dist/utils/temp.js",
+        "purpose": "utility",
+        "reuse_frequency": 0
+      },
+      {
+        "name": "temp.d",
+        "file_path": "backup/20250821_000100_cleanup/archive/2025-08-19-cleanup/folders/cli-package/node_modules/atomically/dist/utils/temp.d.ts",
+        "purpose": "utility",
+        "reuse_frequency": 0
+      },
+      {
+        "name": "scheduler",
+        "file_path": "backup/20250821_000100_cleanup/archive/2025-08-19-cleanup/folders/cli-package/node_modules/atomically/dist/utils/scheduler.js",
+        "purpose": "utility",
+        "reuse_frequency": 0
+      },
+      {
+        "name": "scheduler.d",
+        "file_path": "backup/20250821_000100_cleanup/archive/2025-08-19-cleanup/folders/cli-package/node_modules/atomically/dist/utils/scheduler.d.ts",
+        "purpose": "utility",
+        "reuse_frequency": 0
+      },
+      {
+        "name": "retryify_queue",
+        "file_path": "backup/20250821_000100_cleanup/archive/2025-08-19-cleanup/folders/cli-package/node_modules/atomically/dist/utils/retryify_queue.js",
+        "purpose": "utility",
+        "reuse_frequency": 0
+      },
+      {
+        "name": "retryify_queue.d",
+        "file_path": "backup/20250821_000100_cleanup/archive/2025-08-19-cleanup/folders/cli-package/node_modules/atomically/dist/utils/retryify_queue.d.ts",
+        "purpose": "utility",
+        "reuse_frequency": 0
+      },
+      {
+        "name": "retryify",
+        "file_path": "backup/20250821_000100_cleanup/archive/2025-08-19-cleanup/folders/cli-package/node_modules/atomically/dist/utils/retryify.js",
+        "purpose": "utility",
+        "reuse_frequency": 0
+      },
+      {
+        "name": "retryify.d",
+        "file_path": "backup/20250821_000100_cleanup/archive/2025-08-19-cleanup/folders/cli-package/node_modules/atomically/dist/utils/retryify.d.ts",
+        "purpose": "utility",
+        "reuse_frequency": 0
+      },
+      {
+        "name": "lang",
+        "file_path": "backup/20250821_000100_cleanup/archive/2025-08-19-cleanup/folders/cli-package/node_modules/atomically/dist/utils/lang.js",
+        "purpose": "utility",
+        "reuse_frequency": 0
+      },
+      {
+        "name": "lang.d",
+        "file_path": "backup/20250821_000100_cleanup/archive/2025-08-19-cleanup/folders/cli-package/node_modules/atomically/dist/utils/lang.d.ts",
+        "purpose": "utility",
+        "reuse_frequency": 0
+      },
+      {
+        "name": "fs_handlers",
+        "file_path": "backup/20250821_000100_cleanup/archive/2025-08-19-cleanup/folders/cli-package/node_modules/atomically/dist/utils/fs_handlers.js",
+        "purpose": "utility",
+        "reuse_frequency": 0
+      },
+      {
+        "name": "fs_handlers.d",
+        "file_path": "backup/20250821_000100_cleanup/archive/2025-08-19-cleanup/folders/cli-package/node_modules/atomically/dist/utils/fs_handlers.d.ts",
+        "purpose": "utility",
+        "reuse_frequency": 0
+      },
+      {
+        "name": "fs",
+        "file_path": "backup/20250821_000100_cleanup/archive/2025-08-19-cleanup/folders/cli-package/node_modules/atomically/dist/utils/fs.js",
+        "purpose": "utility",
+        "reuse_frequency": 0
+      },
+      {
+        "name": "fs.d",
+        "file_path": "backup/20250821_000100_cleanup/archive/2025-08-19-cleanup/folders/cli-package/node_modules/atomically/dist/utils/fs.d.ts",
+        "purpose": "utility",
+        "reuse_frequency": 0
+      },
+      {
+        "name": "attemptify",
+        "file_path": "backup/20250821_000100_cleanup/archive/2025-08-19-cleanup/folders/cli-package/node_modules/atomically/dist/utils/attemptify.js",
+        "purpose": "utility",
+        "reuse_frequency": 0
+      },
+      {
+        "name": "attemptify.d",
+        "file_path": "backup/20250821_000100_cleanup/archive/2025-08-19-cleanup/folders/cli-package/node_modules/atomically/dist/utils/attemptify.d.ts",
+        "purpose": "utility",
+        "reuse_frequency": 0
+      },
+      {
+        "name": "merge",
+        "file_path": "backup/20250820_235220_success/archive/2025-08-19-cleanup/folders/server-api/node_modules/nodemon/lib/utils/merge.js",
+        "purpose": "utility",
+        "reuse_frequency": 0
+      },
+      {
+        "name": "log",
+        "file_path": "backup/20250820_235220_success/archive/2025-08-19-cleanup/folders/server-api/node_modules/nodemon/lib/utils/log.js",
+        "purpose": "utility",
+        "reuse_frequency": 0
+      },
+      {
+        "name": "index",
+        "file_path": "backup/20250820_235220_success/archive/2025-08-19-cleanup/folders/server-api/node_modules/nodemon/lib/utils/index.js",
+        "purpose": "utility",
+        "reuse_frequency": 0
+      },
+      {
+        "name": "colour",
+        "file_path": "backup/20250820_235220_success/archive/2025-08-19-cleanup/folders/server-api/node_modules/nodemon/lib/utils/colour.js",
+        "purpose": "utility",
+        "reuse_frequency": 0
+      },
+      {
+        "name": "clone",
+        "file_path": "backup/20250820_235220_success/archive/2025-08-19-cleanup/folders/server-api/node_modules/nodemon/lib/utils/clone.js",
+        "purpose": "utility",
+        "reuse_frequency": 0
+      },
+      {
+        "name": "bus",
+        "file_path": "backup/20250820_235220_success/archive/2025-08-19-cleanup/folders/server-api/node_modules/nodemon/lib/utils/bus.js",
+        "purpose": "utility",
+        "reuse_frequency": 0
+      },
+      {
+        "name": "utils",
+        "file_path": "backup/20250820_235220_success/archive/2025-08-19-cleanup/folders/cli-package/node_modules/inquirer/lib/utils/utils.js",
+        "purpose": "api-client",
+        "reuse_frequency": 0
+      },
+      {
+        "name": "screen-manager",
+        "file_path": "backup/20250820_235220_success/archive/2025-08-19-cleanup/folders/cli-package/node_modules/inquirer/lib/utils/screen-manager.js",
+        "purpose": "formatting",
+        "reuse_frequency": 0
+      },
+      {
+        "name": "readline",
+        "file_path": "backup/20250820_235220_success/archive/2025-08-19-cleanup/folders/cli-package/node_modules/inquirer/lib/utils/readline.js",
+        "purpose": "utility",
+        "reuse_frequency": 0
+      },
+      {
+        "name": "paginator",
+        "file_path": "backup/20250820_235220_success/archive/2025-08-19-cleanup/folders/cli-package/node_modules/inquirer/lib/utils/paginator.js",
+        "purpose": "utility",
+        "reuse_frequency": 0
+      },
+      {
+        "name": "incrementListIndex",
+        "file_path": "backup/20250820_235220_success/archive/2025-08-19-cleanup/folders/cli-package/node_modules/inquirer/lib/utils/incrementListIndex.js",
+        "purpose": "utility",
+        "reuse_frequency": 0
+      },
+      {
+        "name": "events",
+        "file_path": "backup/20250820_235220_success/archive/2025-08-19-cleanup/folders/cli-package/node_modules/inquirer/lib/utils/events.js",
+        "purpose": "utility",
+        "reuse_frequency": 0
+      },
+      {
+        "name": "temp",
+        "file_path": "backup/20250820_235220_success/archive/2025-08-19-cleanup/folders/cli-package/node_modules/atomically/src/utils/temp.ts",
+        "purpose": "utility",
+        "reuse_frequency": 0
+      },
+      {
+        "name": "scheduler",
+        "file_path": "backup/20250820_235220_success/archive/2025-08-19-cleanup/folders/cli-package/node_modules/atomically/src/utils/scheduler.ts",
+        "purpose": "utility",
+        "reuse_frequency": 0
+      },
+      {
+        "name": "retryify_queue",
+        "file_path": "backup/20250820_235220_success/archive/2025-08-19-cleanup/folders/cli-package/node_modules/atomically/src/utils/retryify_queue.ts",
+        "purpose": "utility",
+        "reuse_frequency": 0
+      },
+      {
+        "name": "retryify",
+        "file_path": "backup/20250820_235220_success/archive/2025-08-19-cleanup/folders/cli-package/node_modules/atomically/src/utils/retryify.ts",
+        "purpose": "utility",
+        "reuse_frequency": 0
+      },
+      {
+        "name": "lang",
+        "file_path": "backup/20250820_235220_success/archive/2025-08-19-cleanup/folders/cli-package/node_modules/atomically/src/utils/lang.ts",
+        "purpose": "utility",
+        "reuse_frequency": 0
+      },
+      {
+        "name": "fs_handlers",
+        "file_path": "backup/20250820_235220_success/archive/2025-08-19-cleanup/folders/cli-package/node_modules/atomically/src/utils/fs_handlers.ts",
+        "purpose": "utility",
+        "reuse_frequency": 0
+      },
+      {
+        "name": "fs",
+        "file_path": "backup/20250820_235220_success/archive/2025-08-19-cleanup/folders/cli-package/node_modules/atomically/src/utils/fs.ts",
+        "purpose": "utility",
+        "reuse_frequency": 0
+      },
+      {
+        "name": "attemptify",
+        "file_path": "backup/20250820_235220_success/archive/2025-08-19-cleanup/folders/cli-package/node_modules/atomically/src/utils/attemptify.ts",
+        "purpose": "utility",
+        "reuse_frequency": 0
+      },
+      {
+        "name": "temp",
+        "file_path": "backup/20250820_235220_success/archive/2025-08-19-cleanup/folders/cli-package/node_modules/atomically/dist/utils/temp.js",
+        "purpose": "utility",
+        "reuse_frequency": 0
+      },
+      {
+        "name": "temp.d",
+        "file_path": "backup/20250820_235220_success/archive/2025-08-19-cleanup/folders/cli-package/node_modules/atomically/dist/utils/temp.d.ts",
+        "purpose": "utility",
+        "reuse_frequency": 0
+      },
+      {
+        "name": "scheduler",
+        "file_path": "backup/20250820_235220_success/archive/2025-08-19-cleanup/folders/cli-package/node_modules/atomically/dist/utils/scheduler.js",
+        "purpose": "utility",
+        "reuse_frequency": 0
+      },
+      {
+        "name": "scheduler.d",
+        "file_path": "backup/20250820_235220_success/archive/2025-08-19-cleanup/folders/cli-package/node_modules/atomically/dist/utils/scheduler.d.ts",
+        "purpose": "utility",
+        "reuse_frequency": 0
+      },
+      {
+        "name": "retryify_queue",
+        "file_path": "backup/20250820_235220_success/archive/2025-08-19-cleanup/folders/cli-package/node_modules/atomically/dist/utils/retryify_queue.js",
+        "purpose": "utility",
+        "reuse_frequency": 0
+      },
+      {
+        "name": "retryify_queue.d",
+        "file_path": "backup/20250820_235220_success/archive/2025-08-19-cleanup/folders/cli-package/node_modules/atomically/dist/utils/retryify_queue.d.ts",
+        "purpose": "utility",
+        "reuse_frequency": 0
+      },
+      {
+        "name": "retryify",
+        "file_path": "backup/20250820_235220_success/archive/2025-08-19-cleanup/folders/cli-package/node_modules/atomically/dist/utils/retryify.js",
+        "purpose": "utility",
+        "reuse_frequency": 0
+      },
+      {
+        "name": "retryify.d",
+        "file_path": "backup/20250820_235220_success/archive/2025-08-19-cleanup/folders/cli-package/node_modules/atomically/dist/utils/retryify.d.ts",
+        "purpose": "utility",
+        "reuse_frequency": 0
+      },
+      {
+        "name": "lang",
+        "file_path": "backup/20250820_235220_success/archive/2025-08-19-cleanup/folders/cli-package/node_modules/atomically/dist/utils/lang.js",
+        "purpose": "utility",
+        "reuse_frequency": 0
+      },
+      {
+        "name": "lang.d",
+        "file_path": "backup/20250820_235220_success/archive/2025-08-19-cleanup/folders/cli-package/node_modules/atomically/dist/utils/lang.d.ts",
+        "purpose": "utility",
+        "reuse_frequency": 0
+      },
+      {
+        "name": "fs_handlers",
+        "file_path": "backup/20250820_235220_success/archive/2025-08-19-cleanup/folders/cli-package/node_modules/atomically/dist/utils/fs_handlers.js",
+        "purpose": "utility",
+        "reuse_frequency": 0
+      },
+      {
+        "name": "fs_handlers.d",
+        "file_path": "backup/20250820_235220_success/archive/2025-08-19-cleanup/folders/cli-package/node_modules/atomically/dist/utils/fs_handlers.d.ts",
+        "purpose": "utility",
+        "reuse_frequency": 0
+      },
+      {
+        "name": "fs",
+        "file_path": "backup/20250820_235220_success/archive/2025-08-19-cleanup/folders/cli-package/node_modules/atomically/dist/utils/fs.js",
+        "purpose": "utility",
+        "reuse_frequency": 0
+      },
+      {
+        "name": "fs.d",
+        "file_path": "backup/20250820_235220_success/archive/2025-08-19-cleanup/folders/cli-package/node_modules/atomically/dist/utils/fs.d.ts",
+        "purpose": "utility",
+        "reuse_frequency": 0
+      },
+      {
+        "name": "attemptify",
+        "file_path": "backup/20250820_235220_success/archive/2025-08-19-cleanup/folders/cli-package/node_modules/atomically/dist/utils/attemptify.js",
+        "purpose": "utility",
+        "reuse_frequency": 0
+      },
+      {
+        "name": "attemptify.d",
+        "file_path": "backup/20250820_235220_success/archive/2025-08-19-cleanup/folders/cli-package/node_modules/atomically/dist/utils/attemptify.d.ts",
+        "purpose": "utility",
+        "reuse_frequency": 0
+      },
+      {
+        "name": "merge",
+        "file_path": "backup/20250820_235220_success/backup/20250820_235220_success/archive/2025-08-19-cleanup/folders/server-api/node_modules/nodemon/lib/utils/merge.js",
+        "purpose": "utility",
+        "reuse_frequency": 0
+      },
+      {
+        "name": "log",
+        "file_path": "backup/20250820_235220_success/backup/20250820_235220_success/archive/2025-08-19-cleanup/folders/server-api/node_modules/nodemon/lib/utils/log.js",
+        "purpose": "utility",
+        "reuse_frequency": 0
+      },
+      {
+        "name": "index",
+        "file_path": "backup/20250820_235220_success/backup/20250820_235220_success/archive/2025-08-19-cleanup/folders/server-api/node_modules/nodemon/lib/utils/index.js",
+        "purpose": "utility",
+        "reuse_frequency": 0
+      },
+      {
+        "name": "colour",
+        "file_path": "backup/20250820_235220_success/backup/20250820_235220_success/archive/2025-08-19-cleanup/folders/server-api/node_modules/nodemon/lib/utils/colour.js",
+        "purpose": "utility",
+        "reuse_frequency": 0
+      },
+      {
+        "name": "clone",
+        "file_path": "backup/20250820_235220_success/backup/20250820_235220_success/archive/2025-08-19-cleanup/folders/server-api/node_modules/nodemon/lib/utils/clone.js",
+        "purpose": "utility",
+        "reuse_frequency": 0
+      },
+      {
+        "name": "bus",
+        "file_path": "backup/20250820_235220_success/backup/20250820_235220_success/archive/2025-08-19-cleanup/folders/server-api/node_modules/nodemon/lib/utils/bus.js",
+        "purpose": "utility",
+        "reuse_frequency": 0
+      },
+      {
+        "name": "utils",
+        "file_path": "backup/20250820_235220_success/backup/20250820_235220_success/archive/2025-08-19-cleanup/folders/cli-package/node_modules/inquirer/lib/utils/utils.js",
+        "purpose": "api-client",
+        "reuse_frequency": 0
+      },
+      {
+        "name": "screen-manager",
+        "file_path": "backup/20250820_235220_success/backup/20250820_235220_success/archive/2025-08-19-cleanup/folders/cli-package/node_modules/inquirer/lib/utils/screen-manager.js",
+        "purpose": "formatting",
+        "reuse_frequency": 0
+      },
+      {
+        "name": "readline",
+        "file_path": "backup/20250820_235220_success/backup/20250820_235220_success/archive/2025-08-19-cleanup/folders/cli-package/node_modules/inquirer/lib/utils/readline.js",
+        "purpose": "utility",
+        "reuse_frequency": 0
+      },
+      {
+        "name": "paginator",
+        "file_path": "backup/20250820_235220_success/backup/20250820_235220_success/archive/2025-08-19-cleanup/folders/cli-package/node_modules/inquirer/lib/utils/paginator.js",
+        "purpose": "utility",
+        "reuse_frequency": 0
+      },
+      {
+        "name": "incrementListIndex",
+        "file_path": "backup/20250820_235220_success/backup/20250820_235220_success/archive/2025-08-19-cleanup/folders/cli-package/node_modules/inquirer/lib/utils/incrementListIndex.js",
+        "purpose": "utility",
+        "reuse_frequency": 0
+      },
+      {
+        "name": "events",
+        "file_path": "backup/20250820_235220_success/backup/20250820_235220_success/archive/2025-08-19-cleanup/folders/cli-package/node_modules/inquirer/lib/utils/events.js",
+        "purpose": "utility",
+        "reuse_frequency": 0
+      },
+      {
+        "name": "temp",
+        "file_path": "backup/20250820_235220_success/backup/20250820_235220_success/archive/2025-08-19-cleanup/folders/cli-package/node_modules/atomically/src/utils/temp.ts",
+        "purpose": "utility",
+        "reuse_frequency": 0
+      },
+      {
+        "name": "scheduler",
+        "file_path": "backup/20250820_235220_success/backup/20250820_235220_success/archive/2025-08-19-cleanup/folders/cli-package/node_modules/atomically/src/utils/scheduler.ts",
+        "purpose": "utility",
+        "reuse_frequency": 0
+      },
+      {
+        "name": "retryify_queue",
+        "file_path": "backup/20250820_235220_success/backup/20250820_235220_success/archive/2025-08-19-cleanup/folders/cli-package/node_modules/atomically/src/utils/retryify_queue.ts",
+        "purpose": "utility",
+        "reuse_frequency": 0
+      },
+      {
+        "name": "retryify",
+        "file_path": "backup/20250820_235220_success/backup/20250820_235220_success/archive/2025-08-19-cleanup/folders/cli-package/node_modules/atomically/src/utils/retryify.ts",
+        "purpose": "utility",
+        "reuse_frequency": 0
+      },
+      {
+        "name": "lang",
+        "file_path": "backup/20250820_235220_success/backup/20250820_235220_success/archive/2025-08-19-cleanup/folders/cli-package/node_modules/atomically/src/utils/lang.ts",
+        "purpose": "utility",
+        "reuse_frequency": 0
+      },
+      {
+        "name": "fs_handlers",
+        "file_path": "backup/20250820_235220_success/backup/20250820_235220_success/archive/2025-08-19-cleanup/folders/cli-package/node_modules/atomically/src/utils/fs_handlers.ts",
+        "purpose": "utility",
+        "reuse_frequency": 0
+      },
+      {
+        "name": "fs",
+        "file_path": "backup/20250820_235220_success/backup/20250820_235220_success/archive/2025-08-19-cleanup/folders/cli-package/node_modules/atomically/src/utils/fs.ts",
+        "purpose": "utility",
+        "reuse_frequency": 0
+      },
+      {
+        "name": "attemptify",
+        "file_path": "backup/20250820_235220_success/backup/20250820_235220_success/archive/2025-08-19-cleanup/folders/cli-package/node_modules/atomically/src/utils/attemptify.ts",
+        "purpose": "utility",
+        "reuse_frequency": 0
+      },
+      {
+        "name": "temp",
+        "file_path": "backup/20250820_235220_success/backup/20250820_235220_success/archive/2025-08-19-cleanup/folders/cli-package/node_modules/atomically/dist/utils/temp.js",
+        "purpose": "utility",
+        "reuse_frequency": 0
+      },
+      {
+        "name": "temp.d",
+        "file_path": "backup/20250820_235220_success/backup/20250820_235220_success/archive/2025-08-19-cleanup/folders/cli-package/node_modules/atomically/dist/utils/temp.d.ts",
+        "purpose": "utility",
+        "reuse_frequency": 0
+      },
+      {
+        "name": "scheduler",
+        "file_path": "backup/20250820_235220_success/backup/20250820_235220_success/archive/2025-08-19-cleanup/folders/cli-package/node_modules/atomically/dist/utils/scheduler.js",
+        "purpose": "utility",
+        "reuse_frequency": 0
+      },
+      {
+        "name": "scheduler.d",
+        "file_path": "backup/20250820_235220_success/backup/20250820_235220_success/archive/2025-08-19-cleanup/folders/cli-package/node_modules/atomically/dist/utils/scheduler.d.ts",
+        "purpose": "utility",
+        "reuse_frequency": 0
+      },
+      {
+        "name": "retryify_queue",
+        "file_path": "backup/20250820_235220_success/backup/20250820_235220_success/archive/2025-08-19-cleanup/folders/cli-package/node_modules/atomically/dist/utils/retryify_queue.js",
+        "purpose": "utility",
+        "reuse_frequency": 0
+      },
+      {
+        "name": "retryify_queue.d",
+        "file_path": "backup/20250820_235220_success/backup/20250820_235220_success/archive/2025-08-19-cleanup/folders/cli-package/node_modules/atomically/dist/utils/retryify_queue.d.ts",
+        "purpose": "utility",
+        "reuse_frequency": 0
+      },
+      {
+        "name": "retryify",
+        "file_path": "backup/20250820_235220_success/backup/20250820_235220_success/archive/2025-08-19-cleanup/folders/cli-package/node_modules/atomically/dist/utils/retryify.js",
+        "purpose": "utility",
+        "reuse_frequency": 0
+      },
+      {
+        "name": "retryify.d",
+        "file_path": "backup/20250820_235220_success/backup/20250820_235220_success/archive/2025-08-19-cleanup/folders/cli-package/node_modules/atomically/dist/utils/retryify.d.ts",
+        "purpose": "utility",
+        "reuse_frequency": 0
+      },
+      {
+        "name": "lang",
+        "file_path": "backup/20250820_235220_success/backup/20250820_235220_success/archive/2025-08-19-cleanup/folders/cli-package/node_modules/atomically/dist/utils/lang.js",
+        "purpose": "utility",
+        "reuse_frequency": 0
+      },
+      {
+        "name": "lang.d",
+        "file_path": "backup/20250820_235220_success/backup/20250820_235220_success/archive/2025-08-19-cleanup/folders/cli-package/node_modules/atomically/dist/utils/lang.d.ts",
+        "purpose": "utility",
+        "reuse_frequency": 0
+      },
+      {
+        "name": "fs_handlers",
+        "file_path": "backup/20250820_235220_success/backup/20250820_235220_success/archive/2025-08-19-cleanup/folders/cli-package/node_modules/atomically/dist/utils/fs_handlers.js",
+        "purpose": "utility",
+        "reuse_frequency": 0
+      },
+      {
+        "name": "fs_handlers.d",
+        "file_path": "backup/20250820_235220_success/backup/20250820_235220_success/archive/2025-08-19-cleanup/folders/cli-package/node_modules/atomically/dist/utils/fs_handlers.d.ts",
+        "purpose": "utility",
+        "reuse_frequency": 0
+      },
+      {
+        "name": "fs",
+        "file_path": "backup/20250820_235220_success/backup/20250820_235220_success/archive/2025-08-19-cleanup/folders/cli-package/node_modules/atomically/dist/utils/fs.js",
+        "purpose": "utility",
+        "reuse_frequency": 0
+      },
+      {
+        "name": "fs.d",
+        "file_path": "backup/20250820_235220_success/backup/20250820_235220_success/archive/2025-08-19-cleanup/folders/cli-package/node_modules/atomically/dist/utils/fs.d.ts",
+        "purpose": "utility",
+        "reuse_frequency": 0
+      },
+      {
+        "name": "attemptify",
+        "file_path": "backup/20250820_235220_success/backup/20250820_235220_success/archive/2025-08-19-cleanup/folders/cli-package/node_modules/atomically/dist/utils/attemptify.js",
+        "purpose": "utility",
+        "reuse_frequency": 0
+      },
+      {
+        "name": "attemptify.d",
+        "file_path": "backup/20250820_235220_success/backup/20250820_235220_success/archive/2025-08-19-cleanup/folders/cli-package/node_modules/atomically/dist/utils/attemptify.d.ts",
+        "purpose": "utility",
+        "reuse_frequency": 0
+      }
+    ]
+  },
+  "test_items": {
+    "ui_tests": [],
+    "api_tests": [],
+    "db_tests": [],
+    "integration_tests": []
+  },
+  "quality_metrics": {
+    "code_coverage": 61,
+    "performance_score": 100,
+    "security_rating": "Good",
+    "maintainability_index": 30,
+    "total_files_analyzed": 29625,
+    "average_complexity": 0.01
+  },
+  "reuse_opportunities": []
+}

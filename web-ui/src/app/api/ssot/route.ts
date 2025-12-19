@@ -1,46 +1,157 @@
 import { NextRequest, NextResponse } from "next/server";
-
-const MCP_SERVER_URL = process.env.MCP_SERVER_URL || "http://158.247.203.55:3100";
+import { sshExec, SERVERS, getAllServersStatus, getContainers } from "@/lib/ssh";
 
 // GET: Get SSOT status
 export async function GET(request: NextRequest) {
   try {
     const { searchParams } = new URL(request.url);
-    const action = searchParams.get("action") || "get";
+    const action = searchParams.get("action") || "status";
 
-    let endpoint = "/api/ssot";
+    // 전체 상태 조회
+    if (action === "status" || action === "get") {
+      // SSOT 레지스트리 조회
+      const registryResult = await sshExec(
+        "app",
+        `cat /opt/codeb/config/ssot-registry.json 2>/dev/null || echo "{}"`
+      );
 
-    switch (action) {
-      case "validate":
-        endpoint = "/api/ssot/validate";
-        break;
-      case "history":
-        endpoint = "/api/ssot/history";
-        break;
-      default:
-        endpoint = "/api/ssot";
-    }
+      // 서버 상태 조회
+      const servers = await getAllServersStatus();
 
-    const response = await fetch(`${MCP_SERVER_URL}${endpoint}`, {
-      method: "GET",
-      headers: {
-        "Content-Type": "application/json",
-      },
-    });
+      // 포트 할당 현황
+      const portsResult = await sshExec(
+        "app",
+        `cat /opt/codeb/config/port-allocation.json 2>/dev/null || echo "{}"`
+      );
 
-    if (!response.ok) {
+      let registry = {};
+      let ports = {};
+
+      try {
+        registry = JSON.parse(registryResult.output || "{}");
+      } catch {}
+
+      try {
+        ports = JSON.parse(portsResult.output || "{}");
+      } catch {}
+
       return NextResponse.json({
         success: true,
-        data: getMockSSOT(),
-        source: "mock",
+        data: {
+          version: "1.0.0",
+          lastUpdated: new Date().toISOString(),
+          servers,
+          projects: registry,
+          portAllocation: ports,
+        },
+        source: "ssh",
       });
     }
 
-    const data = await response.json();
+    // 프로젝트 목록
+    if (action === "projects") {
+      const result = await sshExec(
+        "app",
+        `cat /opt/codeb/config/ssot-registry.json 2>/dev/null || echo "{}"`
+      );
+
+      let projects = {};
+      try {
+        projects = JSON.parse(result.output || "{}");
+      } catch {}
+
+      return NextResponse.json({
+        success: true,
+        data: projects,
+        source: "ssh",
+      });
+    }
+
+    // 서버 목록
+    if (action === "servers") {
+      const servers = await getAllServersStatus();
+      return NextResponse.json({
+        success: true,
+        data: servers,
+        source: "ssh",
+      });
+    }
+
+    // 포트 할당 현황
+    if (action === "ports") {
+      const result = await sshExec(
+        "app",
+        `cat /opt/codeb/config/port-allocation.json 2>/dev/null || echo "{}"`
+      );
+
+      let ports = {};
+      try {
+        ports = JSON.parse(result.output || "{}");
+      } catch {
+        // 기본 포트 구조 반환
+        ports = getDefaultPortAllocation();
+      }
+
+      return NextResponse.json({
+        success: true,
+        data: ports,
+        source: "ssh",
+      });
+    }
+
+    // 컨테이너 목록
+    if (action === "containers") {
+      const appContainers = await getContainers("app");
+      const backupContainers = await getContainers("backup");
+
+      return NextResponse.json({
+        success: true,
+        data: {
+          app: appContainers,
+          backup: backupContainers,
+        },
+        source: "ssh",
+      });
+    }
+
+    // 통계
+    if (action === "stats") {
+      const registryResult = await sshExec(
+        "app",
+        `cat /opt/codeb/config/ssot-registry.json 2>/dev/null || echo "{}"`
+      );
+
+      const appContainers = await getContainers("app");
+      const backupContainers = await getContainers("backup");
+
+      let registry = {};
+      try {
+        registry = JSON.parse(registryResult.output || "{}");
+      } catch {}
+
+      const projectCount = Object.keys(registry).length;
+      const runningContainers = [...appContainers, ...backupContainers].filter(
+        (c) => c.status?.includes("Up")
+      ).length;
+
+      return NextResponse.json({
+        success: true,
+        data: {
+          projects: projectCount,
+          containers: {
+            total: appContainers.length + backupContainers.length,
+            running: runningContainers,
+          },
+          servers: Object.keys(SERVERS).length,
+        },
+        source: "ssh",
+      });
+    }
+
     return NextResponse.json({
       success: true,
-      data,
-      source: "mcp",
+      data: getMockSSOT(),
+      source: "mock",
     });
   } catch (error) {
     console.error("Failed to fetch SSOT:", error);
@@ -52,7 +163,7 @@ export async function GET(request: NextRequest) {
   }
 }
 
-// POST: Perform SSOT actions (sync, initialize, etc.)
+// POST: Perform SSOT actions
 export async function POST(request: NextRequest) {
   try {
     const body = await request.json();
@@ -65,56 +176,232 @@ export async function POST(request: NextRequest) {
       );
     }
 
-    let endpoint = "/api/ssot";
-    let method = "POST";
+    // 서버 스캔 (데이터 동기화)
+    if (action === "scan" || action === "sync") {
+      // App 서버 컨테이너 스캔
+      const appContainers = await getContainers("app");
+      const backupContainers = await getContainers("backup");
 
-    switch (action) {
-      case "sync":
-        endpoint = "/api/ssot/sync";
-        break;
-      case "initialize":
-        endpoint = "/api/ssot/initialize";
-        break;
-      case "migrate":
-        endpoint = "/api/ssot/migrate";
-        break;
-      case "allocate-port":
-        endpoint = "/api/ssot/allocate-port";
-        break;
-      case "release-port":
-        endpoint = "/api/ssot/release-port";
-        break;
-      case "set-domain":
-        endpoint = "/api/ssot/set-domain";
-        break;
-      case "remove-domain":
-        endpoint = "/api/ssot/remove-domain";
-        break;
-      default:
+      // 현재 SSOT 레지스트리 조회
+      const registryResult = await sshExec(
+        "app",
+        `cat /opt/codeb/config/ssot-registry.json 2>/dev/null || echo "{}"`
+      );
+
+      let registry: Record<string, unknown> = {};
+      try {
+        registry = JSON.parse(registryResult.output || "{}");
+      } catch {}
+
+      // 컨테이너에서 프로젝트 정보 추출 및 업데이트
+      for (const container of appContainers) {
+        if (container.name.startsWith("codeb-")) continue; // 시스템 컨테이너 제외
+
+        const projectName = container.name.replace(/-staging|-production/, "");
+        const environment = container.name.includes("-staging")
+          ? "staging"
+          : "production";
+
+        if (!registry[projectName]) {
+          registry[projectName] = {
+            name: projectName,
+            type: "unknown",
+            status: "active",
+            environments: {},
+          };
+        }
+
+        const project = registry[projectName] as {
+          environments?: Record<string, unknown>;
+        };
+        if (!project.environments) {
+          project.environments = {};
+        }
+
+        project.environments[environment] = {
+          status: container.status?.includes("Up") ? "running" : "stopped",
+          container: container.name,
+          image: container.image,
+          scannedAt: new Date().toISOString(),
+        };
+      }
+
+      // 레지스트리 저장
+      await sshExec(
+        "app",
+        `mkdir -p /opt/codeb/config && cat > /opt/codeb/config/ssot-registry.json << 'EOF'
+${JSON.stringify(registry, null, 2)}
+EOF`
+      );
+
+      return NextResponse.json({
+        success: true,
+        data: {
+          scanned: {
+            app: appContainers.length,
+            backup: backupContainers.length,
+          },
+          projects: Object.keys(registry).length,
+          updatedAt: new Date().toISOString(),
+        },
+        message: "Scan completed",
+      });
+    }
+
+    // 포트 할당
+    if (action === "allocate-port") {
+      const { environment = "production", type = "app" } = params;
+
+      // 현재 포트 할당 조회
+      const portsResult = await sshExec(
+        "app",
+        `cat /opt/codeb/config/port-allocation.json 2>/dev/null || echo "{}"`
+      );
+
+      let ports: Record<string, Record<string, { allocated: number[]; start: number; end: number }>> = {};
+      try {
+        ports = JSON.parse(portsResult.output || "{}");
+      } catch {
+        ports = getDefaultPortAllocation();
+      }
+
+      if (!ports[environment]) {
+        ports[environment] = getDefaultPortAllocation()[environment];
+      }
+
+      const range = ports[environment][type];
+      if (!range) {
         return NextResponse.json(
-          { success: false, error: `Unknown action: ${action}` },
+          { success: false, error: `Unknown port type: ${type}` },
           { status: 400 }
         );
-    }
+      }
 
-    const response = await fetch(`${MCP_SERVER_URL}${endpoint}`, {
-      method,
-      headers: {
-        "Content-Type": "application/json",
-      },
-      body: JSON.stringify(params),
-    });
+      // 사용 가능한 포트 찾기
+      const allocated = range.allocated || [];
+      let newPort = range.start;
+      while (allocated.includes(newPort) && newPort <= range.end) {
+        newPort++;
+      }
 
-    if (!response.ok) {
-      const error = await response.text();
-      return NextResponse.json(
-        { success: false, error: `SSOT action failed: ${error}` },
-        { status: response.status }
+      if (newPort > range.end) {
+        return NextResponse.json(
+          { success: false, error: "No available ports in range" },
+          { status: 400 }
+        );
+      }
+
+      // 포트 할당
+      allocated.push(newPort);
+      range.allocated = allocated;
+
+      // 저장
+      await sshExec(
+        "app",
+        `cat > /opt/codeb/config/port-allocation.json << 'EOF'
+${JSON.stringify(ports, null, 2)}
+EOF`
       );
+
+      return NextResponse.json({
+        success: true,
+        data: {
+          port: newPort,
+          environment,
+          type,
+        },
+      });
     }
 
-    const data = await response.json();
-    return NextResponse.json({ success: true, data });
+    // 포트 해제
+    if (action === "release-port") {
+      const { port, environment = "production", type = "app" } = params;
+
+      if (!port) {
+        return NextResponse.json(
+          { success: false, error: "port is required" },
+          { status: 400 }
+        );
+      }
+
+      const portsResult = await sshExec(
+        "app",
+        `cat /opt/codeb/config/port-allocation.json 2>/dev/null || echo "{}"`
+      );
+
+      let ports: Record<string, Record<string, { allocated: number[] }>> = {};
+      try {
+        ports = JSON.parse(portsResult.output || "{}");
+      } catch {}
+
+      if (ports[environment]?.[type]?.allocated) {
+        ports[environment][type].allocated = ports[environment][type].allocated.filter(
+          (p: number) => p !== parseInt(port)
+        );
+
+        await sshExec(
+          "app",
+          `cat > /opt/codeb/config/port-allocation.json << 'EOF'
+${JSON.stringify(ports, null, 2)}
+EOF`
+        );
+      }
+
+      return NextResponse.json({
+        success: true,
+        message: `Port ${port} released`,
+      });
+    }
+
+    // 프로젝트 등록
+    if (action === "register-project") {
+      const { name, type, gitRepo, domain, port } = params;
+
+      if (!name) {
+        return NextResponse.json(
+          { success: false, error: "name is required" },
+          { status: 400 }
+        );
+      }
+
+      const registryResult = await sshExec(
+        "app",
+        `cat /opt/codeb/config/ssot-registry.json 2>/dev/null || echo "{}"`
+      );
+
+      let registry: Record<string, unknown> = {};
+      try {
+        registry = JSON.parse(registryResult.output || "{}");
+      } catch {}
+
+      registry[name] = {
+        name,
+        type: type || "nodejs",
+        gitRepo: gitRepo || "",
+        domain: domain || `${name}.codeb.kr`,
+        port,
+        status: "registered",
+        registeredAt: new Date().toISOString(),
+      };
+
+      await sshExec(
+        "app",
+        `cat > /opt/codeb/config/ssot-registry.json << 'EOF'
+${JSON.stringify(registry, null, 2)}
+EOF`
+      );
+
+      return NextResponse.json({
+        success: true,
+        data: registry[name],
+        message: `Project ${name} registered`,
+      });
+    }
+
+    return NextResponse.json(
+      { success: false, error: `Unknown action: ${action}` },
+      { status: 400 }
+    );
   } catch (error) {
     console.error("Failed to perform SSOT action:", error);
     return NextResponse.json(
@@ -124,58 +411,27 @@ export async function POST(request: NextRequest) {
   }
 }
 
+function getDefaultPortAllocation() {
+  return {
+    production: {
+      app: { start: 4000, end: 4499, allocated: [] as number[] },
+      db: { start: 5432, end: 5432, allocated: [] as number[] },
+    },
+    staging: {
+      app: { start: 4500, end: 4999, allocated: [] as number[] },
+    },
+    preview: {
+      app: { start: 5000, end: 5999, allocated: [] as number[] },
+    },
+  };
+}
+
 function getMockSSOT() {
   return {
     version: "1.0.0",
     lastUpdated: new Date().toISOString(),
-    projects: {
-      "videopick-web": {
-        type: "nextjs",
-        gitRepo: "https://github.com/videopick/web",
-        status: "active",
-        environments: {
-          staging: {
-            ports: { app: 3001, db: 15432 },
-            domain: "videopick-staging.one-q.xyz",
-          },
-          production: {
-            ports: { app: 4001, db: 25432 },
-            domain: "videopick.one-q.xyz",
-          },
-        },
-      },
-      "api-gateway": {
-        type: "nodejs",
-        gitRepo: "https://github.com/videopick/api",
-        status: "active",
-        environments: {
-          staging: {
-            ports: { app: 3002, db: 15433 },
-            domain: "api-staging.one-q.xyz",
-          },
-          production: {
-            ports: { app: 4002, db: 25433 },
-            domain: "api.one-q.xyz",
-          },
-        },
-      },
-    },
-    portAllocation: {
-      staging: {
-        app: { start: 3000, end: 3499, allocated: [3001, 3002, 3003] },
-        db: { start: 15432, end: 15499, allocated: [15432, 15433] },
-        redis: { start: 16379, end: 16399, allocated: [] },
-      },
-      production: {
-        app: { start: 4000, end: 4499, allocated: [4001, 4002, 4003] },
-        db: { start: 25432, end: 25499, allocated: [25432, 25433] },
-        redis: { start: 26379, end: 26399, allocated: [] },
-      },
-    },
-    validation: {
-      lastRun: new Date().toISOString(),
-      status: "valid",
-      issues: [],
-    },
+    servers: SERVERS,
+    projects: {},
+    portAllocation: getDefaultPortAllocation(),
   };
 }

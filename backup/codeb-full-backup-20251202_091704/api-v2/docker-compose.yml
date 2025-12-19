@@ -1,0 +1,41 @@
+version: '3.8'
+
+# CodeB API Server v2
+# Production deployment configuration
+
+services:
+  codeb-api:
+    build:
+      context: .
+      dockerfile: Dockerfile
+    image: codeb-api:2.0.0
+    container_name: codeb-api-v2
+    restart: unless-stopped
+    ports:
+      - "3020:3020"
+    environment:
+      - NODE_ENV=production
+      - PORT=3020
+      - PROJECTS_PATH=/opt/projects
+      - BACKUPS_PATH=/opt/codeb-backups
+    volumes:
+      # Project directory
+      - /opt/projects:/opt/projects
+      # Backups
+      - /opt/codeb-backups:/opt/codeb-backups
+      # Podman socket (for container management)
+      - /run/podman/podman.sock:/run/podman/podman.sock:ro
+      # PM2 home (for process management)
+      - /root/.pm2:/home/codeb/.pm2:ro
+    networks:
+      - codeb-network
+    healthcheck:
+      test: ["CMD", "node", "-e", "require('http').get('http://localhost:3020/health', (r) => {if(r.statusCode !== 200) process.exit(1)})"]
+      interval: 30s
+      timeout: 5s
+      retries: 3
+      start_period: 10s
+
+networks:
+  codeb-network:
+    driver: bridge

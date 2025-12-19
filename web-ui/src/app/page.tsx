@@ -25,10 +25,10 @@ const stats = [
 ];
 
 const recentProjects = [
-  { name: "videopick-web", type: "nextjs", env: "production", status: "running" as const, domain: "videopick.one-q.xyz" },
-  { name: "api-gateway", type: "nodejs", env: "staging", status: "deploying" as const, domain: "api-staging.one-q.xyz" },
-  { name: "admin-panel", type: "nextjs", env: "production", status: "running" as const, domain: "admin.one-q.xyz" },
-  { name: "landing-page", type: "static", env: "production", status: "running" as const, domain: "landing.one-q.xyz" },
+  { name: "videopick-web", type: "nextjs", env: "production", status: "running" as const, domain: "videopick.codeb.kr" },
+  { name: "api-gateway", type: "nodejs", env: "staging", status: "deploying" as const, domain: "api-staging.codeb.kr" },
+  { name: "admin-panel", type: "nextjs", env: "production", status: "running" as const, domain: "admin.codeb.kr" },
+  { name: "landing-page", type: "static", env: "production", status: "running" as const, domain: "landing.codeb.kr" },
 ];
 
 const serverHealth = {

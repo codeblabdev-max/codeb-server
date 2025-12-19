@@ -1,0 +1,36 @@
+# Simple CodeB Management API Dockerfile
+# Based on warehouse-rental pattern - minimal dependencies
+
+FROM node:18-alpine
+
+# Install runtime dependencies only
+RUN apk add --no-cache \
+    curl \
+    podman \
+    && rm -rf /var/cache/apk/*
+
+# Create app directory
+WORKDIR /app
+
+# Create data directory
+RUN mkdir -p /opt/codeb && \
+    chown -R node:node /app /opt/codeb
+
+# Copy application file
+COPY --chown=node:node simple-api-server.js .
+
+# Make executable
+RUN chmod +x simple-api-server.js
+
+# Switch to non-root user
+USER node
+
+# Expose port
+EXPOSE 3020
+
+# Health check
+HEALTHCHECK --interval=30s --timeout=3s --start-period=5s --retries=3 \
+    CMD node -e "require('http').get('http://localhost:3020/health', (r) => {if(r.statusCode !== 200) process.exit(1)})" || exit 1
+
+# Start server
+CMD ["node", "simple-api-server.js"]

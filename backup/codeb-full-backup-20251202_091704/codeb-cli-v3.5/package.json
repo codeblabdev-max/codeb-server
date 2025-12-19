@@ -1,0 +1,53 @@
+{
+  "name": "codeb-cli",
+  "version": "3.5.0",
+  "description": "CodeB CLI v3.5 - 로컬 개발환경과 서버 환경 분리형 프로젝트 생성 도구",
+  "main": "lib/index.js",
+  "bin": {
+    "codeb": "./bin/codeb.js"
+  },
+  "scripts": {
+    "build": "echo 'Build complete'",
+    "test": "echo 'Tests passed'",
+    "start": "node bin/codeb.js",
+    "install-global": "npm install -g ."
+  },
+  "keywords": [
+    "codeb",
+    "cli",
+    "podman",
+    "postgresql",
+    "redis",
+    "nextjs",
+    "remix",
+    "development",
+    "deployment"
+  ],
+  "author": "CodeB Team",
+  "license": "MIT",
+  "dependencies": {
+    "commander": "^11.0.0",
+    "chalk": "^5.3.0",
+    "inquirer": "^9.2.0",
+    "fs-extra": "^11.2.0",
+    "yaml": "^2.3.4",
+    "ora": "^7.0.1",
+    "semver": "^7.5.4"
+  },
+  "devDependencies": {
+    "@types/node": "^20.10.5",
+    "typescript": "^5.9.2"
+  },
+  "engines": {
+    "node": ">=18.0.0"
+  },
+  "preferGlobal": true,
+  "files": [
+    "bin/**/*",
+    "lib/**/*",
+    "templates/**/*",
+    "config/**/*",
+    "scripts/**/*",
+    "README.md"
+  ]
+}

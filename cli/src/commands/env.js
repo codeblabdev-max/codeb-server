@@ -709,6 +709,228 @@ export async function envPush(projectName, options = {}) {
   console.log(chalk.gray('This would push local .env changes to server registry'));
 }
 
+// ============================================================================
+// ENV Backup/Restore - 백업 서버 연동
+// ============================================================================
+
+const BACKUP_SERVER = {
+  host: '141.164.37.63',  // backup.codeb.kr
+  user: 'root',
+  envPath: '/opt/codeb/env-backup'
+};
+
+/**
+ * we env restore - 백업 서버에서 ENV 복구
+ */
+export async function envRestore(projectName, options = {}) {
+  const spinner = ora('Checking backup server...').start();
+
+  try {
+    if (!projectName) {
+      const packageJsonPath = join(process.cwd(), 'package.json');
+      if (existsSync(packageJsonPath)) {
+        const pkg = JSON.parse(readFileSync(packageJsonPath, 'utf-8'));
+        projectName = pkg.name;
+      }
+    }
+
+    if (!projectName) {
+      spinner.fail('Project name required');
+      console.log(chalk.gray('Usage: we env restore <project-name>'));
+      return;
+    }
+
+    const environment = options.environment || 'production';
+    const version = options.version || 'master';  // master, current, or timestamp
+
+    const envDir = `${BACKUP_SERVER.envPath}/${projectName}/${environment}`;
+    let targetFile;
+
+    if (version === 'master') {
+      targetFile = `${envDir}/master.env`;
+    } else if (version === 'current') {
+      targetFile = `${envDir}/current.env`;
+    } else {
+      targetFile = `${envDir}/${version}.env`;
+    }
+
+    spinner.text = `Restoring ${version} ENV from backup server...`;
+
+    // 백업 서버에서 ENV 내용 가져오기
+    const content = execSync(
+      `ssh ${BACKUP_SERVER.user}@${BACKUP_SERVER.host} "cat ${targetFile}"`,
+      { encoding: 'utf-8', timeout: 30000 }
+    ).trim();
+
+    spinner.stop();
+
+    console.log(chalk.cyan(`\n📥 ENV Restore: ${projectName}/${environment}\n`));
+    console.log(chalk.gray(`Source: ${version === 'master' ? 'master.env (original)' : version}`));
+    console.log(chalk.gray(`Server: backup.codeb.kr`));
+    console.log('');
+
+    // 복구할 위치 선택
+    const { action } = await inquirer.prompt([{
+      type: 'list',
+      name: 'action',
+      message: 'Where to restore?',
+      choices: [
+        { name: 'Show content only (preview)', value: 'preview' },
+        { name: 'Save to .env.restored', value: 'local' },
+        { name: 'Push to App server', value: 'server' },
+        { name: 'Cancel', value: 'cancel' }
+      ]
+    }]);
+
+    if (action === 'cancel') {
+      console.log(chalk.gray('Cancelled'));
+      return;
+    }
+
+    if (action === 'preview') {
+      console.log(chalk.bold('\n━━━ ENV Content ━━━'));
+      // 민감 정보 마스킹
+      const lines = content.split('\n');
+      for (const line of lines) {
+        if (line.includes('PASSWORD') || line.includes('SECRET') || line.includes('KEY')) {
+          const [key] = line.split('=');
+          console.log(chalk.gray(`${key}=***`));
+        } else {
+          console.log(chalk.gray(line));
+        }
+      }
+      return;
+    }
+
+    if (action === 'local') {
+      const localPath = join(process.cwd(), '.env.restored');
+      writeFileSync(localPath, content);
+      console.log(chalk.green(`\n✅ Saved to: ${localPath}`));
+      console.log(chalk.yellow('Review and rename to .env.local if needed'));
+      return;
+    }
+
+    if (action === 'server') {
+      const serverHost = options.serverHost || getServerHost();
+      const serverUser = options.serverUser || getServerUser();
+
+      if (!serverHost) {
+        console.log(chalk.red('Server host not configured'));
+        return;
+      }
+
+      // 서버에 ENV 복구
+      const serverEnvPath = `/opt/codeb/envs/${projectName}-${environment}.env`;
+
+      // 기존 파일 백업
+      execSync(
+        `ssh ${serverUser}@${serverHost} "cp ${serverEnvPath} ${serverEnvPath}.backup.$(date +%Y%m%d_%H%M%S) 2>/dev/null || true"`,
+        { timeout: 30000 }
+      );
+
+      // 새 파일 작성
+      execSync(
+        `ssh ${serverUser}@${serverHost} "cat > ${serverEnvPath}" << 'ENVEOF'
+${content}
+ENVEOF`,
+        { timeout: 30000 }
+      );
+
+      console.log(chalk.green(`\n✅ Restored to App server: ${serverEnvPath}`));
+      console.log(chalk.yellow('Restart the container to apply changes'));
+    }
+
+  } catch (error) {
+    spinner.fail(`Restore failed: ${error.message}`);
+    if (error.message.includes('No such file')) {
+      console.log(chalk.yellow('\nNo backup found. Available backups:'));
+      console.log(chalk.gray('  we env backups <project-name>'));
+    }
+  }
+}
+
+/**
+ * we env backups - 프로젝트의 ENV 백업 목록 조회
+ */
+export async function envBackups(projectName, options = {}) {
+  const spinner = ora('Fetching backup list...').start();
+
+  try {
+    if (!projectName) {
+      const packageJsonPath = join(process.cwd(), 'package.json');
+      if (existsSync(packageJsonPath)) {
+        const pkg = JSON.parse(readFileSync(packageJsonPath, 'utf-8'));
+        projectName = pkg.name;
+      }
+    }
+
+    if (!projectName) {
+      spinner.fail('Project name required');
+      console.log(chalk.gray('Usage: we env backups <project-name>'));
+      return;
+    }
+
+    const projectDir = `${BACKUP_SERVER.envPath}/${projectName}`;
+
+    // 백업 목록 조회
+    const output = execSync(
+      `ssh ${BACKUP_SERVER.user}@${BACKUP_SERVER.host} "find ${projectDir} -name '*.env' -type f -printf '%T+ %p\n' 2>/dev/null | sort -r || echo 'empty'"`,
+      { encoding: 'utf-8', timeout: 30000 }
+    ).trim();
+
+    spinner.stop();
+
+    console.log(chalk.cyan(`\n📁 ENV Backups: ${projectName}\n`));
+    console.log(chalk.gray(`Location: backup.codeb.kr:${projectDir}`));
+    console.log('');
+
+    if (output === 'empty' || !output) {
+      console.log(chalk.yellow('No backups found for this project'));
+      console.log(chalk.gray('\nBackups are created automatically when running:'));
+      console.log(chalk.gray('  we workflow init <project> --database'));
+      return;
+    }
+
+    const lines = output.split('\n').filter(l => l.trim());
+    const byEnvironment = { production: [], staging: [] };
+
+    for (const line of lines) {
+      const parts = line.split(' ');
+      const timestamp = parts[0];
+      const path = parts[1];
+
+      if (path.includes('/production/')) {
+        byEnvironment.production.push({ timestamp, path, name: path.split('/').pop() });
+      } else if (path.includes('/staging/')) {
+        byEnvironment.staging.push({ timestamp, path, name: path.split('/').pop() });
+      }
+    }
+
+    for (const [env, backups] of Object.entries(byEnvironment)) {
+      if (backups.length > 0) {
+        console.log(chalk.bold(`${env}:`));
+        for (const backup of backups.slice(0, 10)) {  // 최근 10개만
+          const icon = backup.name === 'master.env' ? '⭐' :
+                       backup.name === 'current.env' ? '📌' : '📄';
+          console.log(chalk.gray(`  ${icon} ${backup.name}`));
+        }
+        if (backups.length > 10) {
+          console.log(chalk.gray(`  ... and ${backups.length - 10} more`));
+        }
+        console.log('');
+      }
+    }
+
+    console.log(chalk.bold('Restore commands:'));
+    console.log(chalk.gray('  we env restore <project> --version master       # Original (recommended)'));
+    console.log(chalk.gray('  we env restore <project> --version current      # Latest backup'));
+    console.log(chalk.gray('  we env restore <project> --version <timestamp>  # Specific version'));
+
+  } catch (error) {
+    spinner.fail(`Failed to fetch backups: ${error.message}`);
+  }
+}
+
 /**
  * we env list - 환경 변수 목록
  */
@@ -736,5 +958,7 @@ export default {
   envScan,
   envPull,
   envPush,
-  envList
+  envList,
+  envRestore,
+  envBackups
 };

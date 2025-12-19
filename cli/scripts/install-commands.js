@@ -43,13 +43,16 @@ const RULES_SOURCE = path.join(PACKAGE_ROOT, 'rules');
 const CLAUDE_COMMANDS_DIR = path.join(CLAUDE_DIR, 'commands', 'we');
 const CLAUDE_HOOKS_DIR = path.join(CLAUDE_DIR, 'hooks');
 
-// MCP Server configuration
+// MCP Server configuration - 158 서버 4대 기준
 const MCP_SERVER_CONFIG = {
   "codeb-deploy": {
-    "command": "npx",
-    "args": ["-y", "tsx", path.join(PACKAGE_ROOT, '..', 'codeb-deploy-system', 'mcp-server', 'src', 'index.ts')],
+    "command": "we",
+    "args": ["mcp", "serve"],
     "env": {
-      "CODEB_SERVER": "141.164.60.51",
+      "CODEB_APP_SERVER": "158.247.203.55",
+      "CODEB_STREAMING_SERVER": "141.164.42.213",
+      "CODEB_STORAGE_SERVER": "64.176.226.119",
+      "CODEB_BACKUP_SERVER": "141.164.37.63",
       "SSH_USER": "root"
     }
   }
@@ -335,19 +338,22 @@ async function configureSettings() {
       console.log('   ✅ Hooks 설정 추가');
     }
 
-    // Add permissions for allowed SSH servers
+    // Block SSH access (팀원은 MCP API만 사용)
     if (!settings.permissions) {
       settings.permissions = {
+        "deny": [
+          "Bash(ssh:*)",       // SSH 직접 접속 금지
+          "Bash(scp:*)",       // SCP 직접 접속 금지
+          "Bash(rsync:*)"      // rsync 직접 접속 금지
+        ],
         "allow": [
-          "Bash(ssh:141.164.60.51*)",
-          "Bash(ssh:158.247.203.55*)",
-          "Bash(ssh:141.164.42.213*)",
-          "Bash(ssh:64.176.226.119*)",
-          "Bash(ssh:141.164.37.63*)"
+          "Bash(we *)",        // we CLI 명령어 허용
+          "Bash(npm *)",       // npm 명령어 허용
+          "Bash(git *)"        // git 명령어 허용
         ]
       };
       updated = true;
-      console.log('   ✅ SSH 권한 설정 추가');
+      console.log('   ✅ SSH 차단 설정 추가 (MCP API만 사용)');
     }
 
     if (updated) {

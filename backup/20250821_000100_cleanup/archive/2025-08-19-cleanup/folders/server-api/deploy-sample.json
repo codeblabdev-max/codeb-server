@@ -1,0 +1,38 @@
+{
+  "projectName": "sample-app",
+  "domain": "sample-app.one-q.xyz",
+  "gitRepository": "https://github.com/vercel/next-learn-starter/tree/master/basics-final",
+  "gitBranch": "master",
+  "buildPack": "nixpacks",
+  "port": "3000",
+  "databases": [
+    {
+      "type": "postgresql",
+      "name": "db",
+      "user": "appuser",
+      "database": "appdb"
+    },
+    {
+      "type": "redis",
+      "name": "cache"
+    }
+  ],
+  "environmentVariables": [
+    {
+      "key": "NODE_ENV",
+      "value": "production"
+    },
+    {
+      "key": "DATABASE_URL",
+      "value": "postgresql://appuser:password@sample-app-db:5432/appdb"
+    },
+    {
+      "key": "REDIS_URL",
+      "value": "redis://:password@sample-app-cache:6379"
+    },
+    {
+      "key": "SECRET_KEY",
+      "value": "your-secret-key-here"
+    }
+  ]
+}

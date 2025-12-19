@@ -17,10 +17,15 @@
 
 import { Command } from 'commander';
 import chalk from 'chalk';
+// Core Commands (MCP-First Architecture)
+import { scan } from '../src/commands/scan.js';
+import { up } from '../src/commands/up.js';
 import { deploy } from '../src/commands/deploy.js';
+// Analysis & Optimization
 import { analyze } from '../src/commands/analyze.js';
 import { optimize } from '../src/commands/optimize.js';
 import { health } from '../src/commands/health.js';
+// Infrastructure
 import { domain } from '../src/commands/domain.js';
 import { agent } from '../src/commands/agent.js';
 import { monitor } from '../src/commands/monitor.js';
@@ -32,26 +37,62 @@ import { config } from '../src/commands/config.js';
 import { mcp } from '../src/commands/mcp.js';
 import { ssot } from '../src/commands/ssot.js';
 import { setup } from '../src/commands/setup.js';
-import { envScan, envPull, envPush, envList } from '../src/commands/env.js';
+import { envScan, envPull, envPush, envList, envRestore, envBackups } from '../src/commands/env.js';
+import { project } from '../src/commands/project.js';
+import { team } from '../src/commands/team.js';
+import { preview } from '../src/commands/preview.js';
+import { tui } from '../src/commands/tui.js';
 import { getServerHost, getServerUser, getDbPassword } from '../src/lib/config.js';
 
 const program = new Command();
 
-// CLI Header
-console.log(chalk.cyan.bold('\n╔═══════════════════════════════════════════════╗'));
-console.log(chalk.cyan.bold('║   /we: Web Deploy CLI v2.5.4                  ║'));
-console.log(chalk.cyan.bold('║   배포 • 분석 • 워크플로우 • 최적화           ║'));
-console.log(chalk.cyan.bold('╚═══════════════════════════════════════════════╝\n'));
+// CLI Header - MCP serve 모드에서는 출력하지 않음 (stdio 통신)
+const isMcpServe = process.argv.includes('mcp') && process.argv.includes('serve');
+if (!isMcpServe) {
+  console.log(chalk.cyan.bold('\n╔═══════════════════════════════════════════════╗'));
+  console.log(chalk.cyan.bold('║   /we: Web Deploy CLI v3.0.0                  ║'));
+  console.log(chalk.cyan.bold('║   scan → up → deploy (MCP-First)              ║'));
+  console.log(chalk.cyan.bold('╚═══════════════════════════════════════════════╝\n'));
+}
 
 program
   .name('/we:')
-  .description('/we: Web Deploy CLI - 7-Agent 시스템으로 배포, 분석, 워크플로우, 최적화')
-  .version('2.5.4');
+  .description('/we: Web Deploy CLI - MCP-First Architecture for Claude Code')
+  .version('3.0.0');
 
-// Deploy Command
+// ============================================================================
+// Core Commands (MCP-First Architecture)
+// ============================================================================
+
+// Scan Command - 핵심 명령어 #1
+program
+  .command('scan')
+  .description('Scan server state (projects, servers, ports) - outputs JSON for MCP/Claude')
+  .argument('[project]', 'Project name to scan (optional, scans all if not specified)')
+  .option('-s, --server', 'Scan servers only')
+  .option('-p, --ports', 'Scan port allocation only')
+  .option('-j, --json', 'Output in JSON format (for MCP/Claude)')
+  .option('-d, --diff', 'Compare local vs server state')
+  .option('-e, --environment <env>', 'Target environment', 'production')
+  .action(scan);
+
+// Up Command - 핵심 명령어 #2
+program
+  .command('up')
+  .description('Execute recommended actions from scan (register, sync, deploy)')
+  .argument('[project]', 'Project name (auto-detected from package.json)')
+  .option('-a, --all', 'Execute all actions (including optional)')
+  .option('-f, --fix', 'Auto-fix detected issues')
+  .option('-s, --sync', 'Sync local and server state')
+  .option('-e, --environment <env>', 'Target environment', 'production')
+  .option('-y, --yes', 'Skip confirmation prompts')
+  .option('--dry-run', 'Show execution plan without running')
+  .action(up);
+
+// Deploy Command - 핵심 명령어 #3
 program
   .command('deploy')
-  .description('Deploy project to staging/production/preview (auto-scans before deploy)')
+  .description('Deploy project to staging/production/preview')
   .argument('[project]', 'Project name to deploy')
   .option('-e, --environment <env>', 'Target environment (staging|production|preview)', 'staging')
   .option('-f, --file <path>', 'Docker compose file path', 'docker-compose.yml')
@@ -263,11 +304,63 @@ program
       case 'list':
         await envList(project, options);
         break;
+      case 'restore':
+        await envRestore(project, options);
+        break;
+      case 'backups':
+        await envBackups(project, options);
+        break;
       default:
         console.log(chalk.red(`Unknown action: ${action}`));
-        console.log(chalk.gray('Available actions: scan, pull, push, list'));
+        console.log(chalk.gray('Available actions: scan, pull, push, list, restore, backups'));
     }
   });
+
+// Team Command (팀원 관리)
+program
+  .command('team')
+  .description('Team management - list, add, remove, role, status')
+  .argument('[action]', 'Action (list|add|remove|role|toggle|status)', 'list')
+  .argument('[arg1]', 'Member ID or argument')
+  .argument('[arg2]', 'Role name or argument')
+  .option('-f, --force', 'Force action without confirmation')
+  .action(team);
+
+// Preview Command (브랜치 기반 Preview 환경)
+program
+  .command('preview')
+  .description('Branch-based preview environment management')
+  .argument('[action]', 'Action (list|status|logs|delete|cleanup)', 'list')
+  .argument('[branch]', 'Branch name for logs/delete')
+  .option('-l, --lines <n>', 'Number of log lines', '100')
+  .option('-d, --days <n>', 'Days for cleanup threshold', '7')
+  .action(preview);
+
+// TUI Command (터미널 대시보드)
+program
+  .command('tui')
+  .description('Terminal-based dashboard for server management')
+  .option('-c, --compact', 'Compact mode (smaller widgets)')
+  .option('-r, --refresh <seconds>', 'Auto-refresh interval in seconds', '30')
+  .action(tui);
+
+// Project Command (프로젝트 자동 생성 - API 기반)
+program
+  .command('project')
+  .description('Project management via CodeB API (create|list|info|delete|types)')
+  .argument('<action>', 'Action (create|list|info|delete|types)')
+  .argument('[name]', 'Project name')
+  .option('-t, --type <type>', 'Project type (nextjs|nodejs|python|static)', 'nextjs')
+  .option('-g, --git-repo <url>', 'Git repository URL')
+  .option('--database', 'Include PostgreSQL database (default: true)')
+  .option('--no-database', 'Exclude PostgreSQL database')
+  .option('--redis', 'Include Redis cache (default: true)')
+  .option('--no-redis', 'Exclude Redis cache')
+  .option('-d, --description <text>', 'Project description')
+  .option('-o, --output <path>', 'Output directory for generated files (default: cwd)')
+  .option('--no-save', 'Do not save files to disk')
+  .option('-f, --force', 'Force deletion without confirmation')
+  .action(project);
 
 // Help/Doc Command
 program
@@ -346,6 +439,24 @@ program.on('--help', () => {
   console.log('  $ we setup                          # 현재 프로젝트에 설치');
   console.log('  $ we setup --path /path/to/project  # 특정 경로에 설치');
   console.log('  $ we setup -y                       # 확인 없이 바로 설치');
+  console.log('');
+  console.log(chalk.gray('  # 프로젝트 자동 생성 (API 기반)'));
+  console.log('  $ we project create my-app --type nextjs --database --redis');
+  console.log('  $ we project list                   # 모든 프로젝트 목록');
+  console.log('  $ we project info my-app            # 프로젝트 상세 정보');
+  console.log('  $ we project types                  # 사용 가능한 프로젝트 타입');
+  console.log('');
+  console.log(chalk.gray('  # Preview 환경 관리 (Branch 기반)'));
+  console.log('  $ we preview list                   # 현재 Preview 목록');
+  console.log('  $ we preview status                 # Preview 서버 상태');
+  console.log('  $ we preview logs feature-login     # Preview 로그 확인');
+  console.log('  $ we preview delete feature-login   # Preview 환경 삭제');
+  console.log('  $ we preview cleanup --days 7       # 오래된 Preview 정리');
+  console.log('');
+  console.log(chalk.gray('  # 터미널 대시보드 (TUI)'));
+  console.log('  $ we tui                            # 대시보드 시작');
+  console.log('  $ we tui --compact                  # 컴팩트 모드');
+  console.log('  $ we tui --refresh 10               # 10초 새로고침');
   console.log('');
   console.log(chalk.cyan('Documentation: https://codeb.io/docs/cli'));
   console.log('');

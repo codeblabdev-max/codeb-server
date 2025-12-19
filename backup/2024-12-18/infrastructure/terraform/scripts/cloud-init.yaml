@@ -1,0 +1,163 @@
+#cloud-config
+# CodeB Server - Cloud Init Configuration
+# 3-Layer Architecture: Configuration Layer
+#
+# 변수 (Terraform templatefile로 주입):
+# - project_name: ${project_name}
+# - environment: ${environment}
+# - podman_version: ${podman_version}
+
+package_update: true
+package_upgrade: true
+
+packages:
+  - curl
+  - wget
+  - git
+  - htop
+  - vim
+  - unzip
+  - ca-certificates
+  - gnupg
+  - lsb-release
+  - jq
+  - tree
+  - ufw
+  - unattended-upgrades
+
+timezone: Asia/Seoul
+
+write_files:
+  # Kubic Repository 설정 (Podman 4.x)
+  - path: /etc/apt/sources.list.d/devel:kubic:libcontainers:unstable.list
+    content: |
+      deb https://download.opensuse.org/repositories/devel:/kubic:/libcontainers:/unstable/xUbuntu_22.04/ /
+    permissions: '0644'
+
+  # Podman 네트워크 설정
+  - path: /etc/containers/systemd/codeb.network
+    content: |
+      [Network]
+      Subnet=10.89.0.0/24
+      Gateway=10.89.0.1
+      DNS=10.89.0.1
+    permissions: '0644'
+
+  # 환경 변수 템플릿
+  - path: /opt/codeb/config/env.template
+    content: |
+      # CodeB Environment Template
+      # 프로젝트별로 복사하여 사용
+      NODE_ENV=${environment}
+      PORT=3000
+      HOSTNAME=0.0.0.0
+      # DATABASE_URL=postgresql://user:pass@host:5432/db
+      # REDIS_URL=redis://host:6379
+    permissions: '0644'
+
+  # systemd 서비스 사용자 설정
+  - path: /etc/systemd/system/codeb-deploy.service
+    content: |
+      [Unit]
+      Description=CodeB Deploy Service User
+      After=network-online.target
+
+      [Service]
+      Type=oneshot
+      RemainAfterExit=yes
+      ExecStart=/bin/true
+
+      [Install]
+      WantedBy=multi-user.target
+    permissions: '0644'
+
+  # 서버 초기화 스크립트
+  - path: /opt/codeb/scripts/init-server.sh
+    content: |
+      #!/bin/bash
+      set -e
+
+      echo "=== CodeB Server Init ==="
+
+      # Kubic GPG 키 추가
+      curl -fsSL https://download.opensuse.org/repositories/devel:/kubic:/libcontainers:/unstable/xUbuntu_22.04/Release.key | gpg --dearmor -o /etc/apt/trusted.gpg.d/devel_kubic_libcontainers_unstable.gpg
+
+      # Podman 4.x 설치
+      apt-get update -qq
+      DEBIAN_FRONTEND=noninteractive apt-get install -y podman containers-common
+
+      # Quadlet 확인
+      echo "Podman version: $(podman --version)"
+      ls -la /usr/libexec/podman/quadlet 2>/dev/null || echo "Quadlet not found"
+
+      # Node.js 20.x
+      curl -fsSL https://deb.nodesource.com/setup_20.x | bash -
+      apt-get install -y nodejs
+
+      # Caddy
+      apt-get install -y debian-keyring debian-archive-keyring apt-transport-https
+      curl -1sLf 'https://dl.cloudsmith.io/public/caddy/stable/gpg.key' | gpg --dearmor -o /usr/share/keyrings/caddy-stable-archive-keyring.gpg
+      curl -1sLf 'https://dl.cloudsmith.io/public/caddy/stable/debian.deb.txt' | tee /etc/apt/sources.list.d/caddy-stable.list
+      apt-get update && apt-get install -y caddy
+
+      # GitHub CLI
+      curl -fsSL https://cli.github.com/packages/githubcli-archive-keyring.gpg | dd of=/usr/share/keyrings/githubcli-archive-keyring.gpg
+      chmod go+r /usr/share/keyrings/githubcli-archive-keyring.gpg
+      echo "deb [arch=$(dpkg --print-architecture) signed-by=/usr/share/keyrings/githubcli-archive-keyring.gpg] https://cli.github.com/packages stable main" | tee /etc/apt/sources.list.d/github-cli.list
+      apt-get update && apt-get install -y gh
+
+      # 디렉토리 생성
+      mkdir -p /opt/codeb/{config,data,logs,backup,scripts,envs}
+      mkdir -p /etc/containers/systemd
+
+      # 방화벽 설정
+      ufw --force reset
+      ufw default deny incoming
+      ufw default allow outgoing
+      ufw allow 22/tcp
+      ufw allow 80/tcp
+      ufw allow 443/tcp
+      ufw allow 3000:3999/tcp
+      ufw --force enable
+
+      # Swap 설정
+      if [ ! -f /swapfile ]; then
+        fallocate -l 4G /swapfile
+        chmod 600 /swapfile
+        mkswap /swapfile
+        swapon /swapfile
+        echo '/swapfile none swap sw 0 0' >> /etc/fstab
+        echo 'vm.swappiness=10' >> /etc/sysctl.conf
+        sysctl -p
+      fi
+
+      # SSH 보안 설정
+      sed -i 's/#PermitRootLogin yes/PermitRootLogin prohibit-password/' /etc/ssh/sshd_config
+      sed -i 's/#PasswordAuthentication yes/PasswordAuthentication no/' /etc/ssh/sshd_config
+      systemctl restart sshd
+
+      # systemd daemon reload for Quadlet
+      systemctl daemon-reload
+
+      echo "=== Init Complete ==="
+      echo "Podman: $(podman --version)"
+      echo "Node: $(node --version)"
+      echo "Caddy: $(caddy version)"
+    permissions: '0755'
+
+runcmd:
+  # 초기화 스크립트 실행
+  - /opt/codeb/scripts/init-server.sh
+
+  # 결과 로깅
+  - echo "Cloud-init completed at $(date)" >> /var/log/cloud-init-complete.log
+
+final_message: |
+  CodeB Server initialization complete!
+  Project: ${project_name}
+  Environment: ${environment}
+
+  Next steps:
+  1. Add SSH key to GitHub Actions secrets
+  2. Configure Quadlet files in /etc/containers/systemd/
+  3. Setup GitHub Actions workflow

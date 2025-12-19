@@ -1,0 +1,51 @@
+# CodeB Server Caddy Configuration (HTTP Only)
+# For testing without SSL issues
+
+{
+    admin localhost:2019
+    auto_https off
+}
+
+# Main domain - HTTP only
+:80 {
+    # Match Host header for routing
+    @oneq host one-q.xyz www.one-q.xyz
+    handle @oneq {
+        handle /api/* {
+            reverse_proxy localhost:3008
+        }
+        
+        handle /health {
+            reverse_proxy localhost:3008/api/health
+        }
+        
+        handle {
+            root * /var/www/codeb
+            file_server
+            try_files {path} index.html
+        }
+    }
+    
+    @test_nextjs host test-nextjs.one-q.xyz
+    handle @test_nextjs {
+        reverse_proxy localhost:4001
+    }
+    
+    @video host video-platform.one-q.xyz video.one-q.xyz
+    handle @video {
+        reverse_proxy localhost:4002
+    }
+    
+    @test_cli host test-cli-project.one-q.xyz test-cli.one-q.xyz
+    handle @test_cli {
+        reverse_proxy localhost:4003
+    }
+    
+    # Default response for unmatched hosts
+    handle {
+        respond "Domain not configured" 404
+    }
+    
+    encode gzip
+    log
+}

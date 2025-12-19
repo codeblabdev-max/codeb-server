@@ -1,0 +1,35 @@
+version: '3.8'
+
+# Simple CodeB Management API
+# Based on warehouse-rental deployment pattern
+
+services:
+  api:
+    image: localhost/1.0.0:latest
+    restart: unless-stopped
+    ports:
+      - "3020:3020"
+    environment:
+      - NODE_ENV=production
+      - PORT=3020
+    volumes:
+      # Access to Podman socket for container management
+      - /run/podman/podman.sock:/run/podman/podman.sock:ro
+      # Project registry persistence
+      - api_data:/opt/codeb
+    networks:
+      - codeb-network
+    healthcheck:
+      test: ["CMD", "node", "-e", "require('http').get('http://localhost:3020/health', (r) => {if(r.statusCode !== 200) process.exit(1)})"]
+      interval: 30s
+      timeout: 5s
+      retries: 3
+      start_period: 10s
+
+volumes:
+  api_data:
+    driver: local
+
+networks:
+  codeb-network:
+    driver: bridge

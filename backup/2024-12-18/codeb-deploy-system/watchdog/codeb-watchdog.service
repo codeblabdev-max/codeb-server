@@ -1,0 +1,42 @@
+[Unit]
+Description=CodeB SSOT Watchdog Service
+Documentation=https://github.com/codeb/codeb-server
+After=network.target caddy.service podman.service
+Wants=caddy.service
+
+[Service]
+Type=simple
+User=root
+Group=root
+
+# 환경 변수
+Environment=SSOT_FILE=/opt/codeb/registry/ssot.json
+Environment=CHECK_INTERVAL=30
+# Slack 웹훅 (선택)
+# Environment=SLACK_WEBHOOK=https://hooks.slack.com/services/xxx
+
+# 실행
+ExecStart=/opt/codeb/watchdog/codeb-watchdog.sh service
+ExecReload=/bin/kill -HUP $MAINPID
+
+# 재시작 정책
+Restart=always
+RestartSec=10
+
+# 리소스 제한
+MemoryMax=256M
+CPUQuota=10%
+
+# 로깅
+StandardOutput=journal
+StandardError=journal
+SyslogIdentifier=codeb-watchdog
+
+# 보안 설정
+ProtectSystem=strict
+ReadWritePaths=/opt/codeb /etc/caddy/Caddyfile.d /var/log/caddy
+PrivateTmp=true
+NoNewPrivileges=false
+
+[Install]
+WantedBy=multi-user.target
