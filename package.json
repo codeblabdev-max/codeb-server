@@ -1,17 +1,14 @@
 {
-  "name": "we-cli",
-  "version": "2.5.4",
+  "name": "@codeb/we-cli",
+  "version": "3.0.0",
   "description": "CodeB we-cli: Deploy, Analyze, Workflow with 7-Agent System + Auto Claude Code Integration",
+  "type": "module",
   "main": "./cli/bin/we.js",
   "bin": {
     "we": "./cli/bin/we.js"
   },
   "files": [
-    "cli/bin",
-    "cli/src",
-    "cli/commands",
-    "cli/scripts",
-    "cli/rules"
+    "cli"
   ],
   "scripts": {
     "postinstall": "node cli/scripts/install-commands.js || true",
