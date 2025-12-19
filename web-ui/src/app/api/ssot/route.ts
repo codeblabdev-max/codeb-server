@@ -1,6 +1,10 @@
 import { NextRequest, NextResponse } from "next/server";
 import { sshExec, SERVERS, getAllServersStatus, getContainers } from "@/lib/ssh";
 
+// Types
+type PortRange = { start: number; end: number; allocated: number[] };
+type PortAllocation = Record<string, Record<string, PortRange>>;
+
 // GET: Get SSOT status
 export async function GET(request: NextRequest) {
   try {
@@ -84,7 +88,7 @@ export async function GET(request: NextRequest) {
         `cat /opt/codeb/config/port-allocation.json 2>/dev/null || echo "{}"`
       );
 
-      let ports = {};
+      let ports: PortAllocation = {};
       try {
         ports = JSON.parse(result.output || "{}");
       } catch {
@@ -258,18 +262,19 @@ EOF`
         `cat /opt/codeb/config/port-allocation.json 2>/dev/null || echo "{}"`
       );
 
-      let ports: Record<string, Record<string, { allocated: number[]; start: number; end: number }>> = {};
+      let ports: PortAllocation = {};
       try {
         ports = JSON.parse(portsResult.output || "{}");
       } catch {
         ports = getDefaultPortAllocation();
       }
 
+      const defaultPorts = getDefaultPortAllocation();
       if (!ports[environment]) {
-        ports[environment] = getDefaultPortAllocation()[environment];
+        ports[environment] = defaultPorts[environment] || defaultPorts["production"];
       }
 
-      const range = ports[environment][type];
+      const range = ports[environment]?.[type];
       if (!range) {
         return NextResponse.json(
           { success: false, error: `Unknown port type: ${type}` },
@@ -411,17 +416,17 @@ EOF`
   }
 }
 
-function getDefaultPortAllocation() {
+function getDefaultPortAllocation(): PortAllocation {
   return {
     production: {
-      app: { start: 4000, end: 4499, allocated: [] as number[] },
-      db: { start: 5432, end: 5432, allocated: [] as number[] },
+      app: { start: 4000, end: 4499, allocated: [] },
+      db: { start: 5432, end: 5432, allocated: [] },
     },
     staging: {
-      app: { start: 4500, end: 4999, allocated: [] as number[] },
+      app: { start: 4500, end: 4999, allocated: [] },
     },
     preview: {
-      app: { start: 5000, end: 5999, allocated: [] as number[] },
+      app: { start: 5000, end: 5999, allocated: [] },
     },
   };
 }
