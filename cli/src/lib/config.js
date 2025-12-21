@@ -15,6 +15,29 @@ import dotenv from 'dotenv';
 const __filename = fileURLToPath(import.meta.url);
 const __dirname = dirname(__filename);
 const CLI_ROOT = join(__dirname, '..', '..');
+const PROJECT_ROOT = join(CLI_ROOT, '..');
+
+// CLI 버전 (package.json에서 읽음 - Single Source of Truth)
+let _cliVersion = null;
+function loadCliVersion() {
+  if (_cliVersion) return _cliVersion;
+  try {
+    const pkgPath = join(PROJECT_ROOT, 'package.json');
+    const pkg = JSON.parse(readFileSync(pkgPath, 'utf-8'));
+    _cliVersion = pkg.version || '0.0.0';
+  } catch (e) {
+    _cliVersion = '0.0.0';
+  }
+  return _cliVersion;
+}
+
+/**
+ * CLI 버전 가져오기 (package.json에서 읽음)
+ * @returns {string} CLI 버전 (e.g., "3.0.14")
+ */
+export function getCliVersion() {
+  return loadCliVersion();
+}
 
 // .env 파일 로드 순서: 현재 디렉토리 → CLI 패키지 디렉토리
 dotenv.config(); // 현재 디렉토리 .env
@@ -296,6 +319,7 @@ export default {
   getConfigDir,
   getConfigFile,
   getAllConfig,
+  getCliVersion,
   // 서버 인프라 관련
   ALLOWED_SERVERS,
   BLOCKED_SERVERS,
