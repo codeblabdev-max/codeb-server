@@ -8,7 +8,13 @@
     "we": "cli/bin/we.js"
   },
   "files": [
-    "cli"
+    "cli/bin",
+    "cli/src",
+    "cli/commands",
+    "cli/scripts",
+    "cli/rules",
+    "cli/package.json",
+    "cli/README.md"
   ],
   "scripts": {
     "postinstall": "node cli/scripts/install-commands.js || true",
