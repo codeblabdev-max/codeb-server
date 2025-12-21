@@ -269,6 +269,9 @@ export async function workflow(action, target, options) {
     case 'check':
       await validateQuadletWorkflow(target, options);
       break;
+    case 'secrets':
+      await registerGitHubSecrets(target, options);
+      break;
     default:
       console.log(chalk.red(`Unknown action: ${action}`));
       console.log(chalk.gray('\nAvailable actions:'));
@@ -286,6 +289,7 @@ export async function workflow(action, target, options) {
       console.log(chalk.gray('  port-validate- Validate port allocation before deployment (GitOps PortGuard)'));
       console.log(chalk.gray('  port-drift   - Detect drift between manifest and actual server state'));
       console.log(chalk.gray('  validate     - Validate Quadlet files for Podman version compatibility'));
+      console.log(chalk.gray('  secrets      - Register GitHub Secrets (SSH_HOST, SSH_USER, SSH_PRIVATE_KEY)'));
   }
 }
 
@@ -902,13 +906,73 @@ EOFENV"`, { timeout: 30000 });
       console.log(chalk.cyan(`    Redis: ${serverHost}:${config.productionRedisPort}/${provisionResult.redis.db_index}`));
     }
 
+    // Auto-register GitHub Secrets if gh CLI available
+    let secretsRegistered = false;
+    try {
+      const { execSync } = await import('child_process');
+
+      // Check if gh CLI is available and authenticated
+      execSync('gh auth status', { stdio: 'pipe', timeout: 5000 });
+
+      // Get repo info from git remote
+      const remoteUrl = execSync('git remote get-url origin 2>/dev/null || echo ""', { encoding: 'utf-8' }).trim();
+      const repoMatch = remoteUrl.match(/github\.com[:/](.+?)(?:\.git)?$/);
+
+      if (repoMatch) {
+        const repoFullName = repoMatch[1].replace(/\.git$/, '');
+        console.log(chalk.blue(`\n🔐 Registering GitHub Secrets for ${repoFullName}...`));
+
+        // Check if secrets already exist
+        const existingSecrets = execSync(`gh secret list -R ${repoFullName} 2>/dev/null || echo ""`, { encoding: 'utf-8' });
+
+        // SSH_HOST
+        if (!existingSecrets.includes('SSH_HOST')) {
+          execSync(`gh secret set SSH_HOST -R ${repoFullName} -b "${serverHost || '158.247.203.55'}"`, { stdio: 'pipe', timeout: 10000 });
+          console.log(chalk.green('  ✓ SSH_HOST registered'));
+        } else {
+          console.log(chalk.gray('  ✓ SSH_HOST (already exists)'));
+        }
+
+        // SSH_USER
+        if (!existingSecrets.includes('SSH_USER')) {
+          execSync(`gh secret set SSH_USER -R ${repoFullName} -b "${serverUser || 'root'}"`, { stdio: 'pipe', timeout: 10000 });
+          console.log(chalk.green('  ✓ SSH_USER registered'));
+        } else {
+          console.log(chalk.gray('  ✓ SSH_USER (already exists)'));
+        }
+
+        // SSH_PRIVATE_KEY - use default key if exists
+        if (!existingSecrets.includes('SSH_PRIVATE_KEY')) {
+          const sshKeyPath = process.env.HOME + '/.ssh/id_ed25519';
+          if (existsSync(sshKeyPath)) {
+            const sshKey = await readFile(sshKeyPath, 'utf-8');
+            execSync(`gh secret set SSH_PRIVATE_KEY -R ${repoFullName} -b "${sshKey.replace(/"/g, '\\"')}"`, { stdio: 'pipe', timeout: 10000 });
+            console.log(chalk.green('  ✓ SSH_PRIVATE_KEY registered'));
+          } else {
+            console.log(chalk.yellow('  ⚠ SSH_PRIVATE_KEY: ~/.ssh/id_ed25519 not found, register manually'));
+          }
+        } else {
+          console.log(chalk.gray('  ✓ SSH_PRIVATE_KEY (already exists)'));
+        }
+
+        secretsRegistered = true;
+      }
+    } catch (e) {
+      // gh CLI not available or not authenticated - show manual instructions
+    }
+
     console.log(chalk.yellow('\n📋 Next steps:'));
     console.log(chalk.gray('  1. Run: we workflow sync ' + config.projectName + ' (copy files to server)'));
-    console.log(chalk.gray('  2. Add GitHub Secrets:'));
-    console.log(chalk.gray('     - SSH_PRIVATE_KEY: Server SSH private key'));
-    console.log(chalk.gray('     - SERVER_HOST: ' + (serverHost || '(your server IP)')));
+    if (!secretsRegistered) {
+      console.log(chalk.gray('  2. Add GitHub Secrets (or run: we workflow secrets):'));
+      console.log(chalk.gray('     - SSH_HOST: ' + (serverHost || '158.247.203.55')));
+      console.log(chalk.gray('     - SSH_USER: root'));
+      console.log(chalk.gray('     - SSH_PRIVATE_KEY: ~/.ssh/id_ed25519 contents'));
+    } else {
+      console.log(chalk.green('  2. ✓ GitHub Secrets already configured'));
+    }
     console.log(chalk.gray('  3. Push to GitHub to trigger deployment'));
-    console.log(chalk.gray('\n  💡 Hybrid Mode: GitHub builds → ghcr.io → Self-hosted deploys'));
+    console.log(chalk.gray('\n  💡 Hybrid Mode: GitHub builds → ghcr.io → SSH deploys'));
     console.log(chalk.gray('  💡 Local dev connects to server DB automatically'));
     console.log();
 
@@ -3934,6 +3998,113 @@ async function validateQuadletWorkflow(target, options) {
     spinner.fail('Validation failed');
     console.log(chalk.red(`\n❌ Error: ${error.message}\n`));
     process.exit(1);
+  }
+}
+
+/**
+ * Register GitHub Secrets for SSH deploy
+ * Automatically sets SSH_HOST, SSH_USER, SSH_PRIVATE_KEY
+ */
+async function registerGitHubSecrets(repoName, options) {
+  const spinner = ora('Registering GitHub Secrets...').start();
+
+  try {
+    const { execSync } = await import('child_process');
+
+    // Check gh CLI
+    try {
+      execSync('gh auth status', { stdio: 'pipe', timeout: 5000 });
+    } catch (e) {
+      spinner.fail('GitHub CLI not authenticated');
+      console.log(chalk.yellow('\nRun: gh auth login'));
+      return;
+    }
+
+    // Get repo info
+    let repoFullName = repoName;
+    if (!repoFullName) {
+      const remoteUrl = execSync('git remote get-url origin 2>/dev/null || echo ""', { encoding: 'utf-8' }).trim();
+      const repoMatch = remoteUrl.match(/github\.com[:/](.+?)(?:\.git)?$/);
+      if (repoMatch) {
+        repoFullName = repoMatch[1].replace(/\.git$/, '');
+      }
+    }
+
+    if (!repoFullName) {
+      spinner.fail('Could not determine repository');
+      console.log(chalk.yellow('Run in a git repository or specify: we workflow secrets owner/repo'));
+      return;
+    }
+
+    spinner.text = `Registering secrets for ${repoFullName}...`;
+
+    const serverHost = options.host || getServerHost() || '158.247.203.55';
+    const serverUser = options.user || getServerUser() || 'root';
+
+    // Check existing secrets
+    const existingSecrets = execSync(`gh secret list -R ${repoFullName} 2>/dev/null || echo ""`, { encoding: 'utf-8' });
+
+    const results = [];
+
+    // SSH_HOST
+    if (!existingSecrets.includes('SSH_HOST') || options.force) {
+      execSync(`gh secret set SSH_HOST -R ${repoFullName} -b "${serverHost}"`, { stdio: 'pipe', timeout: 10000 });
+      results.push({ name: 'SSH_HOST', value: serverHost, status: 'set' });
+    } else {
+      results.push({ name: 'SSH_HOST', status: 'exists' });
+    }
+
+    // SSH_USER
+    if (!existingSecrets.includes('SSH_USER') || options.force) {
+      execSync(`gh secret set SSH_USER -R ${repoFullName} -b "${serverUser}"`, { stdio: 'pipe', timeout: 10000 });
+      results.push({ name: 'SSH_USER', value: serverUser, status: 'set' });
+    } else {
+      results.push({ name: 'SSH_USER', status: 'exists' });
+    }
+
+    // SSH_PRIVATE_KEY
+    if (!existingSecrets.includes('SSH_PRIVATE_KEY') || options.force) {
+      const sshKeyPath = options.key || process.env.HOME + '/.ssh/id_ed25519';
+      if (existsSync(sshKeyPath)) {
+        const sshKey = await readFile(sshKeyPath, 'utf-8');
+        // Use stdin for multiline content via spawn
+        const { spawn } = await import('child_process');
+        const child = spawn('gh', ['secret', 'set', 'SSH_PRIVATE_KEY', '-R', repoFullName], {
+          stdio: ['pipe', 'pipe', 'pipe']
+        });
+        child.stdin.write(sshKey);
+        child.stdin.end();
+        await new Promise((resolve, reject) => {
+          child.on('close', (code) => code === 0 ? resolve() : reject(new Error(`gh exited with ${code}`)));
+        });
+        results.push({ name: 'SSH_PRIVATE_KEY', value: sshKeyPath, status: 'set' });
+      } else {
+        results.push({ name: 'SSH_PRIVATE_KEY', status: 'missing', error: `Key file not found: ${sshKeyPath}` });
+      }
+    } else {
+      results.push({ name: 'SSH_PRIVATE_KEY', status: 'exists' });
+    }
+
+    spinner.succeed('GitHub Secrets registered');
+
+    console.log(chalk.green(`\n✅ GitHub Secrets for ${repoFullName}\n`));
+    for (const r of results) {
+      if (r.status === 'set') {
+        console.log(chalk.green(`  ✓ ${r.name}: ${r.value || 'set'}`));
+      } else if (r.status === 'exists') {
+        console.log(chalk.gray(`  ✓ ${r.name}: (already exists)`));
+      } else if (r.status === 'missing') {
+        console.log(chalk.yellow(`  ⚠ ${r.name}: ${r.error}`));
+      }
+    }
+
+    console.log(chalk.gray('\nSecrets are ready for SSH deploy via GitHub Actions.'));
+    console.log(chalk.gray('Use --force to overwrite existing secrets.'));
+    console.log();
+
+  } catch (error) {
+    spinner.fail('Failed to register secrets');
+    console.log(chalk.red(`\n❌ Error: ${error.message}\n`));
   }
 }
 

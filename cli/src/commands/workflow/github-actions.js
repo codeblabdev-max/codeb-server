@@ -214,13 +214,21 @@ ${includeLint ? `      - name: Run linter
               sed -i "s|^Image=.*|Image=\${IMAGE}|" "\$QUADLET_FILE"
             fi
 
-            # Restart service
+            # Restart service (use sudo for non-root users)
             echo "Restarting service..."
-            systemctl daemon-reload
-            systemctl stop \${CONTAINER_NAME}.service 2>/dev/null || true
-            podman stop \${CONTAINER_NAME} --time 30 2>/dev/null || true
-            podman rm \${CONTAINER_NAME} 2>/dev/null || true
-            systemctl start \${CONTAINER_NAME}.service
+            if [ "$(id -u)" -eq 0 ]; then
+              systemctl daemon-reload
+              systemctl stop \${CONTAINER_NAME}.service 2>/dev/null || true
+              podman stop \${CONTAINER_NAME} --time 30 2>/dev/null || true
+              podman rm \${CONTAINER_NAME} 2>/dev/null || true
+              systemctl start \${CONTAINER_NAME}.service
+            else
+              sudo systemctl daemon-reload
+              sudo systemctl stop \${CONTAINER_NAME}.service 2>/dev/null || true
+              podman stop \${CONTAINER_NAME} --time 30 2>/dev/null || true
+              podman rm \${CONTAINER_NAME} 2>/dev/null || true
+              sudo systemctl start \${CONTAINER_NAME}.service
+            fi
 
             # Health check
             echo "Running health check..."
