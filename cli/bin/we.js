@@ -17,6 +17,16 @@
 
 import { Command } from 'commander';
 import chalk from 'chalk';
+import { readFileSync } from 'fs';
+import { fileURLToPath } from 'url';
+import { dirname, join } from 'path';
+
+// Get version from root package.json (single source of truth)
+const __filename = fileURLToPath(import.meta.url);
+const __dirname = dirname(__filename);
+const pkg = JSON.parse(readFileSync(join(__dirname, '../../package.json'), 'utf-8'));
+const VERSION = pkg.version;
+
 // Core Commands (MCP-First Architecture)
 import { scan } from '../src/commands/scan.js';
 import { up } from '../src/commands/up.js';
@@ -51,7 +61,7 @@ const program = new Command();
 const isMcpServe = process.argv.includes('mcp') && process.argv.includes('serve');
 if (!isMcpServe) {
   console.log(chalk.cyan.bold('\n╔═══════════════════════════════════════════════╗'));
-  console.log(chalk.cyan.bold('║   /we: Web Deploy CLI v3.0.12                 ║'));
+  console.log(chalk.cyan.bold(`║   /we: Web Deploy CLI v${VERSION}                 ║`));
   console.log(chalk.cyan.bold('║   scan → up → deploy (MCP-First)              ║'));
   console.log(chalk.cyan.bold('╚═══════════════════════════════════════════════╝\n'));
 }
@@ -59,7 +69,7 @@ if (!isMcpServe) {
 program
   .name('/we:')
   .description('/we: Web Deploy CLI - MCP-First Architecture for Claude Code')
-  .version('3.0.12');
+  .version(VERSION);
 
 // ============================================================================
 // Core Commands (MCP-First Architecture)
