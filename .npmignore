@@ -1,0 +1,31 @@
+# NPM Ignore - only include cli folder
+# Everything NOT in the 'files' array of package.json is ignored
+
+# Exclude everything except cli
+api/
+backup/
+docs/
+infrastructure/
+mcp-server/
+monitoring/
+scripts/
+web-ui/
+
+# Exclude test and dev files
+*.test.js
+*.spec.js
+__tests__/
+coverage/
+
+# Exclude configs not needed for npm
+.github/
+.claude/
+.codeb-*/
+Dockerfile
+docker-compose*.yml
+*.md
+!cli/README.md
+
+# Exclude environment files
+.env*
+!.env.example
