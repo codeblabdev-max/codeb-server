@@ -1,6 +1,6 @@
 {
   "name": "@codeblabdev-max/we-cli",
-  "version": "3.0.12",
+  "version": "3.0.21",
   "description": "/we: Web Deploy CLI - MCP-First Architecture (scan → up → deploy)",
   "type": "module",
   "bin": {

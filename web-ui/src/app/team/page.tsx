@@ -7,6 +7,7 @@ interface TeamMember {
   name: string;
   email: string;
   role: 'admin' | 'developer' | 'viewer';
+  apiKey?: string;
   permissions: {
     ssh: boolean;
     deploy: boolean;
@@ -30,6 +31,8 @@ export default function TeamPage() {
   const [error, setError] = useState<string | null>(null);
   const [showAddModal, setShowAddModal] = useState(false);
   const [editingMember, setEditingMember] = useState<TeamMember | null>(null);
+  const [newApiKey, setNewApiKey] = useState<string | null>(null);
+  const [copiedKey, setCopiedKey] = useState(false);
 
   // Form state
   const [formData, setFormData] = useState({
@@ -77,11 +80,24 @@ export default function TeamPage() {
         setMembers([...members, data.data]);
         setShowAddModal(false);
         setFormData({ name: '', email: '', role: 'developer' });
+        // Show API Key modal
+        if (data.apiKey) {
+          setNewApiKey(data.apiKey);
+          setCopiedKey(false);
+        }
       } else {
         alert(data.error);
       }
     } catch (err) {
       alert((err as Error).message);
+    }
+  }
+
+  async function copyApiKey() {
+    if (newApiKey) {
+      await navigator.clipboard.writeText(newApiKey);
+      setCopiedKey(true);
+      setTimeout(() => setCopiedKey(false), 2000);
     }
   }
 
@@ -308,6 +324,61 @@ export default function TeamPage() {
             </tbody>
           </table>
         </div>
+
+        {/* API Key Display Modal */}
+        {newApiKey && (
+          <div className="fixed inset-0 bg-black/70 flex items-center justify-center z-50">
+            <div className="bg-gray-800 rounded-lg p-6 w-full max-w-lg border border-yellow-500">
+              <div className="text-center mb-4">
+                <span className="text-4xl">🔑</span>
+                <h2 className="text-xl font-bold mt-2 text-yellow-400">API Key Generated</h2>
+              </div>
+
+              <div className="bg-gray-900 rounded-lg p-4 mb-4">
+                <p className="text-xs text-gray-400 mb-2">CODEB_API_KEY</p>
+                <div className="flex items-center gap-2">
+                  <code className="flex-1 text-sm text-green-400 break-all font-mono">
+                    {newApiKey}
+                  </code>
+                  <button
+                    onClick={copyApiKey}
+                    className={`px-3 py-1 rounded text-sm ${
+                      copiedKey
+                        ? 'bg-green-600 text-white'
+                        : 'bg-gray-700 hover:bg-gray-600 text-white'
+                    }`}
+                  >
+                    {copiedKey ? 'Copied!' : 'Copy'}
+                  </button>
+                </div>
+              </div>
+
+              <div className="bg-red-900/30 border border-red-500 rounded-lg p-3 mb-4">
+                <p className="text-red-300 text-sm">
+                  <strong>Warning:</strong> This API Key is only shown once.
+                  Save it in your GitHub repository secrets as <code className="bg-gray-800 px-1 rounded">CODEB_API_KEY</code>.
+                </p>
+              </div>
+
+              <div className="text-sm text-gray-400 mb-4">
+                <p className="mb-2">GitHub Secrets 등록 방법:</p>
+                <ol className="list-decimal list-inside space-y-1">
+                  <li>GitHub Repository → Settings → Secrets</li>
+                  <li>New repository secret 클릭</li>
+                  <li>Name: <code className="bg-gray-800 px-1 rounded">CODEB_API_KEY</code></li>
+                  <li>Value: 위의 API Key 붙여넣기</li>
+                </ol>
+              </div>
+
+              <button
+                onClick={() => setNewApiKey(null)}
+                className="w-full bg-blue-600 hover:bg-blue-700 py-2 rounded font-medium"
+              >
+                I have saved the key
+              </button>
+            </div>
+          </div>
+        )}
 
         {/* Add Member Modal */}
         {showAddModal && (

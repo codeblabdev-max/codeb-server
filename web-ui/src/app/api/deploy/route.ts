@@ -7,6 +7,37 @@ import {
   deploySuccess,
   deployError,
 } from "@/lib/centrifugo";
+import { readFileSync, existsSync } from "fs";
+import { join } from "path";
+
+/**
+ * Verify API Key against config file
+ * Called from API routes (not middleware - Edge Runtime)
+ */
+function verifyApiKeyFromConfig(apiKey: string): boolean {
+  if (!apiKey) return false;
+
+  // Check prefix format
+  if (!apiKey.startsWith('codeb_admin_') && !apiKey.startsWith('codeb_dev_') && !apiKey.startsWith('codeb_view_')) {
+    return false;
+  }
+
+  // Load from api-keys.json
+  const apiKeysPath = join(process.cwd(), '..', 'config', 'api-keys.json');
+  if (existsSync(apiKeysPath)) {
+    try {
+      const content = readFileSync(apiKeysPath, 'utf-8');
+      const data = JSON.parse(content);
+      return (data.keys || []).includes(apiKey);
+    } catch {
+      // File read error - allow for now (middleware already did format check)
+      return true;
+    }
+  }
+
+  // No config file - allow valid format keys
+  return true;
+}
 
 // GET: Fetch deployment history or status
 export async function GET(request: NextRequest) {
@@ -93,6 +124,15 @@ export async function GET(request: NextRequest) {
 // POST: Trigger new deployment
 export async function POST(request: NextRequest) {
   try {
+    // Verify API Key from header (set by middleware)
+    const apiKey = request.headers.get('x-api-key');
+    if (apiKey && !verifyApiKeyFromConfig(apiKey)) {
+      return NextResponse.json(
+        { success: false, error: "Invalid API Key" },
+        { status: 401 }
+      );
+    }
+
     const body = await request.json();
     const {
       project,

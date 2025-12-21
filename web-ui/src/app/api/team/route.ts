@@ -1,15 +1,27 @@
 import { NextRequest, NextResponse } from 'next/server';
-import { readFileSync, writeFileSync, existsSync } from 'fs';
-import { join } from 'path';
+import { readFileSync, writeFileSync, existsSync, mkdirSync } from 'fs';
+import { join, dirname } from 'path';
+import { randomBytes } from 'crypto';
 
 // Config file path
 const CONFIG_PATH = join(process.cwd(), '..', 'config', 'team-members.json');
+
+/**
+ * Generate secure API Key
+ * Format: codeb_{role}_{random}
+ */
+function generateApiKey(role: string): string {
+  const prefix = role === 'admin' ? 'codeb_admin' : role === 'developer' ? 'codeb_dev' : 'codeb_view';
+  const random = randomBytes(16).toString('hex');
+  return `${prefix}_${random}`;
+}
 
 interface TeamMember {
   id: string;
   name: string;
   email: string;
   role: 'admin' | 'developer' | 'viewer';
+  apiKey: string;  // API Key for GitHub Actions CODEB_API_KEY
   permissions: {
     ssh: boolean;
     deploy: boolean;
@@ -79,7 +91,34 @@ function loadConfig(): TeamConfig {
 
 function saveConfig(config: TeamConfig): void {
   config.updatedAt = new Date().toISOString();
+
+  // Ensure config directory exists
+  const configDir = dirname(CONFIG_PATH);
+  if (!existsSync(configDir)) {
+    mkdirSync(configDir, { recursive: true });
+  }
+
   writeFileSync(CONFIG_PATH, JSON.stringify(config, null, 2));
+
+  // Update API_KEYS for middleware verification
+  updateApiKeysEnv(config);
+}
+
+/**
+ * Update API_KEYS environment variable list
+ * This syncs with middleware.ts verifyApiKey()
+ */
+function updateApiKeysEnv(config: TeamConfig): void {
+  const activeApiKeys = config.members
+    .filter(m => m.active && m.apiKey)
+    .map(m => m.apiKey);
+
+  // Write to a separate file for runtime loading
+  const apiKeysPath = join(dirname(CONFIG_PATH), 'api-keys.json');
+  writeFileSync(apiKeysPath, JSON.stringify({
+    keys: activeApiKeys,
+    updatedAt: new Date().toISOString()
+  }, null, 2));
 }
 
 // GET - 팀원 목록 조회
@@ -139,11 +178,15 @@ export async function POST(request: NextRequest) {
       );
     }
 
+    // Generate API Key for the new member
+    const apiKey = generateApiKey(role);
+
     const newMember: TeamMember = {
       id,
       name,
       email,
       role,
+      apiKey,
       permissions: { ...roleConfig.defaultPermissions },
       createdAt: new Date().toISOString(),
       active: true
@@ -154,7 +197,10 @@ export async function POST(request: NextRequest) {
 
     return NextResponse.json({
       success: true,
-      data: newMember
+      data: newMember,
+      // Show API Key only on creation (one-time display)
+      apiKey: apiKey,
+      message: 'API Key는 한 번만 표시됩니다. GitHub Secrets의 CODEB_API_KEY에 저장하세요.'
     });
   } catch (error) {
     return NextResponse.json(

@@ -8,6 +8,11 @@ description: "Quadlet 및 GitHub Actions CI/CD 워크플로우 생성"
 ## 🎯 목적
 CodeB 인프라에 자동 배포를 위한 Quadlet 컨테이너 파일과 GitHub Actions CI/CD 워크플로우를 **자동으로** 생성합니다.
 
+## ⚠️ 중요: SSH 배포 방식 (Self-hosted Runner 미사용)
+- **GitHub Actions**: ubuntu-latest (GitHub-hosted)에서 빌드
+- **배포**: `appleboy/ssh-action@v1.2.0`으로 SSH 직접 배포
+- **Self-hosted Runner 사용 안 함**: 서버에 Runner 설치 불필요
+
 ## 📌 중요 규칙
 - **모든 응답은 한글로 작성**
 - **사용자에게 묻지 말고 자동으로 진행**
@@ -53,9 +58,23 @@ mcp__codeb-deploy__scan 호출
 │   ├── <프로젝트>.container          # Production Quadlet
 │   └── <프로젝트>-staging.container  # Staging Quadlet
 ├── .github/workflows/
-│   └── deploy.yml                    # GitHub Actions 워크플로우
+│   └── deploy.yml                    # GitHub Actions (SSH 배포)
 └── Dockerfile                        # 최적화된 멀티스테이지 Dockerfile
 ```
+
+## GitHub Actions 배포 전략
+```
+[Build] ubuntu-latest → Docker 빌드 → GHCR 푸시
+    ↓
+[Deploy] ubuntu-latest → appleboy/ssh-action
+    ↓
+[서버] podman pull → systemctl restart
+```
+
+## 필수 GitHub Secrets
+- `SSH_HOST`: 서버 IP (158.247.203.55)
+- `SSH_USER`: SSH 사용자 (root)
+- `SSH_PRIVATE_KEY`: SSH 개인키
 
 ## MCP 도구 (정확한 이름)
 - `mcp__codeb-deploy__workflow_init` - 프로젝트 초기화

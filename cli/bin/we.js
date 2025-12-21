@@ -21,10 +21,10 @@ import { readFileSync } from 'fs';
 import { fileURLToPath } from 'url';
 import { dirname, join } from 'path';
 
-// Get version from root package.json (single source of truth)
+// Get version from cli/package.json (single source of truth)
 const __filename = fileURLToPath(import.meta.url);
 const __dirname = dirname(__filename);
-const pkg = JSON.parse(readFileSync(join(__dirname, '../../package.json'), 'utf-8'));
+const pkg = JSON.parse(readFileSync(join(__dirname, '../package.json'), 'utf-8'));
 const VERSION = pkg.version;
 
 // Core Commands (MCP-First Architecture)

@@ -18,12 +18,43 @@ import inquirer from 'inquirer';
 import { readFileSync, writeFileSync, existsSync, mkdirSync } from 'fs';
 import { join, dirname } from 'path';
 import { fileURLToPath } from 'url';
+import { randomBytes } from 'crypto';
 
 const __filename = fileURLToPath(import.meta.url);
 const __dirname = dirname(__filename);
 
 // Config path - 프로젝트 루트의 config 폴더
 const CONFIG_PATH = join(__dirname, '..', '..', '..', 'config', 'team-members.json');
+const API_KEYS_PATH = join(__dirname, '..', '..', '..', 'config', 'api-keys.json');
+
+/**
+ * Generate secure API Key
+ * Format: codeb_{role}_{random}
+ */
+function generateApiKey(role) {
+  const prefix = role === 'admin' ? 'codeb_admin' : role === 'developer' ? 'codeb_dev' : 'codeb_view';
+  const random = randomBytes(16).toString('hex');
+  return `${prefix}_${random}`;
+}
+
+/**
+ * Update api-keys.json for middleware
+ */
+function updateApiKeys(config) {
+  const activeApiKeys = config.members
+    .filter(m => m.active && m.apiKey)
+    .map(m => m.apiKey);
+
+  const configDir = dirname(API_KEYS_PATH);
+  if (!existsSync(configDir)) {
+    mkdirSync(configDir, { recursive: true });
+  }
+
+  writeFileSync(API_KEYS_PATH, JSON.stringify({
+    keys: activeApiKeys,
+    updatedAt: new Date().toISOString()
+  }, null, 2));
+}
 
 // ============================================================================
 // Config Management
@@ -109,6 +140,9 @@ function saveConfig(config) {
   }
 
   writeFileSync(CONFIG_PATH, JSON.stringify(config, null, 2));
+
+  // Update api-keys.json for middleware
+  updateApiKeys(config);
 }
 
 // ============================================================================
@@ -212,11 +246,15 @@ export async function teamAdd(options = {}) {
   // Get role default permissions
   const roleConfig = config.roles[answers.role];
 
+  // Generate API Key
+  const apiKey = generateApiKey(answers.role);
+
   const newMember = {
     id,
     name: answers.name,
     email: answers.email,
     role: answers.role,
+    apiKey,
     permissions: { ...roleConfig.defaultPermissions },
     createdAt: new Date().toISOString(),
     active: true
@@ -229,6 +267,15 @@ export async function teamAdd(options = {}) {
   console.log(chalk.gray(`   ID: ${id}`));
   console.log(chalk.gray(`   Role: ${answers.role}`));
   console.log(chalk.gray(`   SSH: ${newMember.permissions.ssh ? 'Allowed' : 'Blocked'}`));
+  console.log('');
+  console.log(chalk.yellow('═'.repeat(60)));
+  console.log(chalk.yellow.bold('   🔑 API Key (CODEB_API_KEY)'));
+  console.log(chalk.yellow('═'.repeat(60)));
+  console.log(chalk.white.bold(`   ${apiKey}`));
+  console.log(chalk.yellow('═'.repeat(60)));
+  console.log('');
+  console.log(chalk.red('   ⚠️  이 키는 한 번만 표시됩니다!'));
+  console.log(chalk.gray('   GitHub Secrets에 CODEB_API_KEY로 저장하세요.'));
 }
 
 /**

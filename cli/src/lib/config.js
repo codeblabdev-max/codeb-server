@@ -15,14 +15,15 @@ import dotenv from 'dotenv';
 const __filename = fileURLToPath(import.meta.url);
 const __dirname = dirname(__filename);
 const CLI_ROOT = join(__dirname, '..', '..');
-const PROJECT_ROOT = join(CLI_ROOT, '..');
 
-// CLI 버전 (package.json에서 읽음 - Single Source of Truth)
+// CLI 버전 (cli/package.json에서 읽음 - Single Source of Truth)
+// npm 설치 시에도 올바르게 작동하도록 CLI_ROOT의 package.json 사용
 let _cliVersion = null;
 function loadCliVersion() {
   if (_cliVersion) return _cliVersion;
   try {
-    const pkgPath = join(PROJECT_ROOT, 'package.json');
+    // CLI 패키지의 package.json (cli/package.json)
+    const pkgPath = join(CLI_ROOT, 'package.json');
     const pkg = JSON.parse(readFileSync(pkgPath, 'utf-8'));
     _cliVersion = pkg.version || '0.0.0';
   } catch (e) {
