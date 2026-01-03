@@ -5,8 +5,9 @@
 # 설치 명령어:
 #   curl -fsSL https://raw.githubusercontent.com/codeblabdev-max/codeb-server/main/cli/install.sh | bash
 #
-# 또는 npm 직접 설치:
-#   npm install -g @codeb/we-cli
+# 또는 npm 직접 설치 (GitHub Package Registry):
+#   echo "@codeblabdev-max:registry=https://npm.pkg.github.com" >> ~/.npmrc
+#   npm install -g @codeblabdev-max/we-cli
 #
 
 set -e
@@ -20,7 +21,7 @@ NC='\033[0m'
 
 echo -e "${CYAN}"
 echo "╔═══════════════════════════════════════════════╗"
-echo "║   CodeB we-cli v2.6.0 설치                    ║"
+echo "║   CodeB we-cli v3.0.24 설치                   ║"
 echo "║   배포 • 분석 • 워크플로우 • MCP 통합          ║"
 echo "╚═══════════════════════════════════════════════╝"
 echo -e "${NC}"
@@ -45,12 +46,21 @@ echo -e "${YELLOW}2. npm 버전 확인...${NC}"
 NPM_VERSION=$(npm -v | cut -d'.' -f1)
 echo -e "${GREEN}   ✅ npm $(npm -v)${NC}"
 
+# GitHub Package Registry 설정
+echo -e "${YELLOW}3. GitHub Package Registry 설정...${NC}"
+if ! grep -q "@codeblabdev-max:registry=https://npm.pkg.github.com" ~/.npmrc 2>/dev/null; then
+    echo "@codeblabdev-max:registry=https://npm.pkg.github.com" >> ~/.npmrc
+    echo -e "${GREEN}   ✅ .npmrc 설정 추가${NC}"
+else
+    echo -e "${GREEN}   ✅ .npmrc 이미 설정됨${NC}"
+fi
+
 # we-cli 설치
-echo -e "${YELLOW}3. @codeb/we-cli 설치...${NC}"
-npm install -g @codeb/we-cli
+echo -e "${YELLOW}4. @codeblabdev-max/we-cli 설치...${NC}"
+npm install -g @codeblabdev-max/we-cli
 
 # 설치 확인
-echo -e "${YELLOW}4. 설치 확인...${NC}"
+echo -e "${YELLOW}5. 설치 확인...${NC}"
 if command -v we &> /dev/null; then
     echo -e "${GREEN}   ✅ we 명령어 설치 완료${NC}"
 else
