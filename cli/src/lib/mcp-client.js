@@ -35,7 +35,7 @@ import {
 
 const MCP_SERVER_NAME = 'codeb-deploy';
 const CONNECTION_TIMEOUT = 30000; // 30초
-const HTTP_API_PORT = 9100; // MCP HTTP API 포트
+const HTTP_API_PORT = 9101; // MCP HTTP API 포트 (9100은 node-exporter 사용)
 
 // Dashboard API (Next.js web-ui) - Primary API for scan/up commands
 const DASHBOARD_API_URL = process.env.CODEB_API_URL || 'http://localhost:3000/api';

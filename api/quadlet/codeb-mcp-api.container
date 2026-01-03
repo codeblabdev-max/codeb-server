@@ -1,0 +1,44 @@
+[Unit]
+Description=CodeB MCP HTTP API Server
+After=network-online.target
+Wants=network-online.target
+
+[Container]
+ContainerName=codeb-mcp-api
+Image=ghcr.io/codeblabdev-max/codeb-mcp-api:latest
+PublishPort=9100:9100
+
+# Environment
+Environment=NODE_ENV=production
+Environment=MCP_HTTP_PORT=9100
+Environment=API_KEYS_PATH=/config/api-keys.json
+
+# Mount config directory for API keys
+Volume=/opt/codeb/config:/config:ro
+
+# Mount SSH keys for server communication
+Volume=/root/.ssh:/root/.ssh:ro
+
+# Network
+Network=codeb-main
+
+# Health Check
+HealthCmd=curl -sf http://localhost:9100/api/health || exit 1
+HealthInterval=30s
+HealthTimeout=10s
+HealthRetries=3
+
+# Resource Limits
+Memory=512M
+CPUQuota=100%
+
+# Auto Update
+AutoUpdate=registry
+Label=io.containers.autoupdate=registry
+
+[Service]
+Restart=always
+TimeoutStartSec=120
+
+[Install]
+WantedBy=multi-user.target default.target

@@ -1,0 +1,44 @@
+{
+  "version": "1.0.0",
+  "description": "CodeB API Keys - Copy to /opt/codeb/config/api-keys.json on server",
+  "keys": [
+    "codeb_admin_your_admin_key_here",
+    "codeb_dev_developer1_key_here",
+    "codeb_dev_developer2_key_here",
+    "codeb_view_viewer1_key_here"
+  ],
+  "roles": {
+    "codeb_admin_your_admin_key_here": {
+      "name": "Admin User",
+      "role": "admin",
+      "created": "2025-01-01T00:00:00Z"
+    },
+    "codeb_dev_developer1_key_here": {
+      "name": "Developer 1",
+      "role": "dev",
+      "created": "2025-01-01T00:00:00Z"
+    }
+  },
+  "permissions": {
+    "admin": ["*"],
+    "dev": [
+      "deploy",
+      "ssot_get",
+      "ssot_get_project",
+      "ssot_list_projects",
+      "full_health_check",
+      "analyze_server",
+      "list_projects",
+      "check_domain_status",
+      "env_scan",
+      "env_pull"
+    ],
+    "view": [
+      "ssot_get",
+      "ssot_get_project",
+      "ssot_list_projects",
+      "full_health_check",
+      "list_projects"
+    ]
+  }
+}

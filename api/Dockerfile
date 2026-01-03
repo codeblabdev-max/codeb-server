@@ -2,6 +2,9 @@ FROM node:20-alpine
 
 WORKDIR /app
 
+# Install SSH client for server communication
+RUN apk add --no-cache openssh-client curl jq
+
 # Copy package files
 COPY package*.json ./
 
@@ -13,15 +16,9 @@ COPY . .
 
 # Set environment variables
 ENV NODE_ENV=production
-ENV PORT=3000
+ENV MCP_HTTP_PORT=9100
 
-# Create non-root user
-RUN addgroup --system --gid 1001 nodejs
-RUN adduser --system --uid 1001 api
-RUN chown -R api:nodejs /app
+# Expose MCP HTTP API port
+EXPOSE 9100
 
-USER api
-
-EXPOSE 3000
-
-CMD ["node", "project-generator.js"]
+CMD ["node", "mcp-http-api.js"]

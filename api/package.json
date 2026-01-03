@@ -1,12 +1,14 @@
 {
-  "name": "codeb-project-generator-api",
-  "version": "2.5.4",
-  "description": "CodeB Project Generator API - Auto-generate complete project infrastructure",
+  "name": "codeb-api",
+  "version": "3.0.0",
+  "description": "CodeB API Server - MCP HTTP API + Project Generator",
   "type": "module",
-  "main": "project-generator.js",
+  "main": "mcp-http-api.js",
   "scripts": {
-    "start": "node project-generator.js",
-    "dev": "node --watch project-generator.js",
+    "start": "node mcp-http-api.js",
+    "start:generator": "node project-generator.js",
+    "dev": "node --watch mcp-http-api.js",
+    "dev:generator": "node --watch project-generator.js",
     "test": "echo \"Tests coming soon\" && exit 0"
   },
   "keywords": [
