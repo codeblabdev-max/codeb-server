@@ -1,7 +1,7 @@
 {
   "name": "codeb-api",
-  "version": "3.0.0",
-  "description": "CodeB API Server - MCP HTTP API + Project Generator",
+  "version": "3.1.0",
+  "description": "CodeB API Server - MCP HTTP API + Project Generator (팀원 전체 라이프사이클 지원)",
   "type": "module",
   "main": "mcp-http-api.js",
   "scripts": {

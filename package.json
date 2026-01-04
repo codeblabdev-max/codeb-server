@@ -1,6 +1,6 @@
 {
   "name": "@codeblabdev-max/we-cli",
-  "version": "3.0.24",
+  "version": "3.1.0",
   "description": "CodeB we-cli: Deploy, Analyze, Workflow with 7-Agent System + Auto Claude Code Integration",
   "type": "module",
   "main": "./cli/bin/we.js",
@@ -19,7 +19,11 @@
   "scripts": {
     "postinstall": "node cli/scripts/install-commands.js || true",
     "setup": "node cli/scripts/install-commands.js",
-    "test": "echo \"Tests coming soon\" && exit 0"
+    "test": "echo \"Tests coming soon\" && exit 0",
+    "version:patch": "node scripts/bump-version.js patch",
+    "version:minor": "node scripts/bump-version.js minor",
+    "version:major": "node scripts/bump-version.js major",
+    "version:set": "node scripts/bump-version.js"
   },
   "keywords": [
     "codeb",
