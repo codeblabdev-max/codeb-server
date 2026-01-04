@@ -104,6 +104,8 @@ function checkPermission(role, tool) {
     dev: [
       // 배포 & 롤백
       'deploy', 'rollback', 'promote',
+      // 배포 Aliases (호환성)
+      'deploy_project', 'slot_promote',
       // Slot 관리
       'slot_list', 'slot_status', 'slot_cleanup',
       // 프로젝트 관리
@@ -1939,6 +1941,17 @@ ENVEOF
     }
   },
 };
+
+// ============================================================================
+// Tool Aliases (호환성 유지)
+// - deploy_project → deploy
+// - slot_promote → promote
+// - slot_status → slot_status (기존)
+// - slot_list → slot_list (기존)
+// ============================================================================
+
+toolHandlers.deploy_project = toolHandlers.deploy;
+toolHandlers.slot_promote = toolHandlers.promote;
 
 // ============================================================================
 // Blue-Green 워크플로우 생성 헬퍼
