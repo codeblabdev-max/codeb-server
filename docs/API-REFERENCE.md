@@ -4,7 +4,7 @@
 
 CodeB Server provides an HTTP API for deployment and server management.
 
-**Base URL:** `http://app.codeb.kr:9100/api`
+**Base URL:** `https://api.codeb.kr/api` (or `http://app.codeb.kr:9101/api`)
 
 **Authentication:**
 ```http

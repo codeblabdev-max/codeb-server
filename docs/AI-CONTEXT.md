@@ -8,7 +8,7 @@
 name: CodeB Server
 type: Self-hosted Deployment Platform
 style: Vercel-like Blue-Green Slot Deployment
-api: MCP HTTP API (port 9100)
+api: MCP HTTP API (https://api.codeb.kr)
 ```
 
 ## Architecture Summary
@@ -64,7 +64,8 @@ green = basePort + 1  // e.g., 4051
 
 ### Base URL
 ```
-http://app.codeb.kr:9100/api
+https://api.codeb.kr/api
+# fallback: http://app.codeb.kr:9101/api
 ```
 
 ### Authentication
