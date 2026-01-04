@@ -37,8 +37,12 @@ const MCP_SERVER_NAME = 'codeb-deploy';
 const CONNECTION_TIMEOUT = 30000; // 30초
 const HTTP_API_PORT = 9101; // MCP HTTP API 포트 (9100은 node-exporter 사용)
 
-// Dashboard API (Next.js web-ui) - Primary API for scan/up commands
-const DASHBOARD_API_URL = process.env.CODEB_API_URL || 'http://localhost:3000/api';
+// CodeB HTTP API (v3.1.1+) - Primary API for all operations
+const CODEB_API_BASE_URL = process.env.CODEB_API_URL || 'https://api.codeb.kr/api';
+const CODEB_API_FALLBACK_URL = 'http://158.247.203.55:9101/api';
+
+// Dashboard API (Next.js web-ui) - Legacy, for backward compatibility
+const DASHBOARD_API_URL = process.env.CODEB_DASHBOARD_URL || 'http://localhost:3000/api';
 
 const FALLBACK_MODE_WARNING = `
 ${chalk.bgYellow.black(' ⚠️  FALLBACK MODE ')}
@@ -161,6 +165,7 @@ class MCPClient {
 
   /**
    * HTTP API 호출 (Developer용 - SSH 없이 배포)
+   * @deprecated Use callCodeBApi instead for new v3.1.1+ API
    */
   async callHttpApi(endpoint, method = 'POST', body = {}) {
     if (!this.serverHost) {
@@ -197,6 +202,54 @@ class MCPClient {
       }
       throw error;
     }
+  }
+
+  /**
+   * CodeB HTTP API 호출 (v3.1.1+ Blue-Green Slot API)
+   * Primary method for all operations
+   */
+  async callCodeBApi(toolName, params = {}) {
+    this.loadConfig();
+
+    const urls = [CODEB_API_BASE_URL, CODEB_API_FALLBACK_URL];
+    let lastError = null;
+
+    for (const baseUrl of urls) {
+      try {
+        const response = await fetch(`${baseUrl}/tool`, {
+          method: 'POST',
+          headers: {
+            'Content-Type': 'application/json',
+            'X-API-Key': this.apiKey || process.env.CODEB_API_KEY || '',
+            'X-Client': 'we-cli/3.2.0',
+          },
+          body: JSON.stringify({
+            tool: toolName,
+            params: params,
+          }),
+          signal: AbortSignal.timeout(CONNECTION_TIMEOUT),
+        });
+
+        const result = await response.json();
+
+        if (!response.ok) {
+          throw new Error(result.error || result.message || `HTTP ${response.status}`);
+        }
+
+        // Extract result from response
+        if (result.success && result.result !== undefined) {
+          return result.result;
+        }
+
+        return result;
+      } catch (error) {
+        lastError = error;
+        // Try next URL
+        continue;
+      }
+    }
+
+    throw lastError || new Error('All API endpoints failed');
   }
 
   /**
@@ -780,6 +833,118 @@ class MCPClient {
       }
       throw error;
     }
+  }
+
+  // ============================================================================
+  // Blue-Green Slot API (v3.1.1+) - HTTP API 기반
+  // ============================================================================
+
+  /**
+   * Workflow Scan - 기존 프로젝트 분석 및 Blue-Green Slot 워크플로우 생성
+   */
+  async workflowScan(projectName, options = {}) {
+    return this.callCodeBApi('workflow_scan', {
+      projectName,
+      gitRepo: options.gitRepo,
+      autoFix: options.autoFix || false,
+    });
+  }
+
+  /**
+   * Workflow Update - Blue-Green Slot 워크플로우 적용
+   */
+  async workflowUpdate(projectName, options = {}) {
+    return this.callCodeBApi('workflow_update', {
+      projectName,
+      dryRun: options.dryRun || false,
+      force: options.force || false,
+    });
+  }
+
+  /**
+   * Deploy (v3.1.1+) - Blue-Green Slot 배포
+   */
+  async deployBlueGreen(projectName, environment = 'production', options = {}) {
+    return this.callCodeBApi('deploy', {
+      projectName,
+      environment,
+      image: options.image,
+      skipHealthcheck: options.skipHealthcheck || false,
+      autoPromote: options.autoPromote || false,
+    });
+  }
+
+  /**
+   * Promote - 트래픽 전환
+   */
+  async promote(projectName, environment = 'production', targetSlot = null) {
+    return this.callCodeBApi('promote', {
+      projectName,
+      environment,
+      targetSlot,
+    });
+  }
+
+  /**
+   * Rollback (v3.1.1+) - 이전 슬롯으로 롤백
+   */
+  async rollbackBlueGreen(projectName, environment = 'production') {
+    return this.callCodeBApi('rollback', {
+      projectName,
+      environment,
+    });
+  }
+
+  /**
+   * Slot Status - 슬롯 상태 확인
+   */
+  async slotStatus(projectName, environment = 'production') {
+    return this.callCodeBApi('slot_status', {
+      projectName,
+      environment,
+    });
+  }
+
+  /**
+   * Slot List - 프로젝트 슬롯 목록
+   */
+  async slotList(projectName = null, environment = null) {
+    return this.callCodeBApi('slot_list', {
+      projectName,
+      environment,
+    });
+  }
+
+  /**
+   * Slot Cleanup - 만료된 grace-period 슬롯 정리
+   */
+  async slotCleanup(projectName = null, environment = null, force = false) {
+    return this.callCodeBApi('slot_cleanup', {
+      projectName,
+      environment,
+      force,
+    });
+  }
+
+  /**
+   * Full Health Check (v3.1.1+) - HTTP API 기반
+   */
+  async healthCheckBlueGreen() {
+    return this.callCodeBApi('full_health_check', {});
+  }
+
+  /**
+   * List Projects (v3.1.1+) - HTTP API 기반
+   */
+  async listProjectsBlueGreen() {
+    return this.callCodeBApi('list_projects', {});
+  }
+
+  /**
+   * Get Project (v3.1.1+) - HTTP API 기반
+   */
+  async getProjectBlueGreen(projectName) {
+    return this.callCodeBApi('get_project', { projectName });
   }
 
   // ============================================================================

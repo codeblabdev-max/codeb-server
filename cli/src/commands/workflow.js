@@ -240,7 +240,12 @@ export async function workflow(action, target, options) {
       await updateWorkflow(target, options);
       break;
     case 'scan':
-      await scanWorkflow(target, options);
+      // Use Blue-Green Slot API (v3.1.1+) by default
+      await scanWorkflowBlueGreen(target, options);
+      break;
+    case 'scan-legacy':
+      // Legacy scan (Quadlet/SSH based) - for backward compatibility
+      await scanWorkflowOld(target, options);
       break;
     case 'migrate':
       await migrateWorkflow(target, options);
@@ -1818,10 +1823,100 @@ async function addResourceWorkflow(projectName, options) {
 }
 
 // ============================================================================
-// Scan Workflow - Analyze Server/Local Deployment Status
+// Scan Workflow - Blue-Green Slot API (v3.1.1+)
 // ============================================================================
 
-async function scanWorkflow(projectName, options) {
+async function scanWorkflowBlueGreen(projectName, options) {
+  const spinner = ora('Scanning with Blue-Green Slot API...').start();
+
+  try {
+    // Call HTTP API workflow_scan
+    const result = await mcpClient.workflowScan(projectName, {
+      gitRepo: options.gitRepo,
+      autoFix: options.autoFix || false,
+    });
+
+    spinner.succeed('Scan completed (Blue-Green Slot API)');
+
+    // Display result
+    console.log(chalk.blue.bold('\n📊 Blue-Green Slot Workflow Scan\n'));
+
+    if (result.error) {
+      console.log(chalk.red(`❌ Error: ${result.error}`));
+      return result;
+    }
+
+    // Current Status
+    if (result.currentStatus) {
+      console.log(chalk.yellow('🔍 Current Status:'));
+      const status = result.currentStatus;
+      console.log(chalk.gray(`  Project: ${status.projectName || projectName}`));
+      console.log(chalk.gray(`  Registered: ${status.isRegistered ? '✅' : '❌'}`));
+
+      if (status.slots) {
+        console.log(chalk.gray(`  Active Slot: ${status.slots.activeSlot || 'none'}`));
+        console.log(chalk.gray(`  Blue: ${status.slots.blue?.status || 'empty'}`));
+        console.log(chalk.gray(`  Green: ${status.slots.green?.status || 'empty'}`));
+      }
+
+      if (status.domain) {
+        console.log(chalk.gray(`  Domain: ${status.domain}`));
+      }
+    }
+
+    // New Workflow
+    if (result.workflow) {
+      console.log(chalk.yellow('\n📄 Generated Workflow:'));
+      console.log(chalk.gray(`  Version: ${result.workflow.version}`));
+      console.log(chalk.gray(`  Type: ${result.workflow.type}`));
+      if (result.workflow.features) {
+        console.log(chalk.gray(`  Features: ${result.workflow.features.join(', ')}`));
+      }
+    }
+
+    // Recommendations
+    if (result.recommendations?.length > 0) {
+      console.log(chalk.yellow('\n💡 Recommendations:'));
+      result.recommendations.forEach((rec, i) => {
+        console.log(chalk.cyan(`  ${i + 1}. ${rec}`));
+      });
+    }
+
+    // Next Steps
+    if (result.nextSteps?.length > 0) {
+      console.log(chalk.yellow('\n🚀 Next Steps:'));
+      result.nextSteps.forEach((step, i) => {
+        console.log(chalk.green(`  ${i + 1}. ${step}`));
+      });
+    }
+
+    console.log();
+    return result;
+
+  } catch (error) {
+    spinner.fail('Scan failed');
+
+    // Check if it's an HTTP API error and fall back to legacy scan
+    if (error.message.includes('API') || error.message.includes('fetch') || error.message.includes('ECONNREFUSED')) {
+      console.log(chalk.yellow('\n⚠️  HTTP API unavailable, falling back to legacy scan...\n'));
+      return scanWorkflowLegacy(projectName, options);
+    }
+
+    console.log(chalk.red(`\n❌ Error: ${error.message}\n`));
+    throw error;
+  }
+}
+
+// Alias for legacy scan
+async function scanWorkflowLegacy(projectName, options) {
+  return scanWorkflowOld(projectName, options);
+}
+
+// ============================================================================
+// Scan Workflow - Legacy (Quadlet/SSH based)
+// ============================================================================
+
+async function scanWorkflowOld(projectName, options) {
   const spinner = ora('Scanning deployment status...').start();
   const serverHost = options.host || getServerHost();
   const serverUser = options.user || getServerUser();

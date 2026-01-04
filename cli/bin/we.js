@@ -30,7 +30,7 @@ const VERSION = pkg.version;
 // Core Commands (MCP-First Architecture)
 import { scan } from '../src/commands/scan.js';
 import { up } from '../src/commands/up.js';
-import { deploy } from '../src/commands/deploy.js';
+import { deploy, deployBlueGreen, promote, rollback as rollbackBlueGreen, slotStatus } from '../src/commands/deploy.js';
 // Analysis & Optimization
 import { analyze } from '../src/commands/analyze.js';
 import { optimize } from '../src/commands/optimize.js';
@@ -39,7 +39,7 @@ import { health } from '../src/commands/health.js';
 import { domain } from '../src/commands/domain.js';
 import { agent } from '../src/commands/agent.js';
 import { monitor } from '../src/commands/monitor.js';
-import { rollback } from '../src/commands/rollback.js';
+import { rollback as rollbackLegacy } from '../src/commands/rollback.js';
 import { workflow } from '../src/commands/workflow.js';
 import { ssh } from '../src/commands/ssh.js';
 import { help } from '../src/commands/help.js';
@@ -110,10 +110,48 @@ program
   .option('--dry-run', 'Show execution plan without running')
   .action(up);
 
-// Deploy Command - 핵심 명령어 #3
+// Deploy Command - 핵심 명령어 #3 (Blue-Green Slot API v3.2.0+)
 program
   .command('deploy')
-  .description('Deploy project to staging/production/preview')
+  .description('Deploy project with Blue-Green Slot (zero-downtime)')
+  .argument('<project>', 'Project name to deploy')
+  .option('-e, --environment <env>', 'Target environment (staging|production)', 'production')
+  .option('-i, --image <image>', 'Container image to deploy')
+  .option('--skip-healthcheck', 'Skip health check after deploy')
+  .option('--auto-promote', 'Auto-promote to active after deploy')
+  .option('--force', 'Force deployment even with warnings')
+  .option('--dry-run', 'Show deployment plan without executing')
+  .action(deployBlueGreen);
+
+// Promote Command - Traffic Switch
+program
+  .command('promote')
+  .description('Switch traffic to deployed slot (zero-downtime)')
+  .argument('<project>', 'Project name')
+  .option('-e, --environment <env>', 'Target environment', 'production')
+  .option('-s, --slot <slot>', 'Specific slot to promote (blue|green)')
+  .action(promote);
+
+// Rollback Command - Blue-Green Slot (instant rollback)
+program
+  .command('rollback')
+  .description('Instant rollback to previous slot')
+  .argument('<project>', 'Project name')
+  .option('-e, --environment <env>', 'Target environment', 'production')
+  .action(rollbackBlueGreen);
+
+// Slot Command - Status Check
+program
+  .command('slot')
+  .description('Check slot status (blue/green)')
+  .argument('<project>', 'Project name')
+  .option('-e, --environment <env>', 'Target environment', 'production')
+  .action(slotStatus);
+
+// Legacy Deploy Command (for backward compatibility)
+program
+  .command('deploy-legacy')
+  .description('Legacy deploy (Quadlet/SSH based) - for backward compatibility')
   .argument('[project]', 'Project name to deploy')
   .option('-e, --environment <env>', 'Target environment (staging|production|preview)', 'staging')
   .option('-f, --file <path>', 'Docker compose file path', 'docker-compose.yml')
@@ -189,17 +227,17 @@ program
   .option('-t, --threshold <value>', 'Alert threshold percentage', '80')
   .action(monitor);
 
-// Rollback Command
+// Legacy Rollback Command (for backward compatibility)
 program
-  .command('rollback')
-  .description('Rollback deployment to previous version')
+  .command('rollback-legacy')
+  .description('Legacy rollback to specific version (SSH based)')
   .argument('[project]', 'Project name to rollback')
   .option('-e, --environment <env>', 'Target environment', 'staging')
   .option('-v, --version <tag>', 'Specific version to rollback to')
   .option('--list', 'List available versions')
   .option('--force', 'Force rollback without confirmation')
   .option('--dry-run', 'Show rollback plan without executing')
-  .action(rollback);
+  .action(rollbackLegacy);
 
 // Workflow Command
 program
