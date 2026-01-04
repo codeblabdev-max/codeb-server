@@ -13,8 +13,10 @@ import { readFile, writeFile, copyFile, mkdir } from 'fs/promises';
 import { existsSync, readdirSync } from 'fs';
 import { join, dirname } from 'path';
 import { fileURLToPath } from 'url';
-import { getServerHost, getServerUser, getCliVersion } from '../../lib/config.js';
+import { getServerHost, getServerUser, getCliVersion, getApiKey, getConfigDir } from '../../lib/config.js';
 import { mcpClient } from '../../lib/mcp-client.js';
+import { generateEnvTemplate } from './env-generator.js';
+import { ssotClient } from '../../lib/ssot-client.js';
 
 const __filename = fileURLToPath(import.meta.url);
 const __dirname = dirname(__filename);
@@ -28,6 +30,135 @@ const RULES_SOURCE = join(__dirname, '../../../rules');
 
 // Current CLI version for comparison
 const CURRENT_CLI_VERSION = getCliVersion();
+
+// ============================================================================
+// MCP API Key Validation
+// ============================================================================
+
+/**
+ * Check MCP API key and connection status
+ * @returns {Promise<Object>} Connection status
+ */
+export async function checkMcpConnection() {
+  const result = {
+    hasApiKey: false,
+    apiKey: null,
+    connected: false,
+    serverVersion: null,
+    error: null
+  };
+
+  // Check API key
+  const apiKey = getApiKey();
+  if (apiKey) {
+    result.hasApiKey = true;
+    result.apiKey = apiKey.substring(0, 15) + '...'; // Masked
+  }
+
+  // Try connection
+  try {
+    const connected = await mcpClient.ensureConnected();
+    result.connected = connected;
+
+    if (connected) {
+      // Get server version via health check
+      try {
+        const health = await mcpClient.callTool('health_check', {});
+        result.serverVersion = health?.version || 'unknown';
+      } catch {
+        result.serverVersion = 'unknown';
+      }
+    }
+  } catch (error) {
+    result.error = error.message;
+  }
+
+  return result;
+}
+
+/**
+ * Prompt user for MCP API key if not set
+ * @param {Function} promptFn - Prompt function (inquirer or readline)
+ * @returns {Promise<string|null>} API key or null
+ */
+export async function promptForApiKey(promptFn) {
+  if (!promptFn) return null;
+
+  console.log(chalk.yellow('\n⚠️  MCP API 키가 설정되지 않았습니다.'));
+  console.log(chalk.gray('   API 키는 app.codeb.kr/settings 에서 발급받을 수 있습니다.\n'));
+
+  const configDir = getConfigDir();
+  console.log(chalk.gray(`   설정 방법:`));
+  console.log(chalk.gray(`   1. 환경변수: export CODEB_API_KEY=codeb_xxx`));
+  console.log(chalk.gray(`   2. 설정파일: ${configDir}/config.json`));
+  console.log(chalk.gray(`   3. .env 파일: CODEB_API_KEY=codeb_xxx\n`));
+
+  return null;
+}
+
+// ============================================================================
+// Version Comparison (CLI vs Local vs Server)
+// ============================================================================
+
+/**
+ * Compare versions across CLI, local project, and server
+ * @param {string} projectPath - Project path
+ * @returns {Promise<Object>} Version comparison result
+ */
+export async function compareVersions(projectPath = '.') {
+  const result = {
+    cli: { version: CURRENT_CLI_VERSION, source: 'package.json' },
+    local: { version: null, source: null, needsUpdate: false },
+    server: { version: null, source: null, needsUpdate: false },
+    allMatch: false,
+    issues: []
+  };
+
+  // Check local CLAUDE.md version
+  const claudeMdPath = join(projectPath, 'CLAUDE.md');
+  if (existsSync(claudeMdPath)) {
+    try {
+      const content = await readFile(claudeMdPath, 'utf-8');
+      const match = content.match(/CLAUDE\.md v([\d.]+)/);
+      result.local.version = match?.[1] || 'unknown';
+      result.local.source = 'CLAUDE.md';
+
+      if (result.local.version !== CURRENT_CLI_VERSION) {
+        result.local.needsUpdate = true;
+        result.issues.push(`Local CLAUDE.md (v${result.local.version}) ≠ CLI (v${CURRENT_CLI_VERSION})`);
+      }
+    } catch {
+      result.local.version = 'error';
+    }
+  } else {
+    result.local.version = 'missing';
+    result.local.needsUpdate = true;
+    result.issues.push('Local CLAUDE.md not found');
+  }
+
+  // Check server version via MCP
+  try {
+    const connected = await mcpClient.ensureConnected();
+    if (connected) {
+      const health = await mcpClient.callTool('health_check', {});
+      result.server.version = health?.version || 'unknown';
+      result.server.source = 'MCP API';
+
+      if (result.server.version !== CURRENT_CLI_VERSION && result.server.version !== 'unknown') {
+        result.server.needsUpdate = true;
+        result.issues.push(`Server (v${result.server.version}) ≠ CLI (v${CURRENT_CLI_VERSION})`);
+      }
+    }
+  } catch {
+    result.server.version = 'offline';
+    result.server.source = 'connection failed';
+  }
+
+  // Check if all versions match
+  result.allMatch = !result.local.needsUpdate && !result.server.needsUpdate;
+
+  return result;
+}
 
 // Deployment methods
 const DEPLOY_METHODS = {
@@ -494,8 +625,15 @@ export async function scanLegacy(projectName, options = {}) {
     // Check for Dockerfile
     report.local.dockerfile = existsSync('Dockerfile');
 
-    // Check for .env files
-    report.local.env = existsSync('.env') || existsSync('.env.local') || existsSync('.env.example');
+    // Check for .env files (detailed)
+    report.local.envFiles = {
+      env: existsSync('.env'),
+      envLocal: existsSync('.env.local'),
+      envExample: existsSync('.env.example'),
+      envProduction: existsSync('.env.production'),
+      envStaging: existsSync('.env.staging')
+    };
+    report.local.env = report.local.envFiles.env || report.local.envFiles.envLocal || report.local.envFiles.envExample;
 
     // 2. Scan Server (via SSH)
     spinner.text = 'Scanning server status...';
@@ -584,6 +722,20 @@ export async function scanLegacy(projectName, options = {}) {
           await writeFile(ghPath, newContent);
           report.fixed.push(`deploy.yml updated to MCP API (backup: ${backupPath})`);
         }
+
+        if (fix.type === 'env_example' && projectName) {
+          // Generate .env.example if missing
+          const envConfig = {
+            projectName,
+            hasDatabase: true,
+            hasRedis: true,
+            hasStorage: false
+          };
+
+          const envContent = generateEnvTemplate(envConfig);
+          await writeFile('.env.example', envContent);
+          report.fixed.push('.env.example generated');
+        }
       }
     }
 
@@ -668,6 +820,18 @@ function analyzeReport(report, projectName) {
       report.comparison.fixable.push({
         type: 'claude_md',
         message: 'CLAUDE.md needs update',
+        fix: 'we workflow scan --fix'
+      });
+    }
+  }
+
+  // Check ENV files
+  if (report.local.envFiles) {
+    if (!report.local.envFiles.envExample) {
+      report.comparison.issues.push('.env.example not found - ENV template missing');
+      report.comparison.fixable.push({
+        type: 'env_example',
+        message: '.env.example needs to be created',
         fix: 'we workflow scan --fix'
       });
     }
@@ -771,7 +935,25 @@ function displayReport(report, projectName, showFixes = false) {
   }
 
   console.log(chalk.gray(`  Dockerfile: ${report.local.dockerfile ? '✅' : '❌'}`));
-  console.log(chalk.gray(`  Environment files: ${report.local.env ? '✅' : '❌'}`));
+
+  // ENV files status (detailed)
+  if (report.local.envFiles) {
+    const ef = report.local.envFiles;
+    const envStatus = [];
+    if (ef.env) envStatus.push('.env');
+    if (ef.envLocal) envStatus.push('.env.local');
+    if (ef.envExample) envStatus.push('.env.example');
+    if (ef.envProduction) envStatus.push('.env.production');
+    if (ef.envStaging) envStatus.push('.env.staging');
+
+    if (envStatus.length > 0) {
+      console.log(chalk.gray(`  Environment files: ✅ ${envStatus.join(', ')}`));
+    } else {
+      console.log(chalk.red(`  Environment files: ❌ Not found`));
+    }
+  } else {
+    console.log(chalk.gray(`  Environment files: ${report.local.env ? '✅' : '❌'}`));
+  }
 
   // Server Status
   console.log(chalk.yellow('\n🖥️  Server Status:'));
@@ -948,5 +1130,8 @@ export default {
   updateClaudeMd,
   checkDeployYmlMcpApi,
   generateMcpApiDeployYml,
+  checkMcpConnection,
+  promptForApiKey,
+  compareVersions,
   DEPLOY_METHODS
 };

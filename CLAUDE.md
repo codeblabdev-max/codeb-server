@@ -1,4 +1,4 @@
-# CLAUDE.md v3.2.7 - CodeB Project Rules
+# CLAUDE.md v3.2.8 - CodeB Project Rules
 
 ## Critical Rules
 
@@ -102,13 +102,13 @@ we env pull <project>              # 서버에서 로컬로 가져오기
 
 | 서비스 | 포트 | 서버 |
 |--------|------|------|
-| PostgreSQL | 5432 | Storage (n3) |
-| Redis | 6379 | Storage (n3) |
-| Centrifugo | 8000 | Streaming (n2) |
-| MCP HTTP API | 9101 | App (n1) |
-| 스테이징 앱 | 3000-3499 | App (n1) |
-| 프로덕션 앱 | 4000-4499 | App (n1) |
-| Preview 앱 | 5000-5999 | App (n1) |
+| PostgreSQL | 5432 | Storage (db.codeb.kr) |
+| Redis | 6379 | Storage (db.codeb.kr) |
+| Centrifugo | 8000 | Streaming (ws.codeb.kr) |
+| MCP HTTP API | 9101 | App (app.codeb.kr) |
+| 스테이징 앱 | 3000-3499 | App (app.codeb.kr) |
+| 프로덕션 앱 | 4000-4499 | App (app.codeb.kr) |
+| Preview 앱 | 5000-5999 | App (app.codeb.kr) |
 
 ### 상세 포트 범위 (port-utils.js)
 

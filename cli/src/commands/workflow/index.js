@@ -28,6 +28,9 @@ export {
   updateClaudeMd,
   checkDeployYmlMcpApi,
   generateMcpApiDeployYml,
+  checkMcpConnection,
+  promptForApiKey,
+  compareVersions,
   DEPLOY_METHODS
 } from './scan.js';
 
