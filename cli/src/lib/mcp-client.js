@@ -26,7 +26,8 @@ import {
   getApiKey,
   validateServerHost,
   isBlockedServer,
-  ALLOWED_SERVERS
+  ALLOWED_SERVERS,
+  getCliVersion
 } from './config.js';
 
 // ============================================================================
@@ -221,7 +222,7 @@ class MCPClient {
           headers: {
             'Content-Type': 'application/json',
             'X-API-Key': this.apiKey || process.env.CODEB_API_KEY || '',
-            'X-Client': 'we-cli/3.2.0',
+            'X-Client': `we-cli/${getCliVersion()}`,
           },
           body: JSON.stringify({
             tool: toolName,

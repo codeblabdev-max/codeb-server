@@ -15,12 +15,12 @@
  * - ENV 관리 (파일 기반): env_init, env_push, env_scan, env_pull, env_backups
  * - 모니터링: full_health_check, analyze_server, check_domain_status
  *
- * @version 3.1.1
+ * @version 3.2.0
  */
 
 import express from 'express';
 import { spawn } from 'child_process';
-import { readFileSync, existsSync, writeFileSync } from 'fs';
+import { readFileSync, existsSync, writeFileSync, mkdirSync } from 'fs';
 import { join, dirname } from 'path';
 import { fileURLToPath } from 'url';
 import chalk from 'chalk';
@@ -28,15 +28,24 @@ import chalk from 'chalk';
 const __filename = fileURLToPath(import.meta.url);
 const __dirname = dirname(__filename);
 
+// 버전 정보 (package.json에서 읽기 - 단일 소스)
+const pkg = JSON.parse(readFileSync(join(__dirname, 'package.json'), 'utf-8'));
+const VERSION = pkg.version;
+
 // ============================================================================
 // 설정
 // ============================================================================
 
-const PORT = process.env.MCP_HTTP_PORT || 9100;
+// 9100은 node_exporter가 사용 중이므로 9101 사용
+const PORT = process.env.MCP_HTTP_PORT || 9101;
 const API_KEYS_PATH = process.env.API_KEYS_PATH || '/opt/codeb/config/api-keys.json';
+const API_LOGS_PATH = process.env.API_LOGS_PATH || '/opt/codeb/logs/api-access.json';
 const SSOT_PATH = '/opt/codeb/registry/ssot.json';
 const SLOTS_PATH = '/opt/codeb/registry/slots.json';
 const ENV_BACKUP_PATH = '/opt/codeb/env-backup';
+
+// 로그 보관 기간 (일)
+const LOG_RETENTION_DAYS = parseInt(process.env.LOG_RETENTION_DAYS || '30', 10);
 
 // Grace Period 설정 (기본 48시간)
 const GRACE_PERIOD_HOURS = parseInt(process.env.GRACE_PERIOD_HOURS || '48', 10);
@@ -109,6 +118,8 @@ function checkPermission(role, tool) {
       'domain_setup', 'domain_status', 'domain_list', 'domain_connect',
       // 워크플로우 스캔/업데이트
       'workflow_scan', 'workflow_update',
+      // 로그 조회
+      'api_access_stats', 'api_active_users', 'api_keys_list',
     ],
     view: [
       'ssot_get', 'ssot_get_project', 'ssot_list_projects',
@@ -117,11 +128,203 @@ function checkPermission(role, tool) {
       'domain_status', 'domain_list',
       'slot_list', 'slot_status',
       'workflow_scan',  // 읽기 전용
+      'api_access_stats', 'api_active_users',  // 로그 조회
     ],
   };
 
   const allowed = permissions[role] || [];
   return allowed.includes('*') || allowed.includes(tool);
+}
+
+// ============================================================================
+// API 로깅 시스템
+// ============================================================================
+
+function ensureLogDirectory() {
+  const logDir = dirname(API_LOGS_PATH);
+  if (!existsSync(logDir)) {
+    mkdirSync(logDir, { recursive: true });
+  }
+}
+
+function loadApiLogs() {
+  try {
+    ensureLogDirectory();
+    if (existsSync(API_LOGS_PATH)) {
+      const content = readFileSync(API_LOGS_PATH, 'utf-8');
+      return JSON.parse(content);
+    }
+  } catch (e) {
+    console.error('Failed to load API logs:', e.message);
+  }
+  return { logs: [], stats: {} };
+}
+
+function saveApiLogs(data) {
+  try {
+    ensureLogDirectory();
+    writeFileSync(API_LOGS_PATH, JSON.stringify(data, null, 2));
+  } catch (e) {
+    console.error('Failed to save API logs:', e.message);
+  }
+}
+
+function logApiAccess(req, tool, result, duration, error = null) {
+  const apiKey = req.headers['x-api-key'] || '';
+  const keyInfo = getApiKeyInfo(apiKey);
+
+  const logEntry = {
+    timestamp: new Date().toISOString(),
+    apiKey: apiKey.substring(0, 20) + '...', // 보안을 위해 일부만 저장
+    keyName: keyInfo?.name || 'Unknown',
+    role: req.apiRole || 'unknown',
+    tool,
+    params: req.body?.params || {},
+    success: !error,
+    error: error?.message || null,
+    duration: duration,
+    ip: req.ip || req.connection?.remoteAddress || 'unknown',
+    userAgent: req.headers['user-agent'] || '',
+    client: req.headers['x-client'] || 'unknown',
+  };
+
+  const data = loadApiLogs();
+
+  // 로그 추가
+  data.logs.unshift(logEntry);
+
+  // 30일 이상 된 로그 삭제
+  const cutoffDate = new Date();
+  cutoffDate.setDate(cutoffDate.getDate() - LOG_RETENTION_DAYS);
+  data.logs = data.logs.filter(log => new Date(log.timestamp) > cutoffDate);
+
+  // 최대 10000개 로그 유지
+  if (data.logs.length > 10000) {
+    data.logs = data.logs.slice(0, 10000);
+  }
+
+  // 통계 업데이트
+  const today = new Date().toISOString().split('T')[0];
+  if (!data.stats[today]) {
+    data.stats[today] = { total: 0, success: 0, failed: 0, byRole: {}, byTool: {}, byKey: {} };
+  }
+  data.stats[today].total++;
+  if (error) {
+    data.stats[today].failed++;
+  } else {
+    data.stats[today].success++;
+  }
+
+  // 역할별 통계
+  data.stats[today].byRole[req.apiRole] = (data.stats[today].byRole[req.apiRole] || 0) + 1;
+
+  // 도구별 통계
+  data.stats[today].byTool[tool] = (data.stats[today].byTool[tool] || 0) + 1;
+
+  // API Key별 통계
+  const keyId = keyInfo?.name || 'Unknown';
+  data.stats[today].byKey[keyId] = (data.stats[today].byKey[keyId] || 0) + 1;
+
+  // 30일 이상 된 통계 삭제
+  const statsKeys = Object.keys(data.stats);
+  for (const key of statsKeys) {
+    if (new Date(key) < cutoffDate) {
+      delete data.stats[key];
+    }
+  }
+
+  saveApiLogs(data);
+  return logEntry;
+}
+
+function getApiKeyInfo(apiKey) {
+  const apiKeys = loadApiKeys();
+  return apiKeys.roles?.[apiKey] || null;
+}
+
+function getApiAccessStats(days = 7) {
+  const data = loadApiLogs();
+  const cutoffDate = new Date();
+  cutoffDate.setDate(cutoffDate.getDate() - days);
+
+  const result = {
+    period: { days, from: cutoffDate.toISOString(), to: new Date().toISOString() },
+    summary: { total: 0, success: 0, failed: 0 },
+    byRole: {},
+    byTool: {},
+    byKey: {},
+    byDay: {},
+    recentLogs: data.logs.slice(0, 50),
+  };
+
+  // 통계 집계
+  for (const [date, stats] of Object.entries(data.stats)) {
+    if (new Date(date) >= cutoffDate) {
+      result.summary.total += stats.total;
+      result.summary.success += stats.success;
+      result.summary.failed += stats.failed;
+      result.byDay[date] = stats;
+
+      // 역할별
+      for (const [role, count] of Object.entries(stats.byRole || {})) {
+        result.byRole[role] = (result.byRole[role] || 0) + count;
+      }
+
+      // 도구별
+      for (const [tool, count] of Object.entries(stats.byTool || {})) {
+        result.byTool[tool] = (result.byTool[tool] || 0) + count;
+      }
+
+      // Key별
+      for (const [key, count] of Object.entries(stats.byKey || {})) {
+        result.byKey[key] = (result.byKey[key] || 0) + count;
+      }
+    }
+  }
+
+  return result;
+}
+
+function getActiveUsers(hours = 24) {
+  const data = loadApiLogs();
+  const cutoffTime = new Date();
+  cutoffTime.setHours(cutoffTime.getHours() - hours);
+
+  const recentLogs = data.logs.filter(log => new Date(log.timestamp) > cutoffTime);
+
+  const activeUsers = {};
+  for (const log of recentLogs) {
+    const key = log.keyName || 'Unknown';
+    if (!activeUsers[key]) {
+      activeUsers[key] = {
+        name: key,
+        role: log.role,
+        lastAccess: log.timestamp,
+        actions: [],
+        actionCount: 0,
+        ips: new Set(),
+      };
+    }
+    activeUsers[key].actionCount++;
+    activeUsers[key].actions.push({
+      tool: log.tool,
+      timestamp: log.timestamp,
+      success: log.success,
+    });
+    activeUsers[key].ips.add(log.ip);
+  }
+
+  // Set을 배열로 변환
+  for (const user of Object.values(activeUsers)) {
+    user.ips = [...user.ips];
+    user.actions = user.actions.slice(0, 20); // 최근 20개만
+  }
+
+  return {
+    period: { hours, from: cutoffTime.toISOString(), to: new Date().toISOString() },
+    activeCount: Object.keys(activeUsers).length,
+    users: activeUsers,
+  };
 }
 
 // ============================================================================
@@ -1565,11 +1768,11 @@ ENVEOF
       noGracePeriod: /(deploy|rollback)(?!.*grace)/gi,
     };
 
-    // 2. 권장 3.1.0 워크플로우 생성
+    // 2. 권장 워크플로우 생성
     const newWorkflow = generateBlueGreenWorkflow(projectName);
 
     results.workflow = {
-      version: '3.1.1',
+      version: VERSION,
       type: 'blue-green-slot',
       features: [
         'Blue-Green Slot deployment (zero-downtime)',
@@ -1586,7 +1789,7 @@ ENVEOF
       {
         severity: 'info',
         message: 'Workflow scan completed',
-        detail: 'Generated Blue-Green Slot workflow for 3.1.0',
+        detail: `Generated Blue-Green Slot workflow for v${VERSION}`,
       },
     ];
 
@@ -1684,6 +1887,57 @@ ENVEOF
 
     return result;
   },
+
+  // ============================================================================
+  // API 접근 로그 조회
+  // ============================================================================
+
+  /**
+   * API 접근 통계 조회
+   */
+  async api_access_stats({ days = 7 }) {
+    return getApiAccessStats(days);
+  },
+
+  /**
+   * 활성 사용자 조회
+   */
+  async api_active_users({ hours = 24 }) {
+    return getActiveUsers(hours);
+  },
+
+  /**
+   * API 키 목록 조회 (admin 전용)
+   */
+  async api_keys_list() {
+    try {
+      const result = await execCommand('app', `cat ${API_KEYS_PATH} 2>/dev/null || echo '{}'`);
+      if (!result.success) {
+        return { success: false, error: 'Failed to read API keys' };
+      }
+
+      const keysData = JSON.parse(result.output);
+      const keysList = keysData.keys?.map(key => {
+        const info = keysData.roles?.[key] || {};
+        return {
+          key: key.substring(0, 20) + '...',  // 키 마스킹
+          role: info.role || 'unknown',
+          name: info.name || 'Unknown',
+          createdAt: info.createdAt,
+          description: info.description,
+        };
+      }) || [];
+
+      return {
+        success: true,
+        version: keysData.version,
+        totalKeys: keysList.length,
+        keys: keysList,
+      };
+    } catch (error) {
+      return { success: false, error: error.message };
+    }
+  },
 };
 
 // ============================================================================
@@ -1693,7 +1947,7 @@ ENVEOF
 function generateBlueGreenWorkflow(projectName) {
   return `name: Deploy ${projectName}
 
-# Blue-Green Slot 기반 무중단 배포 (v3.1.0)
+# Blue-Green Slot 기반 무중단 배포 (v\${VERSION})
 # - develop → staging 배포 (Preview URL)
 # - main → production 배포 (Preview URL) → 수동 promote
 # - PR merge → 자동 promote
@@ -1827,7 +2081,7 @@ jobs:
 
 function generateDockerfile(type) {
   const dockerfiles = {
-    nextjs: `# CodeB Auto-Generated Dockerfile - Next.js (v3.1.0)
+    nextjs: `# CodeB Auto-Generated Dockerfile - Next.js (v${VERSION})
 FROM node:20-alpine AS deps
 RUN apk add --no-cache libc6-compat
 WORKDIR /app
@@ -1856,7 +2110,7 @@ EXPOSE 3000
 ENV PORT 3000
 CMD ["node", "server.js"]`,
 
-    nodejs: `# CodeB Auto-Generated Dockerfile - Node.js (v3.1.0)
+    nodejs: `# CodeB Auto-Generated Dockerfile - Node.js (v${VERSION})
 FROM node:20-alpine AS builder
 WORKDIR /app
 COPY package*.json ./
@@ -1873,7 +2127,7 @@ COPY --from=builder /app .
 EXPOSE 3000
 CMD ["npm", "start"]`,
 
-    python: `# CodeB Auto-Generated Dockerfile - Python (v3.1.0)
+    python: `# CodeB Auto-Generated Dockerfile - Python (v${VERSION})
 FROM python:3.11-slim
 WORKDIR /app
 COPY requirements.txt .
@@ -1883,7 +2137,7 @@ ENV PYTHONUNBUFFERED=1
 EXPOSE 8000
 CMD ["python", "main.py"]`,
 
-    static: `# CodeB Auto-Generated Dockerfile - Static Site (v3.1.0)
+    static: `# CodeB Auto-Generated Dockerfile - Static Site (v${VERSION})
 FROM nginx:alpine
 COPY . /usr/share/nginx/html
 EXPOSE 80
@@ -2153,17 +2407,20 @@ app.get('/api/health', (req, res) => {
   res.json({
     success: true,
     status: 'healthy',
-    version: '3.1.1',
+    version: VERSION,
     timestamp: new Date().toISOString(),
   });
 });
 
 // MCP Tool 호출 엔드포인트
 app.post('/api/tool', async (req, res) => {
+  const startTime = Date.now();
+
   try {
     const { tool, params = {} } = req.body;
 
     if (!tool) {
+      logApiAccess(req, 'unknown', null, Date.now() - startTime, 'tool is required');
       return res.status(400).json({
         success: false,
         error: 'tool is required',
@@ -2172,6 +2429,7 @@ app.post('/api/tool', async (req, res) => {
 
     // 권한 확인
     if (!checkPermission(req.apiRole, tool)) {
+      logApiAccess(req, tool, null, Date.now() - startTime, `Permission denied: ${req.apiRole}`);
       return res.status(403).json({
         success: false,
         error: `Permission denied: ${req.apiRole} cannot use ${tool}`,
@@ -2181,6 +2439,7 @@ app.post('/api/tool', async (req, res) => {
     // 핸들러 확인
     const handler = toolHandlers[tool];
     if (!handler) {
+      logApiAccess(req, tool, null, Date.now() - startTime, `Unknown tool: ${tool}`);
       return res.status(404).json({
         success: false,
         error: `Unknown tool: ${tool}`,
@@ -2191,6 +2450,10 @@ app.post('/api/tool', async (req, res) => {
     // 도구 실행
     console.log(chalk.cyan(`[${new Date().toISOString()}] ${req.apiRole} called ${tool}`));
     const result = await handler(params);
+    const duration = Date.now() - startTime;
+
+    // 성공 로깅
+    logApiAccess(req, tool, result, duration);
 
     res.json({
       success: true,
@@ -2200,6 +2463,7 @@ app.post('/api/tool', async (req, res) => {
 
   } catch (error) {
     console.error('Tool execution error:', error);
+    logApiAccess(req, req.body?.tool || 'unknown', null, Date.now() - startTime, error.message);
     res.status(500).json({
       success: false,
       error: error.message,

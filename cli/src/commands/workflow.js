@@ -2324,8 +2324,8 @@ async function migrateWorkflow(projectName, options) {
       console.log(chalk.yellow(`  ${i + 1}. ${issue}`));
     });
 
-    // Confirm migration
-    if (options.interactive !== false) {
+    // Confirm migration (skip if --force or --no-interactive)
+    if (options.interactive !== false && !options.force) {
       const { confirm } = await inquirer.prompt([{
         type: 'confirm',
         name: 'confirm',
