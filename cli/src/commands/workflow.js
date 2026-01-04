@@ -90,8 +90,13 @@ export async function workflow(action, target, options) {
       await updateWorkflow(target, options);
       break;
     case 'scan':
-      // Use Blue-Green Slot API (v3.1.1+) by default
-      await scanBlueGreen(target, options);
+      // Use scanLegacy if --fix is specified (has CLAUDE.md and deploy.yml auto-fix)
+      // Otherwise use Blue-Green Slot API (v3.1.1+) by default
+      if (options.fix) {
+        await scanLegacy(target, { ...options, autoFix: true });
+      } else {
+        await scanBlueGreen(target, options);
+      }
       break;
     case 'scan-legacy':
       // Legacy scan (Quadlet/SSH based) - for backward compatibility

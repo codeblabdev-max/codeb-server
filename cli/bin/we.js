@@ -513,8 +513,11 @@ program.on('--help', () => {
   console.log(chalk.gray('  # Hybrid mode: GitHub builds → ghcr.io → Self-hosted deploys'));
   console.log('  $ we workflow init myapp --type nextjs  # Auto-generates complete project set');
   console.log('');
-  console.log(chalk.gray('  # Scan project resources (DB, Redis, Storage, ENV)'));
+  console.log(chalk.gray('  # Scan project resources (DB, Redis, Storage, ENV, CLAUDE.md, deploy.yml)'));
   console.log('  $ we workflow scan myapp');
+  console.log('');
+  console.log(chalk.gray('  # Auto-fix CLAUDE.md and deploy.yml to latest version'));
+  console.log('  $ we workflow scan myapp --fix');
   console.log('');
   console.log(chalk.gray('  # Add missing resources to existing project'));
   console.log('  $ we workflow add-resource myapp --database --redis --storage');

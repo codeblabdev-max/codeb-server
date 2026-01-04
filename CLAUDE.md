@@ -1,4 +1,4 @@
-# CLAUDE.md v3.2.6 - CodeB Project Rules
+# CLAUDE.md v3.2.7 - CodeB Project Rules
 
 ## Critical Rules
 

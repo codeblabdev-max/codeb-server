@@ -24,6 +24,10 @@ export {
   scanLegacy,
   scanInternal,
   analyzeGitHubActions,
+  checkClaudeMdVersion,
+  updateClaudeMd,
+  checkDeployYmlMcpApi,
+  generateMcpApiDeployYml,
   DEPLOY_METHODS
 } from './scan.js';
 
