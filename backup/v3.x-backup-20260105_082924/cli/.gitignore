@@ -1,0 +1,19 @@
+# 환경 설정 (절대 커밋 금지!)
+.env
+.env.local
+.env.*.local
+
+# 노드 모듈
+node_modules/
+
+# 로그
+*.log
+npm-debug.log*
+
+# OS 파일
+.DS_Store
+Thumbs.db
+
+# IDE
+.vscode/
+.idea/

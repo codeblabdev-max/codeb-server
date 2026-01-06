@@ -1,0 +1,26 @@
+[Unit]
+Description=CodeB Notification Service
+After=network.target
+Wants=network-online.target
+
+[Service]
+Type=simple
+User=root
+WorkingDirectory=/opt/codeb
+ExecStart=/usr/bin/node /opt/codeb/cli/src/notification-server.js
+Restart=always
+RestartSec=10
+StandardOutput=journal
+StandardError=journal
+
+# Environment
+Environment="NODE_ENV=production"
+Environment="NOTIFIER_PORT=7778"
+Environment="NOTIFIER_HOST=0.0.0.0"
+
+# Security
+NoNewPrivileges=true
+PrivateTmp=true
+
+[Install]
+WantedBy=multi-user.target

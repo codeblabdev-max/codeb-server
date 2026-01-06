@@ -152,8 +152,8 @@ export default function MonitoringPage() {
   return (
     <div className="flex flex-col h-full">
       <Header
-        title="Real-time Monitoring"
-        description="Live server metrics and alerts"
+        title="실시간 모니터링"
+        description="서버 메트릭 및 알림 실시간 현황"
       />
 
       <div className="flex-1 overflow-auto p-6 space-y-6">
@@ -163,7 +163,7 @@ export default function MonitoringPage() {
             <div className="flex items-center gap-2">
               <div className="h-2 w-2 rounded-full bg-green-500 animate-pulse" />
               <span className="text-sm text-gray-600">
-                Live - Updated {new Date(metrics.timestamp).toLocaleTimeString()}
+                실시간 - {new Date(metrics.timestamp).toLocaleTimeString()} 업데이트
               </span>
             </div>
             <label className="flex items-center gap-2">
@@ -173,12 +173,12 @@ export default function MonitoringPage() {
                 onChange={(e) => setAutoRefresh(e.target.checked)}
                 className="rounded"
               />
-              <span className="text-sm text-gray-700">Auto-refresh</span>
+              <span className="text-sm text-gray-700">자동 새로고침</span>
             </label>
           </div>
           <Button variant="outline" size="sm">
             <RefreshCw className="mr-2 h-4 w-4" />
-            Refresh Now
+            지금 새로고침
           </Button>
         </div>
 
@@ -226,7 +226,7 @@ export default function MonitoringPage() {
                   <div className="flex items-center justify-between text-xs mb-1">
                     <div className="flex items-center gap-1">
                       <Activity className="h-3 w-3 text-gray-500" />
-                      <span className="text-gray-600">Memory</span>
+                      <span className="text-gray-600">메모리</span>
                     </div>
                     <span className="font-medium">{Math.round(server.memory)}%</span>
                   </div>
@@ -249,7 +249,7 @@ export default function MonitoringPage() {
                   <div className="flex items-center justify-between text-xs mb-1">
                     <div className="flex items-center gap-1">
                       <HardDrive className="h-3 w-3 text-gray-500" />
-                      <span className="text-gray-600">Disk</span>
+                      <span className="text-gray-600">디스크</span>
                     </div>
                     <span className="font-medium">{Math.round(server.disk)}%</span>
                   </div>
@@ -271,7 +271,7 @@ export default function MonitoringPage() {
                 <div className="pt-2 border-t border-gray-100">
                   <div className="flex items-center gap-1 text-xs text-gray-500 mb-1">
                     <Wifi className="h-3 w-3" />
-                    <span>Network</span>
+                    <span>네트워크</span>
                   </div>
                   <div className="flex justify-between text-xs">
                     <span className="text-gray-600">
@@ -293,7 +293,7 @@ export default function MonitoringPage() {
             <CardHeader>
               <CardTitle className="flex items-center gap-2">
                 <AlertCircle className="h-5 w-5 text-yellow-600" />
-                Active Alerts ({metrics.alerts.length})
+                활성 알림 ({metrics.alerts.length})
               </CardTitle>
             </CardHeader>
             <CardContent className="space-y-3">
@@ -316,7 +316,7 @@ export default function MonitoringPage() {
                       <p className="text-sm text-gray-700">{alert.message}</p>
                     </div>
                     <Button variant="outline" size="sm">
-                      Acknowledge
+                      확인
                     </Button>
                   </div>
                 </div>
@@ -330,7 +330,7 @@ export default function MonitoringPage() {
           <CardHeader>
             <CardTitle className="flex items-center gap-2">
               <Clock className="h-5 w-5 text-gray-600" />
-              Recent Events
+              최근 이벤트
             </CardTitle>
           </CardHeader>
           <CardContent>
@@ -385,7 +385,7 @@ export default function MonitoringPage() {
                     {metrics.servers.filter((s) => s.cpu < 60).length}/
                     {metrics.servers.length}
                   </p>
-                  <p className="text-sm text-gray-500">Servers Healthy</p>
+                  <p className="text-sm text-gray-500">정상 서버</p>
                 </div>
               </div>
             </CardContent>
@@ -399,7 +399,7 @@ export default function MonitoringPage() {
                 </div>
                 <div>
                   <p className="text-2xl font-bold">{metrics.alerts.length}</p>
-                  <p className="text-sm text-gray-500">Active Alerts</p>
+                  <p className="text-sm text-gray-500">활성 알림</p>
                 </div>
               </div>
             </CardContent>
@@ -419,7 +419,7 @@ export default function MonitoringPage() {
                     )}
                     %
                   </p>
-                  <p className="text-sm text-gray-500">Avg CPU Usage</p>
+                  <p className="text-sm text-gray-500">평균 CPU 사용량</p>
                 </div>
               </div>
             </CardContent>

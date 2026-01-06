@@ -1,0 +1,193 @@
+# CodeB v5.0 - Promote Workflow
+# Switch traffic from active to deployed slot
+#
+# 이 파일은 프로젝트의 .github/workflows/promote.yml에 복사하세요.
+
+name: Promote
+
+on:
+  workflow_dispatch:
+    inputs:
+      environment:
+        description: 'Environment to promote'
+        required: true
+        default: 'staging'
+        type: choice
+        options:
+          - staging
+          - production
+      auto_rollback:
+        description: 'Enable auto-rollback on failure'
+        required: false
+        default: true
+        type: boolean
+
+env:
+  PROJECT_NAME: ${{ github.event.repository.name }}
+  REGISTRY_PATH: /opt/codeb/registry/slots
+
+jobs:
+  promote:
+    runs-on: self-hosted
+
+    steps:
+      - name: Get slot info
+        id: slot
+        run: |
+          REGISTRY="${REGISTRY_PATH}/${PROJECT_NAME}-${{ inputs.environment }}.json"
+
+          if [ ! -f "$REGISTRY" ]; then
+            echo "❌ No deployment found for ${PROJECT_NAME}/${{ inputs.environment }}"
+            exit 1
+          fi
+
+          ACTIVE=$(jq -r '.activeSlot' "$REGISTRY")
+
+          if [ "$ACTIVE" = "blue" ]; then
+            echo "new=green" >> $GITHUB_OUTPUT
+            echo "old=blue" >> $GITHUB_OUTPUT
+            echo "port=3001" >> $GITHUB_OUTPUT
+          else
+            echo "new=blue" >> $GITHUB_OUTPUT
+            echo "old=green" >> $GITHUB_OUTPUT
+            echo "port=3000" >> $GITHUB_OUTPUT
+          fi
+
+          # Get version info
+          NEW_VERSION=$(jq -r '.["'$([ "$ACTIVE" = "blue" ] && echo "green" || echo "blue")'"].version' "$REGISTRY")
+          OLD_VERSION=$(jq -r '.["'"$ACTIVE"'"].version' "$REGISTRY")
+          echo "new_version=${NEW_VERSION}" >> $GITHUB_OUTPUT
+          echo "old_version=${OLD_VERSION}" >> $GITHUB_OUTPUT
+
+      - name: Verify deployed slot
+        run: |
+          REGISTRY="${REGISTRY_PATH}/${PROJECT_NAME}-${{ inputs.environment }}.json"
+          STATE=$(jq -r '.["${{ steps.slot.outputs.new }}"].state' "$REGISTRY")
+
+          if [ "$STATE" != "deployed" ]; then
+            echo "❌ Slot ${{ steps.slot.outputs.new }} is not deployed (state: $STATE)"
+            echo "Run 'we deploy ${PROJECT_NAME}' first."
+            exit 1
+          fi
+
+          echo "✅ Slot ${{ steps.slot.outputs.new }} is ready for promotion"
+
+      - name: Health check before promote
+        run: |
+          echo "🏥 Verifying ${{ steps.slot.outputs.new }} slot health..."
+
+          if ! curl -sf http://localhost:${{ steps.slot.outputs.port }}/health > /dev/null 2>&1; then
+            echo "❌ Health check failed on port ${{ steps.slot.outputs.port }}"
+            exit 1
+          fi
+
+          echo "✅ Health check passed"
+
+      - name: Update Caddy
+        run: |
+          CADDY_PATH="/etc/caddy/sites/${PROJECT_NAME}-${{ inputs.environment }}.caddy"
+
+          # Determine domain
+          if [ "${{ inputs.environment }}" = "production" ]; then
+            DOMAIN="${PROJECT_NAME}.codeb.dev"
+          else
+            DOMAIN="${PROJECT_NAME}-${{ inputs.environment }}.codeb.dev"
+          fi
+
+          sudo tee "${CADDY_PATH}" << EOF
+          # CodeB v5.0 - Caddy Config
+          # Generated: $(date -Iseconds)
+          # Active Slot: ${{ steps.slot.outputs.new }}
+          # Version: ${{ steps.slot.outputs.new_version }}
+
+          ${DOMAIN} {
+              reverse_proxy localhost:${{ steps.slot.outputs.port }} {
+                  health_uri /health
+                  health_interval 10s
+                  health_timeout 5s
+              }
+
+              encode gzip
+
+              header {
+                  X-CodeB-Project ${PROJECT_NAME}
+                  X-CodeB-Environment ${{ inputs.environment }}
+                  X-CodeB-Slot ${{ steps.slot.outputs.new }}
+                  X-CodeB-Version ${{ steps.slot.outputs.new_version }}
+                  -Server
+              }
+
+              log {
+                  output file /var/log/caddy/${PROJECT_NAME}-${{ inputs.environment }}.log {
+                      roll_size 10mb
+                      roll_keep 5
+                  }
+              }
+          }
+          EOF
+
+          echo "🔄 Reloading Caddy..."
+          sudo systemctl reload caddy
+
+          echo "✅ Caddy updated and reloaded"
+
+      - name: Verify traffic switch
+        run: |
+          sleep 3
+
+          if [ "${{ inputs.environment }}" = "production" ]; then
+            DOMAIN="${PROJECT_NAME}.codeb.dev"
+          else
+            DOMAIN="${PROJECT_NAME}-${{ inputs.environment }}.codeb.dev"
+          fi
+
+          # Check via Caddy
+          SLOT_HEADER=$(curl -sf -I "https://${DOMAIN}" 2>/dev/null | grep -i "x-codeb-slot" | awk '{print $2}' | tr -d '\r')
+
+          if [ "$SLOT_HEADER" = "${{ steps.slot.outputs.new }}" ]; then
+            echo "✅ Traffic successfully switched to ${{ steps.slot.outputs.new }}"
+          else
+            echo "⚠️ Warning: Could not verify traffic switch (header: ${SLOT_HEADER})"
+          fi
+
+      - name: Update registry
+        run: |
+          REGISTRY="${REGISTRY_PATH}/${PROJECT_NAME}-${{ inputs.environment }}.json"
+          GRACE_TIME=$(date -d '+48 hours' -Iseconds 2>/dev/null || date -v+48H -Iseconds)
+
+          jq --arg new "${{ steps.slot.outputs.new }}" \
+             --arg old "${{ steps.slot.outputs.old }}" \
+             --arg grace "$GRACE_TIME" \
+             --arg time "$(date -Iseconds)" \
+             '.activeSlot = $new |
+              .[$new].state = "active" |
+              .[$old].state = "grace" |
+              .[$old].graceExpiresAt = $grace |
+              .lastUpdated = $time' \
+             "$REGISTRY" > /tmp/registry.json
+
+          mv /tmp/registry.json "$REGISTRY"
+          echo "✅ Registry updated"
+
+      - name: Summary
+        run: |
+          if [ "${{ inputs.environment }}" = "production" ]; then
+            URL="https://${PROJECT_NAME}.codeb.dev"
+          else
+            URL="https://${PROJECT_NAME}-${{ inputs.environment }}.codeb.dev"
+          fi
+
+          echo "## ✅ Promote Complete" >> $GITHUB_STEP_SUMMARY
+          echo "" >> $GITHUB_STEP_SUMMARY
+          echo "| Property | Value |" >> $GITHUB_STEP_SUMMARY
+          echo "|----------|-------|" >> $GITHUB_STEP_SUMMARY
+          echo "| **Project** | ${PROJECT_NAME} |" >> $GITHUB_STEP_SUMMARY
+          echo "| **Environment** | ${{ inputs.environment }} |" >> $GITHUB_STEP_SUMMARY
+          echo "| **Previous Slot** | ${{ steps.slot.outputs.old }} (\`${{ steps.slot.outputs.old_version }}\`) |" >> $GITHUB_STEP_SUMMARY
+          echo "| **New Slot** | ${{ steps.slot.outputs.new }} (\`${{ steps.slot.outputs.new_version }}\`) |" >> $GITHUB_STEP_SUMMARY
+          echo "| **URL** | [${URL}](${URL}) |" >> $GITHUB_STEP_SUMMARY
+          echo "" >> $GITHUB_STEP_SUMMARY
+          echo "### Grace Period" >> $GITHUB_STEP_SUMMARY
+          echo "Previous slot (${{ steps.slot.outputs.old }}) will be retained for 48 hours for instant rollback." >> $GITHUB_STEP_SUMMARY
+          echo "" >> $GITHUB_STEP_SUMMARY
+          echo "To rollback: \`we rollback ${PROJECT_NAME}\`" >> $GITHUB_STEP_SUMMARY

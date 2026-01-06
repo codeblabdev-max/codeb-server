@@ -79,16 +79,16 @@ const domains = [
 ];
 
 const sslStatusConfig: Record<string, { label: string; color: string; icon: typeof CheckCircle }> = {
-  valid: { label: "Valid", color: "text-green-600", icon: CheckCircle },
-  pending: { label: "Pending", color: "text-yellow-600", icon: Clock },
-  expired: { label: "Expired", color: "text-red-600", icon: XCircle },
-  error: { label: "Error", color: "text-red-600", icon: XCircle },
+  valid: { label: "유효", color: "text-green-600", icon: CheckCircle },
+  pending: { label: "대기 중", color: "text-yellow-600", icon: Clock },
+  expired: { label: "만료됨", color: "text-red-600", icon: XCircle },
+  error: { label: "오류", color: "text-red-600", icon: XCircle },
 };
 
 const dnsStatusConfig: Record<string, { label: string; color: string }> = {
-  active: { label: "Active", color: "bg-green-100 text-green-700" },
-  propagating: { label: "Propagating", color: "bg-yellow-100 text-yellow-700" },
-  error: { label: "Error", color: "bg-red-100 text-red-700" },
+  active: { label: "활성", color: "bg-green-100 text-green-700" },
+  propagating: { label: "전파 중", color: "bg-yellow-100 text-yellow-700" },
+  error: { label: "오류", color: "bg-red-100 text-red-700" },
 };
 
 export default function DomainsPage() {
@@ -112,8 +112,8 @@ export default function DomainsPage() {
   return (
     <div className="flex flex-col">
       <Header
-        title="Domains"
-        description="Manage your domain configurations and SSL certificates"
+        title="도메인"
+        description="도메인 설정 및 SSL 인증서 관리"
       />
 
       <div className="p-6 space-y-6">
@@ -127,7 +127,7 @@ export default function DomainsPage() {
                 </div>
                 <div>
                   <p className="text-2xl font-bold">{domains.length}</p>
-                  <p className="text-sm text-gray-500">Total Domains</p>
+                  <p className="text-sm text-gray-500">전체 도메인</p>
                 </div>
               </div>
             </CardContent>
@@ -142,7 +142,7 @@ export default function DomainsPage() {
                   <p className="text-2xl font-bold">
                     {domains.filter((d) => d.sslStatus === "valid").length}
                   </p>
-                  <p className="text-sm text-gray-500">Valid SSL</p>
+                  <p className="text-sm text-gray-500">유효한 SSL</p>
                 </div>
               </div>
             </CardContent>
@@ -160,7 +160,7 @@ export default function DomainsPage() {
                       return days !== null && days <= 30;
                     }).length}
                   </p>
-                  <p className="text-sm text-gray-500">Expiring Soon</p>
+                  <p className="text-sm text-gray-500">곧 만료</p>
                 </div>
               </div>
             </CardContent>
@@ -175,7 +175,7 @@ export default function DomainsPage() {
                   <p className="text-2xl font-bold">
                     {domains.filter((d) => d.dnsStatus === "propagating").length}
                   </p>
-                  <p className="text-sm text-gray-500">Propagating</p>
+                  <p className="text-sm text-gray-500">전파 중</p>
                 </div>
               </div>
             </CardContent>
@@ -190,7 +190,7 @@ export default function DomainsPage() {
               <Search className="absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2 text-gray-400" />
               <input
                 type="text"
-                placeholder="Search domains..."
+                placeholder="도메인 검색..."
                 value={searchQuery}
                 onChange={(e) => setSearchQuery(e.target.value)}
                 className="h-10 w-full rounded-lg border border-gray-300 bg-white pl-10 pr-4 text-sm focus:border-blue-500 focus:outline-none focus:ring-1 focus:ring-blue-500"
@@ -205,7 +205,7 @@ export default function DomainsPage() {
                   !selectedEnv ? "bg-gray-900 text-white" : "bg-gray-100 text-gray-700 hover:bg-gray-200"
                 }`}
               >
-                All
+                전체
               </button>
               <button
                 onClick={() => setSelectedEnv("production")}
@@ -213,7 +213,7 @@ export default function DomainsPage() {
                   selectedEnv === "production" ? "bg-gray-900 text-white" : "bg-gray-100 text-gray-700 hover:bg-gray-200"
                 }`}
               >
-                Production
+                프로덕션
               </button>
               <button
                 onClick={() => setSelectedEnv("staging")}
@@ -221,14 +221,14 @@ export default function DomainsPage() {
                   selectedEnv === "staging" ? "bg-gray-900 text-white" : "bg-gray-100 text-gray-700 hover:bg-gray-200"
                 }`}
               >
-                Staging
+                스테이징
               </button>
             </div>
           </div>
 
           <Button>
             <Plus className="mr-2 h-4 w-4" />
-            Add Domain
+            도메인 추가
           </Button>
         </div>
 
@@ -239,25 +239,25 @@ export default function DomainsPage() {
               <thead>
                 <tr className="border-b border-gray-200 bg-gray-50">
                   <th className="px-6 py-3 text-left text-xs font-medium uppercase tracking-wider text-gray-500">
-                    Domain
+                    도메인
                   </th>
                   <th className="px-6 py-3 text-left text-xs font-medium uppercase tracking-wider text-gray-500">
-                    Project
+                    프로젝트
                   </th>
                   <th className="px-6 py-3 text-left text-xs font-medium uppercase tracking-wider text-gray-500">
-                    Environment
+                    환경
                   </th>
                   <th className="px-6 py-3 text-left text-xs font-medium uppercase tracking-wider text-gray-500">
-                    SSL Status
+                    SSL 상태
                   </th>
                   <th className="px-6 py-3 text-left text-xs font-medium uppercase tracking-wider text-gray-500">
-                    DNS Status
+                    DNS 상태
                   </th>
                   <th className="px-6 py-3 text-left text-xs font-medium uppercase tracking-wider text-gray-500">
-                    Port
+                    포트
                   </th>
                   <th className="px-6 py-3 text-right text-xs font-medium uppercase tracking-wider text-gray-500">
-                    Actions
+                    작업
                   </th>
                 </tr>
               </thead>
@@ -297,7 +297,7 @@ export default function DomainsPage() {
                           <span className={`text-sm ${sslConfig.color}`}>{sslConfig.label}</span>
                           {daysUntilExpiry !== null && daysUntilExpiry <= 30 && (
                             <span className="text-xs text-yellow-600">
-                              ({daysUntilExpiry}d left)
+                              ({daysUntilExpiry}일 남음)
                             </span>
                           )}
                         </div>
@@ -335,10 +335,10 @@ export default function DomainsPage() {
         {filteredDomains.length === 0 && (
           <div className="text-center py-12">
             <Globe className="mx-auto h-12 w-12 text-gray-400" />
-            <p className="mt-4 text-gray-500">No domains found</p>
+            <p className="mt-4 text-gray-500">도메인이 없습니다</p>
             <Button className="mt-4">
               <Plus className="mr-2 h-4 w-4" />
-              Add your first domain
+              첫 번째 도메인 추가
             </Button>
           </div>
         )}

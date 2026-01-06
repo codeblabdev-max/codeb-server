@@ -1,0 +1,60 @@
+{
+  "name": "@anthropic-ai/codeb-cli",
+  "version": "5.0.0",
+  "description": "CodeB v5.0 - Blue-Green Deployment CLI",
+  "type": "module",
+  "bin": {
+    "we": "./bin/we.js",
+    "codeb": "./bin/we.js"
+  },
+  "main": "./dist/index.js",
+  "types": "./dist/index.d.ts",
+  "scripts": {
+    "build": "tsc",
+    "dev": "tsc --watch",
+    "lint": "eslint src --ext .ts",
+    "test": "vitest",
+    "postinstall": "node scripts/postinstall.js",
+    "prepublishOnly": "npm run build"
+  },
+  "keywords": [
+    "codeb",
+    "deploy",
+    "blue-green",
+    "vercel",
+    "cli",
+    "devops"
+  ],
+  "author": "CodeB Team",
+  "license": "MIT",
+  "repository": {
+    "type": "git",
+    "url": "https://github.com/anthropics/codeb-server.git",
+    "directory": "v5.0/cli"
+  },
+  "engines": {
+    "node": ">=18.0.0"
+  },
+  "dependencies": {
+    "commander": "^12.0.0",
+    "chalk": "^5.3.0",
+    "ora": "^8.0.1",
+    "inquirer": "^9.2.12",
+    "dotenv": "^16.4.1",
+    "node-fetch": "^3.3.2"
+  },
+  "devDependencies": {
+    "@types/node": "^20.11.0",
+    "typescript": "^5.3.3",
+    "eslint": "^8.56.0",
+    "@typescript-eslint/eslint-plugin": "^6.19.0",
+    "@typescript-eslint/parser": "^6.19.0",
+    "vitest": "^1.2.0"
+  },
+  "files": [
+    "dist",
+    "bin",
+    "scripts",
+    "CLAUDE.md"
+  ]
+}

@@ -1,0 +1,468 @@
+openapi: 3.0.0
+info:
+  title: CodeB Project Generator API
+  version: 2.5.4
+  description: |
+    Auto-generate complete project infrastructure with a single API call.
+
+    ## Features
+    - Automatic Dockerfile generation
+    - GitHub Actions hybrid CI/CD workflows
+    - Quadlet container files for Podman
+    - Environment variable templates
+    - SSOT registry integration
+    - Multi-environment support (staging/production)
+
+    ## Architecture
+    ```
+    GitHub → Build on GitHub-hosted runner
+           → Push to ghcr.io
+           → Deploy via self-hosted runner
+           → Caddy reverse proxy
+    ```
+
+  contact:
+    name: CodeB Team
+    email: support@codeb.kr
+
+  license:
+    name: MIT
+    url: https://opensource.org/licenses/MIT
+
+servers:
+  - url: http://localhost:3200
+    description: Local development
+  - url: https://codeb.codeb.kr
+    description: Production server
+
+tags:
+  - name: Projects
+    description: Project creation and management
+  - name: Types
+    description: Available project types
+  - name: Health
+    description: API health monitoring
+
+paths:
+  /api/project/create:
+    post:
+      tags:
+        - Projects
+      summary: Create new project
+      operationId: createProject
+      description: |
+        Create a complete project with auto-generated infrastructure files.
+
+        Generates:
+        - Dockerfile (multi-stage build)
+        - GitHub Actions workflow (hybrid CI/CD)
+        - Quadlet files (for staging & production)
+        - Environment variable template (.env.example)
+        - PostgreSQL container (optional)
+        - Redis container (optional)
+
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/CreateProjectRequest'
+            examples:
+              nextjs-full:
+                summary: Next.js with database and Redis
+                value:
+                  name: my-nextjs-app
+                  type: nextjs
+                  gitRepo: https://github.com/user/my-nextjs-app
+                  database: true
+                  redis: true
+                  description: My awesome Next.js application
+
+              nodejs-api:
+                summary: Node.js API server
+                value:
+                  name: api-server
+                  type: nodejs
+                  database: true
+                  redis: false
+
+              python-fastapi:
+                summary: Python FastAPI
+                value:
+                  name: fastapi-backend
+                  type: python
+                  database: true
+                  redis: true
+
+              static-site:
+                summary: Static website
+                value:
+                  name: docs-site
+                  type: static
+                  database: false
+                  redis: false
+
+      responses:
+        '200':
+          description: Project created successfully
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/CreateProjectResponse'
+
+        '400':
+          description: Bad request
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+              examples:
+                missing-name:
+                  value:
+                    success: false
+                    error:
+                      code: MISSING_NAME
+                      message: Project name is required
+                      timestamp: '2025-12-19T10:00:00.000Z'
+
+                invalid-type:
+                  value:
+                    success: false
+                    error:
+                      code: INVALID_TYPE
+                      message: 'Invalid project type. Supported: nextjs, nodejs, python, static'
+                      timestamp: '2025-12-19T10:00:00.000Z'
+
+        '500':
+          description: Internal server error
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+
+  /api/project/types:
+    get:
+      tags:
+        - Types
+      summary: List available project types
+      operationId: listProjectTypes
+      description: Get all supported project types with their configurations
+
+      responses:
+        '200':
+          description: Success
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  success:
+                    type: boolean
+                    example: true
+                  data:
+                    type: array
+                    items:
+                      $ref: '#/components/schemas/ProjectType'
+
+  /api/project/{name}:
+    get:
+      tags:
+        - Projects
+      summary: Get project details
+      operationId: getProject
+      description: Retrieve project information from SSOT registry
+
+      parameters:
+        - name: name
+          in: path
+          required: true
+          schema:
+            type: string
+          description: Project name
+          example: my-app
+
+      responses:
+        '200':
+          description: Success
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ProjectDetailsResponse'
+
+        '404':
+          description: Project not found
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+
+  /api/health:
+    get:
+      tags:
+        - Health
+      summary: Health check
+      operationId: healthCheck
+      description: Check API server health and uptime
+
+      responses:
+        '200':
+          description: API is healthy
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  success:
+                    type: boolean
+                    example: true
+                  data:
+                    type: object
+                    properties:
+                      status:
+                        type: string
+                        example: healthy
+                      uptime:
+                        type: number
+                        description: Server uptime in seconds
+                        example: 12345.67
+                      timestamp:
+                        type: string
+                        format: date-time
+                      version:
+                        type: string
+                        example: 2.5.4
+
+  /api/docs:
+    get:
+      tags:
+        - Health
+      summary: OpenAPI specification
+      operationId: getOpenAPISpec
+      description: Get the complete OpenAPI 3.0 specification
+
+      responses:
+        '200':
+          description: OpenAPI specification
+          content:
+            application/json:
+              schema:
+                type: object
+
+components:
+  schemas:
+    CreateProjectRequest:
+      type: object
+      required:
+        - name
+      properties:
+        name:
+          type: string
+          pattern: '^[a-z0-9-]+$'
+          description: Project name (lowercase, numbers, hyphens only)
+          example: my-app
+        type:
+          type: string
+          enum: [nextjs, nodejs, python, static]
+          default: nextjs
+          description: Project type
+        gitRepo:
+          type: string
+          format: uri
+          description: Git repository URL
+          example: https://github.com/user/my-app
+        server:
+          type: string
+          default: app
+          description: Target server identifier
+        database:
+          type: boolean
+          default: true
+          description: Include PostgreSQL database
+        redis:
+          type: boolean
+          default: true
+          description: Include Redis cache
+        description:
+          type: string
+          description: Project description
+          example: My awesome application
+
+    CreateProjectResponse:
+      type: object
+      properties:
+        success:
+          type: boolean
+          example: true
+        data:
+          type: object
+          properties:
+            project:
+              $ref: '#/components/schemas/Project'
+            ports:
+              $ref: '#/components/schemas/PortAllocation'
+            files:
+              type: object
+              additionalProperties:
+                type: string
+              description: Generated files (key=path, value=content)
+              example:
+                'Dockerfile': '# Multi-stage build...'
+                '.github/workflows/deploy.yml': 'name: Deploy...'
+            deployment:
+              type: object
+              properties:
+                staging:
+                  $ref: '#/components/schemas/DeploymentTarget'
+                production:
+                  $ref: '#/components/schemas/DeploymentTarget'
+        meta:
+          $ref: '#/components/schemas/Meta'
+
+    Project:
+      type: object
+      properties:
+        name:
+          type: string
+          example: my-app
+        type:
+          type: string
+          enum: [nextjs, nodejs, python, static]
+        gitRepo:
+          type: string
+        description:
+          type: string
+        createdAt:
+          type: string
+          format: date-time
+
+    PortAllocation:
+      type: object
+      properties:
+        staging:
+          $ref: '#/components/schemas/EnvironmentPorts'
+        production:
+          $ref: '#/components/schemas/EnvironmentPorts'
+
+    EnvironmentPorts:
+      type: object
+      properties:
+        app:
+          type: integer
+          description: Application port
+          example: 3001
+        db:
+          type: integer
+          description: PostgreSQL port
+          example: 15433
+        redis:
+          type: integer
+          description: Redis port
+          example: 16380
+
+    DeploymentTarget:
+      type: object
+      properties:
+        url:
+          type: string
+          format: uri
+          example: https://my-app.codeb.kr
+        port:
+          type: integer
+          example: 3001
+
+    ProjectType:
+      type: object
+      properties:
+        id:
+          type: string
+          example: nextjs
+        name:
+          type: string
+          example: Next.js 14+
+        port:
+          type: integer
+          example: 3000
+        healthcheck:
+          type: string
+          example: /_next/health
+
+    ProjectDetailsResponse:
+      type: object
+      properties:
+        success:
+          type: boolean
+        data:
+          type: object
+          properties:
+            id:
+              type: string
+            type:
+              type: string
+            status:
+              type: string
+              enum: [active, inactive, error]
+            createdAt:
+              type: string
+              format: date-time
+            environments:
+              type: object
+              additionalProperties:
+                $ref: '#/components/schemas/Environment'
+
+    Environment:
+      type: object
+      properties:
+        ports:
+          $ref: '#/components/schemas/EnvironmentPorts'
+        domain:
+          type: string
+          example: my-app.codeb.kr
+        status:
+          type: string
+          enum: [running, stopped, error]
+
+    ErrorResponse:
+      type: object
+      properties:
+        success:
+          type: boolean
+          example: false
+        error:
+          type: object
+          properties:
+            code:
+              type: string
+              enum:
+                - MISSING_NAME
+                - INVALID_TYPE
+                - PORT_CONFLICT
+                - PROJECT_EXISTS
+                - PROJECT_NOT_FOUND
+                - SSOT_ERROR
+                - INTERNAL_ERROR
+            message:
+              type: string
+            details:
+              type: object
+            timestamp:
+              type: string
+              format: date-time
+
+    Meta:
+      type: object
+      properties:
+        timestamp:
+          type: string
+          format: date-time
+        version:
+          type: string
+          example: 2.5.4
+
+  securitySchemes:
+    ApiKey:
+      type: apiKey
+      in: header
+      name: X-API-Key
+      description: API key for authentication (coming in v2.6)
+
+security: []

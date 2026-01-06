@@ -221,7 +221,14 @@ export const portApi = {
 };
 
 export const domainApi = {
-  list: async (): Promise<Domain[]> => {
+  list: async (projectName?: string): Promise<Domain[]> => {
+    if (projectName) {
+      const { data } = await api.post("/api/tool", {
+        tool: "domain_list",
+        params: { projectName },
+      });
+      return data.data || [];
+    }
     const { data } = await api.get("/api/domains");
     return data.data || [];
   },
@@ -231,13 +238,52 @@ export const domainApi = {
     return data.data;
   },
 
-  delete: async (domain: string): Promise<void> => {
+  delete: async (domain: string, projectName?: string): Promise<void> => {
+    if (projectName) {
+      await api.post("/api/tool", {
+        tool: "domain_delete",
+        params: { domain, projectName },
+      });
+      return;
+    }
     await api.delete(`/api/domains/${domain}`);
   },
 
   checkStatus: async (domain: string) => {
     const { data } = await api.get(`/api/domains/${domain}/status`);
     return data.data;
+  },
+
+  // v6.0: Setup domain with auto SSL
+  setup: async (params: {
+    projectName: string;
+    domain: string;
+    environment: string;
+    ssl?: boolean;
+  }) => {
+    const { data } = await api.post("/api/tool", {
+      tool: "domain_setup",
+      params: { ...params, ssl: params.ssl ?? true },
+    });
+    return data;
+  },
+
+  // v6.0: Verify DNS configuration
+  verify: async (domain: string) => {
+    const { data } = await api.post("/api/tool", {
+      tool: "domain_verify",
+      params: { domain },
+    });
+    return data;
+  },
+
+  // v6.0: Get SSL certificate status
+  sslStatus: async (domain: string) => {
+    const { data } = await api.post("/api/tool", {
+      tool: "ssl_status",
+      params: { domain },
+    });
+    return data;
   },
 };
 

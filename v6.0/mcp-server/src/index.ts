@@ -1,11 +1,15 @@
 /**
  * CodeB v6.0 - Unified HTTP API Server
- * Combines v3.x HTTP API + v5.0 MCP features
  *
+ * Features:
  * - Team-based authentication (Vercel style)
  * - Blue-Green deployment with Quadlet + systemd
  * - SSH Connection Pool (Admin only)
  * - Rate limiting and audit logging
+ * - PostgreSQL data persistence
+ * - Prometheus metrics
+ * - Real-time log streaming (SSE)
+ * - Domain management (PowerDNS + Caddy)
  */
 
 import express, { Request, Response, NextFunction } from 'express';
@@ -14,6 +18,18 @@ import helmet from 'helmet';
 import { randomBytes } from 'crypto';
 import type { AuthContext, TeamRole } from './lib/types.js';
 import { auth, checkRateLimit } from './lib/auth.js';
+import { runMigrations, AuditLogRepo, getPool, closePool } from './lib/database.js';
+import { logger, createContextualLogger, generateCorrelationId, logHttpRequest } from './lib/logger.js';
+import {
+  register as metricsRegistry,
+  httpRequestsTotal,
+  httpRequestDuration,
+  httpActiveRequests,
+  recordToolCall,
+  authFailures,
+  rateLimitExceeded,
+} from './lib/metrics.js';
+import { logStream, createLogEntry } from './lib/log-stream.js';
 
 // Tools - Team Management
 import {
@@ -55,7 +71,7 @@ import {
   analyticsSpeedInsightsTool,
 } from './tools/analytics.js';
 
-// Tools - Migration (Legacy -> v6.0)
+// Tools - Migration
 import {
   migrateDetectTool,
   migratePlanTool,
@@ -63,7 +79,7 @@ import {
   migrateRollbackTool,
 } from './tools/migrate.js';
 
-// Tools - ENV Migration
+// Tools - ENV Management
 import {
   envMigrateTool,
   envScanTool,
@@ -71,12 +87,27 @@ import {
   envBackupListTool,
 } from './tools/env-migrate.js';
 
-// Tools - Safe Zero-Downtime Migration
+// Tools - Safe Migration
 import {
   safeMigrateTool,
   safeMigrateRollbackTool,
   generateWorkflowTool,
 } from './tools/migrate-safe.js';
+
+// Tools - Domain Management
+import {
+  domainSetupTool,
+  domainVerifyTool,
+  domainListTool,
+  domainDeleteTool,
+  sslStatusTool,
+} from './tools/domain.js';
+
+// Tools - Workflow (Project Initialization)
+import {
+  workflowInitTool,
+  workflowScanTool,
+} from './tools/workflow.js';
 
 // ============================================================================
 // Configuration
@@ -84,6 +115,7 @@ import {
 
 const PORT = process.env.PORT || 9101;
 const VERSION = '6.0.0';
+const NODE_ENV = process.env.NODE_ENV || 'development';
 
 // ============================================================================
 // Express App Setup
@@ -94,7 +126,48 @@ const app = express();
 // Middleware
 app.use(helmet());
 app.use(cors());
-app.use(express.json());
+app.use(express.json({ limit: '10mb' }));
+
+// ============================================================================
+// Request Logging Middleware
+// ============================================================================
+
+app.use((req: Request, res: Response, next: NextFunction) => {
+  const startTime = Date.now();
+  const correlationId = generateCorrelationId();
+
+  // Add correlation ID to response headers
+  res.setHeader('X-Correlation-ID', correlationId);
+  (req as any).correlationId = correlationId;
+
+  httpActiveRequests.inc();
+
+  res.on('finish', () => {
+    httpActiveRequests.dec();
+    const duration = Date.now() - startTime;
+
+    // Log HTTP request
+    logHttpRequest({
+      method: req.method,
+      url: req.url,
+      statusCode: res.statusCode,
+      duration,
+      ip: req.ip,
+      userAgent: req.get('user-agent'),
+      correlationId,
+    });
+
+    // Prometheus metrics
+    const route = req.route?.path || req.url.split('?')[0];
+    httpRequestsTotal.inc({ method: req.method, route, status_code: res.statusCode.toString() });
+    httpRequestDuration.observe(
+      { method: req.method, route, status_code: res.statusCode.toString() },
+      duration / 1000
+    );
+  });
+
+  next();
+});
 
 // ============================================================================
 // Types
@@ -102,6 +175,7 @@ app.use(express.json());
 
 interface AuthenticatedRequest extends Request {
   auth?: AuthContext;
+  correlationId?: string;
 }
 
 // ============================================================================
@@ -112,6 +186,7 @@ function authMiddleware(req: AuthenticatedRequest, res: Response, next: NextFunc
   const apiKey = req.headers['x-api-key'] as string;
 
   if (!apiKey) {
+    authFailures.inc({ reason: 'missing_key' });
     res.status(401).json({
       success: false,
       error: 'API key required. Use X-API-Key header.',
@@ -122,6 +197,7 @@ function authMiddleware(req: AuthenticatedRequest, res: Response, next: NextFunc
   const authContext = auth.verifyApiKey(apiKey);
 
   if (!authContext) {
+    authFailures.inc({ reason: 'invalid_key' });
     res.status(401).json({
       success: false,
       error: 'Invalid API key',
@@ -135,6 +211,7 @@ function authMiddleware(req: AuthenticatedRequest, res: Response, next: NextFunc
   res.setHeader('X-RateLimit-Reset', rateLimit.resetAt.toString());
 
   if (!rateLimit.allowed) {
+    rateLimitExceeded.inc({ key_id: authContext.keyId.slice(0, 8) });
     res.status(429).json({
       success: false,
       error: 'Rate limit exceeded',
@@ -148,58 +225,6 @@ function authMiddleware(req: AuthenticatedRequest, res: Response, next: NextFunc
 }
 
 // ============================================================================
-// Audit Logging
-// ============================================================================
-
-interface AuditLog {
-  id: string;
-  timestamp: string;
-  teamId: string;
-  keyId: string;
-  role: TeamRole;
-  action: string;
-  params: Record<string, unknown>;
-  success: boolean;
-  duration: number;
-  ip: string;
-  error?: string;
-}
-
-const auditLogs: AuditLog[] = [];
-const MAX_AUDIT_LOGS = 10000;
-
-function logAudit(
-  auth: AuthContext,
-  action: string,
-  params: Record<string, unknown>,
-  success: boolean,
-  duration: number,
-  ip: string,
-  error?: string
-): void {
-  const log: AuditLog = {
-    id: randomBytes(8).toString('hex'),
-    timestamp: new Date().toISOString(),
-    teamId: auth.teamId,
-    keyId: auth.keyId,
-    role: auth.role,
-    action,
-    params,
-    success,
-    duration,
-    ip,
-    error,
-  };
-
-  auditLogs.unshift(log);
-
-  // Trim old logs
-  if (auditLogs.length > MAX_AUDIT_LOGS) {
-    auditLogs.length = MAX_AUDIT_LOGS;
-  }
-}
-
-// ============================================================================
 // Tool Registry
 // ============================================================================
 
@@ -208,190 +233,76 @@ const TOOLS: Record<string, {
   permission: string;
 }> = {
   // Team management
-  team_create: {
-    handler: (p, a) => teamCreateTool.execute(p, a),
-    permission: 'team.create',
-  },
-  team_list: {
-    handler: (_p, a) => teamListTool.execute(a),
-    permission: 'team.view',
-  },
-  team_get: {
-    handler: (p, a) => teamGetTool.execute(p.teamId, a),
-    permission: 'team.view',
-  },
-  team_delete: {
-    handler: (p, a) => teamDeleteTool.execute(p.teamId, a),
-    permission: 'team.delete',
-  },
-  team_settings: {
-    handler: (p, a) => teamSettingsTool.execute(p, a),
-    permission: 'team.settings',
-  },
+  team_create: { handler: (p, a) => teamCreateTool.execute(p, a), permission: 'team.create' },
+  team_list: { handler: (_p, a) => teamListTool.execute(a), permission: 'team.view' },
+  team_get: { handler: (p, a) => teamGetTool.execute(p.teamId, a), permission: 'team.view' },
+  team_delete: { handler: (p, a) => teamDeleteTool.execute(p.teamId, a), permission: 'team.delete' },
+  team_settings: { handler: (p, a) => teamSettingsTool.execute(p, a), permission: 'team.settings' },
 
   // Member management
-  member_invite: {
-    handler: (p, a) => memberInviteTool.execute(p, a),
-    permission: 'member.invite',
-  },
-  member_remove: {
-    handler: (p, a) => memberRemoveTool.execute(p, a),
-    permission: 'member.remove',
-  },
-  member_list: {
-    handler: (p, a) => memberListTool.execute(p.teamId, a),
-    permission: 'member.list',
-  },
+  member_invite: { handler: (p, a) => memberInviteTool.execute(p, a), permission: 'member.invite' },
+  member_remove: { handler: (p, a) => memberRemoveTool.execute(p, a), permission: 'member.remove' },
+  member_list: { handler: (p, a) => memberListTool.execute(p.teamId, a), permission: 'member.list' },
 
   // Token management
-  token_create: {
-    handler: (p, a) => tokenCreateTool.execute(p, a),
-    permission: 'token.create',
-  },
-  token_revoke: {
-    handler: (p, a) => tokenRevokeTool.execute(p, a),
-    permission: 'token.revoke.own',
-  },
-  token_list: {
-    handler: (p, a) => tokenListTool.execute(p.teamId, a),
-    permission: 'token.list',
-  },
+  token_create: { handler: (p, a) => tokenCreateTool.execute(p, a), permission: 'token.create' },
+  token_revoke: { handler: (p, a) => tokenRevokeTool.execute(p, a), permission: 'token.revoke.own' },
+  token_list: { handler: (p, a) => tokenListTool.execute(p.teamId, a), permission: 'token.list' },
 
   // Blue-Green Deployment
-  deploy: {
-    handler: (p, a) => deployTool.execute(p, a),
-    permission: 'deploy.create',
-  },
-  deploy_project: {
-    handler: (p, a) => deployTool.execute(p, a),
-    permission: 'deploy.create',
-  },
-  promote: {
-    handler: (p, a) => promoteTool.execute(p, a),
-    permission: 'deploy.promote',
-  },
-  slot_promote: {
-    handler: (p, a) => promoteTool.execute(p, a),
-    permission: 'deploy.promote',
-  },
-  rollback: {
-    handler: (p, a) => rollbackTool.execute(p, a),
-    permission: 'deploy.rollback',
-  },
+  deploy: { handler: (p, a) => deployTool.execute(p, a), permission: 'deploy.create' },
+  deploy_project: { handler: (p, a) => deployTool.execute(p, a), permission: 'deploy.create' },
+  promote: { handler: (p, a) => promoteTool.execute(p, a), permission: 'deploy.promote' },
+  slot_promote: { handler: (p, a) => promoteTool.execute(p, a), permission: 'deploy.promote' },
+  rollback: { handler: (p, a) => rollbackTool.execute(p, a), permission: 'deploy.rollback' },
 
   // Slot Management
-  slot_status: {
-    handler: (p, a) => slotStatusTool.execute(p, a),
-    permission: 'slot.view',
-  },
-  slot_cleanup: {
-    handler: (p, a) => slotCleanupTool.execute(p, a),
-    permission: 'slot.cleanup',
-  },
-  slot_list: {
-    handler: (p, a) => slotListTool.execute(p, a),
-    permission: 'slot.view',
-  },
+  slot_status: { handler: (p, a) => slotStatusTool.execute(p, a), permission: 'slot.view' },
+  slot_cleanup: { handler: (p, a) => slotCleanupTool.execute(p, a), permission: 'slot.cleanup' },
+  slot_list: { handler: (p, a) => slotListTool.execute(p, a), permission: 'slot.view' },
 
   // Edge Functions
-  edge_deploy: {
-    handler: (p, a) => edgeDeployTool.execute(p, a),
-    permission: 'deploy.create',
-  },
-  edge_list: {
-    handler: (p, a) => edgeListTool.execute(p, a),
-    permission: 'project.view',
-  },
-  edge_logs: {
-    handler: (p, a) => edgeLogsTool.execute(p, a),
-    permission: 'logs.view',
-  },
-  edge_delete: {
-    handler: (p, a) => edgeDeleteTool.execute(p, a),
-    permission: 'deploy.create',
-  },
-  edge_invoke: {
-    handler: (p, a) => edgeInvokeTool.execute(p, a),
-    permission: 'deploy.create',
-  },
-  edge_metrics: {
-    handler: (p, a) => edgeMetricsTool.execute(p, a),
-    permission: 'metrics.view',
-  },
+  edge_deploy: { handler: (p, a) => edgeDeployTool.execute(p, a), permission: 'deploy.create' },
+  edge_list: { handler: (p, a) => edgeListTool.execute(p, a), permission: 'project.view' },
+  edge_logs: { handler: (p, a) => edgeLogsTool.execute(p, a), permission: 'logs.view' },
+  edge_delete: { handler: (p, a) => edgeDeleteTool.execute(p, a), permission: 'deploy.create' },
+  edge_invoke: { handler: (p, a) => edgeInvokeTool.execute(p, a), permission: 'deploy.create' },
+  edge_metrics: { handler: (p, a) => edgeMetricsTool.execute(p, a), permission: 'metrics.view' },
 
   // Analytics
-  analytics_overview: {
-    handler: (p, a) => analyticsOverviewTool.execute(p, a),
-    permission: 'metrics.view',
-  },
-  analytics_webvitals: {
-    handler: (p, a) => analyticsWebVitalsTool.execute(p, a),
-    permission: 'metrics.view',
-  },
-  analytics_deployments: {
-    handler: (p, a) => analyticsDeploymentsTool.execute(p, a),
-    permission: 'metrics.view',
-  },
-  analytics_realtime: {
-    handler: (p, a) => analyticsRealtimeTool.execute(p, a),
-    permission: 'metrics.view',
-  },
-  analytics_speed_insights: {
-    handler: (p, a) => analyticsSpeedInsightsTool.execute(p, a),
-    permission: 'metrics.view',
-  },
+  analytics_overview: { handler: (p, a) => analyticsOverviewTool.execute(p, a), permission: 'metrics.view' },
+  analytics_webvitals: { handler: (p, a) => analyticsWebVitalsTool.execute(p, a), permission: 'metrics.view' },
+  analytics_deployments: { handler: (p, a) => analyticsDeploymentsTool.execute(p, a), permission: 'metrics.view' },
+  analytics_realtime: { handler: (p, a) => analyticsRealtimeTool.execute(p, a), permission: 'metrics.view' },
+  analytics_speed_insights: { handler: (p, a) => analyticsSpeedInsightsTool.execute(p, a), permission: 'metrics.view' },
 
-  // Migration (Legacy -> v6.0)
-  migrate_detect: {
-    handler: (_p, a) => migrateDetectTool.execute(_p, a),
-    permission: 'deploy.create',
-  },
-  migrate_plan: {
-    handler: (p, a) => migratePlanTool.execute(p, a),
-    permission: 'deploy.create',
-  },
-  migrate_execute: {
-    handler: (p, a) => migrateExecuteTool.execute(p, a),
-    permission: 'deploy.create',
-  },
-  migrate_rollback: {
-    handler: (p, a) => migrateRollbackTool.execute(p, a),
-    permission: 'deploy.create',
-  },
+  // Migration
+  migrate_detect: { handler: (_p, a) => migrateDetectTool.execute(_p, a), permission: 'deploy.create' },
+  migrate_plan: { handler: (p, a) => migratePlanTool.execute(p, a), permission: 'deploy.create' },
+  migrate_execute: { handler: (p, a) => migrateExecuteTool.execute(p, a), permission: 'deploy.create' },
+  migrate_rollback: { handler: (p, a) => migrateRollbackTool.execute(p, a), permission: 'deploy.create' },
 
   // ENV Management
-  env_migrate: {
-    handler: (p, a) => envMigrateTool.execute(p, a),
-    permission: 'deploy.create',
-  },
-  env_scan: {
-    handler: (_p, a) => envScanTool.execute(a),
-    permission: 'project.view',
-  },
-  env_restore: {
-    handler: (p, a) => envRestoreTool.execute(p, a),
-    permission: 'deploy.create',
-  },
-  env_backup_list: {
-    handler: (p, a) => envBackupListTool.execute(p.projectName, p.environment, a),
-    permission: 'project.view',
-  },
+  env_migrate: { handler: (p, a) => envMigrateTool.execute(p, a), permission: 'deploy.create' },
+  env_scan: { handler: (_p, a) => envScanTool.execute(a), permission: 'project.view' },
+  env_restore: { handler: (p, a) => envRestoreTool.execute(p, a), permission: 'deploy.create' },
+  env_backup_list: { handler: (p, a) => envBackupListTool.execute(p.projectName, p.environment, a), permission: 'project.view' },
 
-  // Safe Zero-Downtime Migration (Recommended)
-  migrate_safe: {
-    handler: (p, a) => safeMigrateTool.execute(p, a),
-    permission: 'deploy.create',
-  },
-  migrate_safe_rollback: {
-    handler: (p, a) => safeMigrateRollbackTool.execute(p, a),
-    permission: 'deploy.create',
-  },
-  migrate_generate_workflow: {
-    handler: (p, _a) => generateWorkflowTool.execute(p),
-    permission: 'project.view',
-  },
+  // Safe Migration
+  migrate_safe: { handler: (p, a) => safeMigrateTool.execute(p, a), permission: 'deploy.create' },
+  migrate_safe_rollback: { handler: (p, a) => safeMigrateRollbackTool.execute(p, a), permission: 'deploy.create' },
+  migrate_generate_workflow: { handler: (p, _a) => generateWorkflowTool.execute(p), permission: 'project.view' },
 
-  // TODO: Add domain tools
+  // Domain Management
+  domain_setup: { handler: (p, a) => domainSetupTool.execute(p, a), permission: 'domain.manage' },
+  domain_verify: { handler: (p, a) => domainVerifyTool.execute(p, a), permission: 'domain.view' },
+  domain_list: { handler: (p, a) => domainListTool.execute(p, a), permission: 'domain.view' },
+  domain_delete: { handler: (p, a) => domainDeleteTool.execute(p, a), permission: 'domain.manage' },
+  ssl_status: { handler: (p, a) => sslStatusTool.execute(p, a), permission: 'domain.view' },
+
+  // Workflow (Project Initialization)
+  workflow_init: { handler: (p, a) => workflowInitTool.execute(p, a), permission: 'deploy.create' },
+  workflow_scan: { handler: (p, a) => workflowScanTool.execute(p, a), permission: 'project.view' },
 };
 
 // ============================================================================
@@ -404,6 +315,7 @@ app.get('/health', (_req, res) => {
     status: 'healthy',
     version: VERSION,
     timestamp: new Date().toISOString(),
+    uptime: process.uptime(),
   });
 });
 
@@ -413,7 +325,43 @@ app.get('/api', (_req, res) => {
     name: 'CodeB API',
     version: VERSION,
     tools: Object.keys(TOOLS),
+    features: [
+      'blue-green-deployment',
+      'team-management',
+      'edge-functions',
+      'analytics',
+      'domain-management',
+      'log-streaming',
+    ],
   });
+});
+
+// Prometheus metrics (no auth required, but should be protected in production)
+app.get('/metrics', async (_req, res) => {
+  try {
+    res.set('Content-Type', metricsRegistry.contentType);
+    res.end(await metricsRegistry.metrics());
+  } catch (error) {
+    res.status(500).end();
+  }
+});
+
+// Log streaming endpoint (SSE)
+app.get('/api/logs/stream', authMiddleware, (req: AuthenticatedRequest, res) => {
+  if (!auth.checkPermission(req.auth!, 'logs.view')) {
+    res.status(403).json({ success: false, error: 'Permission denied' });
+    return;
+  }
+
+  const clientId = generateCorrelationId();
+  const filters = {
+    projectName: req.query.project as string,
+    environment: req.query.environment as string,
+    slot: req.query.slot as string,
+    level: req.query.level as string,
+  };
+
+  logStream.addClient(clientId, res, filters);
 });
 
 // Tool execution endpoint
@@ -422,6 +370,15 @@ app.post('/api/tool', authMiddleware, async (req: AuthenticatedRequest, res) => 
   const { tool, params = {} } = req.body;
   const authContext = req.auth!;
   const ip = req.ip || req.socket.remoteAddress || 'unknown';
+  const correlationId = (req as any).correlationId;
+
+  const log = createContextualLogger({
+    correlationId,
+    teamId: authContext.teamId,
+    keyId: authContext.keyId,
+    role: authContext.role,
+    ip,
+  });
 
   if (!tool) {
     res.status(400).json({
@@ -445,7 +402,14 @@ app.post('/api/tool', authMiddleware, async (req: AuthenticatedRequest, res) => 
   // Check permission
   if (!auth.checkPermission(authContext, toolDef.permission)) {
     const duration = Date.now() - startTime;
-    logAudit(authContext, tool, params, false, duration, ip, 'Permission denied');
+    log.audit(tool, {
+      resource: 'tool',
+      resourceId: tool,
+      success: false,
+      duration,
+      params,
+      error: 'Permission denied',
+    });
 
     res.status(403).json({
       success: false,
@@ -455,58 +419,114 @@ app.post('/api/tool', authMiddleware, async (req: AuthenticatedRequest, res) => 
   }
 
   try {
+    log.info(`Executing tool: ${tool}`, { params: Object.keys(params) });
+
     const result = await toolDef.handler(params, authContext);
     const duration = Date.now() - startTime;
 
-    logAudit(authContext, tool, params, result.success, duration, ip, result.error);
+    // Record metrics
+    recordToolCall(tool, result.success ? 'success' : 'failed', authContext.role, duration / 1000);
+
+    // Audit log to database
+    try {
+      await AuditLogRepo.create({
+        timestamp: new Date().toISOString(),
+        teamId: authContext.teamId,
+        userId: authContext.keyId,
+        action: tool,
+        resource: 'tool',
+        resourceId: tool,
+        details: params,
+        ip,
+        userAgent: req.get('user-agent') || '',
+        duration,
+        success: result.success,
+        error: result.error,
+      });
+    } catch (dbError) {
+      log.error('Failed to write audit log to database', { error: String(dbError) });
+    }
+
+    log.audit(tool, {
+      resource: 'tool',
+      resourceId: tool,
+      success: result.success,
+      duration,
+      params,
+      error: result.error,
+    });
+
+    // Broadcast to log stream
+    logStream.broadcast(
+      createLogEntry(
+        result.success ? 'info' : 'error',
+        'api',
+        `Tool ${tool} ${result.success ? 'succeeded' : 'failed'}`,
+        {
+          projectName: params.projectName,
+          environment: params.environment,
+          metadata: { tool, duration, success: result.success },
+        }
+      )
+    );
 
     res.json({
       ...result,
       duration,
       timestamp: new Date().toISOString(),
+      correlationId,
     });
   } catch (error) {
     const duration = Date.now() - startTime;
     const errorMessage = error instanceof Error ? error.message : String(error);
 
-    logAudit(authContext, tool, params, false, duration, ip, errorMessage);
+    recordToolCall(tool, 'failed', authContext.role, duration / 1000);
+
+    log.error(`Tool execution failed: ${tool}`, { error: errorMessage, duration });
 
     res.status(500).json({
       success: false,
       error: errorMessage,
       duration,
       timestamp: new Date().toISOString(),
+      correlationId,
     });
   }
 });
 
-// Audit logs endpoint (admin only)
-app.get('/api/audit', authMiddleware, (req: AuthenticatedRequest, res) => {
+// Audit logs endpoint
+app.get('/api/audit', authMiddleware, async (req: AuthenticatedRequest, res) => {
   const authContext = req.auth!;
 
   if (!auth.checkPermission(authContext, 'logs.view')) {
-    res.status(403).json({
-      success: false,
-      error: 'Permission denied',
-    });
+    res.status(403).json({ success: false, error: 'Permission denied' });
     return;
   }
 
-  const limit = Math.min(parseInt(req.query.limit as string) || 100, 1000);
-  const teamOnly = req.query.teamOnly !== 'false';
+  try {
+    const limit = Math.min(parseInt(req.query.limit as string) || 100, 1000);
+    const offset = parseInt(req.query.offset as string) || 0;
+    const teamOnly = req.query.teamOnly !== 'false' && authContext.role !== 'owner';
 
-  let logs = auditLogs;
+    const { logs, total } = await AuditLogRepo.find({
+      teamId: teamOnly ? authContext.teamId : undefined,
+      limit,
+      offset,
+    });
 
-  // Filter by team if not admin
-  if (teamOnly && authContext.role !== 'owner') {
-    logs = logs.filter(l => l.teamId === authContext.teamId);
+    res.json({
+      success: true,
+      data: logs,
+      total,
+      limit,
+      offset,
+    });
+  } catch (error) {
+    res.status(500).json({
+      success: false,
+      error: error instanceof Error ? error.message : String(error),
+    });
   }
-
-  res.json({
-    success: true,
-    data: logs.slice(0, limit),
-    total: logs.length,
-  });
 });
 
 // ============================================================================
@@ -514,7 +534,7 @@ app.get('/api/audit', authMiddleware, (req: AuthenticatedRequest, res) => {
 // ============================================================================
 
 app.use((err: Error, _req: Request, res: Response, _next: NextFunction) => {
-  console.error('Unhandled error:', err);
+  logger.error('Unhandled error', { error: err.message, stack: err.stack });
   res.status(500).json({
     success: false,
     error: 'Internal server error',
@@ -522,19 +542,53 @@ app.use((err: Error, _req: Request, res: Response, _next: NextFunction) => {
 });
 
 // ============================================================================
+// Graceful Shutdown
+// ============================================================================
+
+async function shutdown(signal: string) {
+  logger.info(`Received ${signal}, shutting down gracefully...`);
+
+  // Close database pool
+  await closePool();
+
+  process.exit(0);
+}
+
+process.on('SIGTERM', () => shutdown('SIGTERM'));
+process.on('SIGINT', () => shutdown('SIGINT'));
+
+// ============================================================================
 // Start Server
 // ============================================================================
 
-app.listen(PORT, () => {
-  console.log(`
+async function start() {
+  try {
+    // Run database migrations
+    logger.info('Running database migrations...');
+    await runMigrations();
+
+    // Start HTTP server
+    app.listen(PORT, () => {
+      logger.info(`Server started`, { port: PORT, version: VERSION, env: NODE_ENV });
+
+      console.log(`
 ╔════════════════════════════════════════════════════════════╗
 ║              CodeB v${VERSION} - Unified API Server              ║
 ╠════════════════════════════════════════════════════════════╣
-║  Port:     ${PORT}                                            ║
-║  Endpoint: http://localhost:${PORT}/api/tool                  ║
-║  Health:   http://localhost:${PORT}/health                    ║
+║  Port:       ${PORT}                                           ║
+║  Endpoint:   http://localhost:${PORT}/api/tool                 ║
+║  Health:     http://localhost:${PORT}/health                   ║
+║  Metrics:    http://localhost:${PORT}/metrics                  ║
+║  Logs:       http://localhost:${PORT}/api/logs/stream          ║
 ╚════════════════════════════════════════════════════════════╝
-  `);
-});
+      `);
+    });
+  } catch (error) {
+    logger.error('Failed to start server', { error: String(error) });
+    process.exit(1);
+  }
+}
+
+start();
 
 export default app;

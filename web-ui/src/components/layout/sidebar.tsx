@@ -15,14 +15,14 @@ import {
 } from "lucide-react";
 
 const navigation = [
-  { name: "Dashboard", href: "/", icon: LayoutDashboard },
-  { name: "Projects", href: "/projects", icon: FolderKanban },
-  { name: "Deployments", href: "/deployments", icon: Rocket },
-  { name: "Domains", href: "/domains", icon: Globe },
-  { name: "Servers", href: "/servers", icon: Server },
-  { name: "Monitoring", href: "/monitoring", icon: Activity },
-  { name: "Env Variables", href: "/env", icon: Key },
-  { name: "Settings", href: "/settings", icon: Settings },
+  { name: "대시보드", href: "/", icon: LayoutDashboard },
+  { name: "프로젝트", href: "/projects", icon: FolderKanban },
+  { name: "배포", href: "/deployments", icon: Rocket },
+  { name: "도메인", href: "/domains", icon: Globe },
+  { name: "서버", href: "/servers", icon: Server },
+  { name: "모니터링", href: "/monitoring", icon: Activity },
+  { name: "환경변수", href: "/env", icon: Key },
+  { name: "설정", href: "/settings", icon: Settings },
 ];
 
 export function Sidebar() {
@@ -30,7 +30,7 @@ export function Sidebar() {
 
   return (
     <div className="flex h-full w-64 flex-col bg-gray-900">
-      {/* Logo */}
+      {/* 로고 */}
       <div className="flex h-16 items-center px-6">
         <Link href="/" className="flex items-center gap-2">
           <div className="flex h-8 w-8 items-center justify-center rounded-lg bg-blue-600">
@@ -40,7 +40,7 @@ export function Sidebar() {
         </Link>
       </div>
 
-      {/* Navigation */}
+      {/* 네비게이션 */}
       <nav className="flex-1 space-y-1 px-3 py-4">
         {navigation.map((item) => {
           const isActive = pathname === item.href ||
@@ -64,11 +64,11 @@ export function Sidebar() {
         })}
       </nav>
 
-      {/* Server Status */}
+      {/* 서버 상태 */}
       <div className="border-t border-gray-800 p-4">
         <div className="flex items-center gap-2">
           <div className="h-2 w-2 rounded-full bg-green-500" />
-          <span className="text-sm text-gray-400">App Server Online</span>
+          <span className="text-sm text-gray-400">앱 서버 온라인</span>
         </div>
         <p className="mt-1 text-xs text-gray-500">158.247.203.55</p>
       </div>

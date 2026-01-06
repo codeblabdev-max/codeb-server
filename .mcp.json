@@ -3,12 +3,11 @@
     "codeb-deploy": {
       "command": "node",
       "args": [
-        "/Users/admin/new_project/codeb-server/codeb-deploy-system/mcp-server/dist/index.js"
+        "/Users/admin/new_project/codeb-server/v6.0/mcp-proxy/dist/index.js"
       ],
       "env": {
-        "CODEB_SERVER_HOST": "141.164.60.51",
-        "CODEB_SERVER_USER": "root",
-        "CODEB_SSH_KEY_PATH": "/Users/admin/.ssh/id_rsa"
+        "CODEB_API_URL": "https://api.codeb.kr",
+        "CODEB_API_KEY": "${CODEB_API_KEY}"
       }
     }
   }

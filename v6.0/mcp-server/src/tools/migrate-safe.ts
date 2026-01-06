@@ -705,7 +705,7 @@ export const generateWorkflowTool = {
   name: 'migrate_generate_workflow',
   description: 'Generate GitHub Actions workflow for v6.0 deployment',
 
-  execute(params: { projectName: string }): { success: boolean; workflow: string } {
+  async execute(params: { projectName: string }): Promise<{ success: boolean; workflow: string }> {
     return {
       success: true,
       workflow: generateGitHubActionsWorkflow(params.projectName),

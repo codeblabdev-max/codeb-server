@@ -360,6 +360,23 @@ export async function withSSH<T>(
 }
 
 // ============================================================================
+// Convenient exec function
+// ============================================================================
+
+/**
+ * Execute a command on a server by role
+ */
+export async function execCommand(
+  serverRole: 'app' | 'streaming' | 'storage' | 'backup',
+  command: string,
+  options: { timeout?: number } = {}
+): Promise<SSHResult> {
+  return withSSH(SERVERS[serverRole].ip, async (ssh) => {
+    return ssh.exec(command, options);
+  });
+}
+
+// ============================================================================
 // Cleanup on exit
 // ============================================================================
 

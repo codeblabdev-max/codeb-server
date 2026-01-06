@@ -1,0 +1,69 @@
+{
+  "name": "@codeblabdev-max/we-cli",
+  "version": "3.2.10",
+  "description": "/we: Web Deploy CLI - MCP-First Architecture (scan → up → deploy)",
+  "type": "module",
+  "bin": {
+    "we": "./bin/we.js"
+  },
+  "main": "./bin/we.js",
+  "files": [
+    "bin",
+    "src",
+    "commands",
+    "scripts",
+    "rules"
+  ],
+  "repository": {
+    "type": "git",
+    "url": "https://github.com/codeblabdev-max/codeb-server.git",
+    "directory": "cli"
+  },
+  "homepage": "https://github.com/codeblabdev-max/codeb-server#readme",
+  "bugs": {
+    "url": "https://github.com/codeblabdev-max/codeb-server/issues"
+  },
+  "scripts": {
+    "test": "echo \"Tests coming soon\" && exit 0",
+    "link": "npm link",
+    "unlink": "npm unlink -g @codeb/we-cli",
+    "postinstall": "node scripts/install-commands.js || exit 0",
+    "install-commands": "node scripts/install-commands.js",
+    "prepublishOnly": "echo '🚀 Publishing @codeb/we-cli...'"
+  },
+  "keywords": [
+    "codeb",
+    "cli",
+    "deployment",
+    "mcp",
+    "claude-code",
+    "centrifugo",
+    "websocket",
+    "devops",
+    "automation"
+  ],
+  "author": "CodeB Team <dev@codeb.kr>",
+  "license": "MIT",
+  "dependencies": {
+    "@modelcontextprotocol/sdk": "^1.25.0",
+    "axios": "^1.6.2",
+    "blessed": "^0.1.81",
+    "blessed-contrib": "^4.11.0",
+    "chalk": "^5.3.0",
+    "cli-progress": "^3.12.0",
+    "commander": "^11.1.0",
+    "dotenv": "^16.3.1",
+    "inquirer": "^9.2.12",
+    "ora": "^7.0.1",
+    "table": "^6.8.1",
+    "yaml": "^2.3.4"
+  },
+  "engines": {
+    "node": ">=18.0.0",
+    "npm": ">=9.0.0"
+  },
+  "publishConfig": {
+    "registry": "https://npm.pkg.github.com",
+    "access": "public"
+  }
+}

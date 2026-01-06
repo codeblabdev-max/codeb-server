@@ -111,11 +111,11 @@ const deployments = [
 ];
 
 const statusConfig: Record<string, { label: string; color: string; icon: typeof CheckCircle; bg: string }> = {
-  success: { label: "Success", color: "text-green-600", icon: CheckCircle, bg: "bg-green-100" },
-  failed: { label: "Failed", color: "text-red-600", icon: XCircle, bg: "bg-red-100" },
-  deploying: { label: "Deploying", color: "text-blue-600", icon: Loader2, bg: "bg-blue-100" },
-  cancelled: { label: "Cancelled", color: "text-gray-600", icon: XCircle, bg: "bg-gray-100" },
-  rollback: { label: "Rolled Back", color: "text-yellow-600", icon: RotateCcw, bg: "bg-yellow-100" },
+  success: { label: "성공", color: "text-green-600", icon: CheckCircle, bg: "bg-green-100" },
+  failed: { label: "실패", color: "text-red-600", icon: XCircle, bg: "bg-red-100" },
+  deploying: { label: "배포 중", color: "text-blue-600", icon: Loader2, bg: "bg-blue-100" },
+  cancelled: { label: "취소됨", color: "text-gray-600", icon: XCircle, bg: "bg-gray-100" },
+  rollback: { label: "롤백됨", color: "text-yellow-600", icon: RotateCcw, bg: "bg-yellow-100" },
 };
 
 export default function DeploymentsPage() {
@@ -155,8 +155,8 @@ export default function DeploymentsPage() {
   return (
     <div className="flex flex-col">
       <Header
-        title="Deployments"
-        description="View and manage your deployment history"
+        title="배포"
+        description="배포 이력 조회 및 관리"
       />
 
       <div className="p-6 space-y-6">
@@ -170,7 +170,7 @@ export default function DeploymentsPage() {
                 </div>
                 <div>
                   <p className="text-2xl font-bold">{totalDeployments}</p>
-                  <p className="text-sm text-gray-500">Total Deployments</p>
+                  <p className="text-sm text-gray-500">전체 배포</p>
                 </div>
               </div>
             </CardContent>
@@ -183,7 +183,7 @@ export default function DeploymentsPage() {
                 </div>
                 <div>
                   <p className="text-2xl font-bold">{successRate}%</p>
-                  <p className="text-sm text-gray-500">Success Rate</p>
+                  <p className="text-sm text-gray-500">성공률</p>
                 </div>
               </div>
             </CardContent>
@@ -196,7 +196,7 @@ export default function DeploymentsPage() {
                 </div>
                 <div>
                   <p className="text-2xl font-bold">{formatDuration(avgDuration)}</p>
-                  <p className="text-sm text-gray-500">Avg Duration</p>
+                  <p className="text-sm text-gray-500">평균 소요시간</p>
                 </div>
               </div>
             </CardContent>
@@ -211,7 +211,7 @@ export default function DeploymentsPage() {
                   <p className="text-2xl font-bold">
                     {deployments.filter((d) => d.status === "deploying").length}
                   </p>
-                  <p className="text-sm text-gray-500">In Progress</p>
+                  <p className="text-sm text-gray-500">진행 중</p>
                 </div>
               </div>
             </CardContent>
@@ -226,7 +226,7 @@ export default function DeploymentsPage() {
               <Search className="absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2 text-gray-400" />
               <input
                 type="text"
-                placeholder="Search deployments..."
+                placeholder="배포 검색..."
                 value={searchQuery}
                 onChange={(e) => setSearchQuery(e.target.value)}
                 className="h-10 w-full rounded-lg border border-gray-300 bg-white pl-10 pr-4 text-sm focus:border-blue-500 focus:outline-none focus:ring-1 focus:ring-blue-500"
@@ -241,7 +241,7 @@ export default function DeploymentsPage() {
                   !selectedStatus ? "bg-gray-900 text-white" : "bg-gray-100 text-gray-700 hover:bg-gray-200"
                 }`}
               >
-                All
+                전체
               </button>
               <button
                 onClick={() => setSelectedStatus("success")}
@@ -249,7 +249,7 @@ export default function DeploymentsPage() {
                   selectedStatus === "success" ? "bg-green-600 text-white" : "bg-gray-100 text-gray-700 hover:bg-gray-200"
                 }`}
               >
-                Success
+                성공
               </button>
               <button
                 onClick={() => setSelectedStatus("failed")}
@@ -257,7 +257,7 @@ export default function DeploymentsPage() {
                   selectedStatus === "failed" ? "bg-red-600 text-white" : "bg-gray-100 text-gray-700 hover:bg-gray-200"
                 }`}
               >
-                Failed
+                실패
               </button>
               <button
                 onClick={() => setSelectedStatus("deploying")}
@@ -265,7 +265,7 @@ export default function DeploymentsPage() {
                   selectedStatus === "deploying" ? "bg-blue-600 text-white" : "bg-gray-100 text-gray-700 hover:bg-gray-200"
                 }`}
               >
-                In Progress
+                진행 중
               </button>
             </div>
 
@@ -278,7 +278,7 @@ export default function DeploymentsPage() {
                 }`}
               >
                 <Filter className="h-3 w-3 inline mr-1" />
-                All Env
+                전체 환경
               </button>
               <button
                 onClick={() => setSelectedEnv("production")}
@@ -286,7 +286,7 @@ export default function DeploymentsPage() {
                   selectedEnv === "production" ? "border-blue-600 bg-blue-600 text-white" : "border-gray-300 bg-white text-gray-700 hover:bg-gray-50"
                 }`}
               >
-                Production
+                프로덕션
               </button>
               <button
                 onClick={() => setSelectedEnv("staging")}
@@ -294,7 +294,7 @@ export default function DeploymentsPage() {
                   selectedEnv === "staging" ? "border-gray-600 bg-gray-600 text-white" : "border-gray-300 bg-white text-gray-700 hover:bg-gray-50"
                 }`}
               >
-                Staging
+                스테이징
               </button>
             </div>
           </div>
@@ -342,14 +342,14 @@ export default function DeploymentsPage() {
                       <div className="text-right">
                         <p className="text-sm text-gray-900">{formatRelativeTime(deployment.startedAt)}</p>
                         <p className="text-xs text-gray-500">
-                          Duration: {formatDuration(deployment.duration)}
+                          소요시간: {formatDuration(deployment.duration)}
                         </p>
                       </div>
                       <div className="flex gap-1">
                         {deployment.status === "failed" && (
                           <Button variant="outline" size="sm">
                             <RotateCcw className="h-4 w-4 mr-1" />
-                            Retry
+                            재시도
                           </Button>
                         )}
                         <Button variant="ghost" size="sm">
@@ -378,7 +378,7 @@ export default function DeploymentsPage() {
         {filteredDeployments.length === 0 && (
           <div className="text-center py-12">
             <Rocket className="mx-auto h-12 w-12 text-gray-400" />
-            <p className="mt-4 text-gray-500">No deployments found</p>
+            <p className="mt-4 text-gray-500">배포 내역이 없습니다</p>
           </div>
         )}
       </div>

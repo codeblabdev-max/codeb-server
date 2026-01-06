@@ -1,0 +1,197 @@
+# CodeB v5.0 - Blue-Green Deploy Workflow
+# Self-hosted Runner + Quadlet + systemd + Podman
+#
+# 이 파일은 프로젝트의 .github/workflows/deploy.yml에 복사하세요.
+
+name: Deploy
+
+on:
+  push:
+    branches: [main]
+  workflow_dispatch:
+    inputs:
+      environment:
+        description: 'Target environment'
+        required: true
+        default: 'staging'
+        type: choice
+        options:
+          - staging
+          - production
+
+env:
+  PROJECT_NAME: ${{ github.event.repository.name }}
+  REGISTRY_PATH: /opt/codeb/registry/slots
+
+jobs:
+  deploy:
+    runs-on: self-hosted
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Set environment
+        id: env
+        run: |
+          if [ "${{ github.event_name }}" = "workflow_dispatch" ]; then
+            echo "environment=${{ inputs.environment }}" >> $GITHUB_OUTPUT
+          else
+            echo "environment=staging" >> $GITHUB_OUTPUT
+          fi
+
+      - name: Get inactive slot
+        id: slot
+        run: |
+          REGISTRY="${REGISTRY_PATH}/${PROJECT_NAME}-${{ steps.env.outputs.environment }}.json"
+
+          if [ -f "$REGISTRY" ]; then
+            CURRENT=$(jq -r '.activeSlot' "$REGISTRY")
+          else
+            CURRENT="blue"
+            mkdir -p "${REGISTRY_PATH}"
+            cat > "$REGISTRY" << EOF
+          {
+            "projectName": "${PROJECT_NAME}",
+            "environment": "${{ steps.env.outputs.environment }}",
+            "activeSlot": "blue",
+            "blue": {"name": "blue", "state": "empty", "port": 3000},
+            "green": {"name": "green", "state": "empty", "port": 3001},
+            "lastUpdated": "$(date -Iseconds)"
+          }
+          EOF
+          fi
+
+          if [ "$CURRENT" = "blue" ]; then
+            echo "target=green" >> $GITHUB_OUTPUT
+            echo "port=3001" >> $GITHUB_OUTPUT
+          else
+            echo "target=blue" >> $GITHUB_OUTPUT
+            echo "port=3000" >> $GITHUB_OUTPUT
+          fi
+
+          echo "::notice::Deploying to ${{ steps.slot.outputs.target }} slot (port ${{ steps.slot.outputs.port }})"
+
+      - name: Build image
+        run: |
+          echo "🔨 Building image..."
+          podman build \
+            -t localhost/${PROJECT_NAME}:${{ github.sha }} \
+            -t localhost/${PROJECT_NAME}:latest \
+            --label "git.sha=${{ github.sha }}" \
+            --label "git.ref=${{ github.ref }}" \
+            --label "build.time=$(date -Iseconds)" \
+            .
+
+      - name: Generate Quadlet
+        run: |
+          CONTAINER_NAME="${PROJECT_NAME}-${{ steps.env.outputs.environment }}-${{ steps.slot.outputs.target }}"
+          QUADLET_PATH="$HOME/.config/containers/systemd/${CONTAINER_NAME}.container"
+          ENV_FILE="/opt/codeb/projects/${PROJECT_NAME}/.env.${{ steps.env.outputs.environment }}"
+
+          mkdir -p ~/.config/containers/systemd
+
+          cat > "${QUADLET_PATH}" << EOF
+          # CodeB v5.0 - Quadlet Container
+          # Generated: $(date -Iseconds)
+          # Git SHA: ${{ github.sha }}
+
+          [Unit]
+          Description=${PROJECT_NAME} ${{ steps.env.outputs.environment }} ${{ steps.slot.outputs.target }}
+          After=network-online.target
+
+          [Container]
+          Image=localhost/${PROJECT_NAME}:${{ github.sha }}
+          ContainerName=${CONTAINER_NAME}
+          PublishPort=${{ steps.slot.outputs.port }}:3000
+          EnvironmentFile=${ENV_FILE}
+          Label=project=${PROJECT_NAME}
+          Label=environment=${{ steps.env.outputs.environment }}
+          Label=slot=${{ steps.slot.outputs.target }}
+          Label=version=${{ github.sha }}
+          Label=deployed_at=$(date -Iseconds)
+          HealthCmd=curl -f http://localhost:3000/health || exit 1
+          HealthInterval=10s
+          HealthTimeout=5s
+          HealthRetries=3
+
+          [Service]
+          Restart=always
+          TimeoutStartSec=300
+
+          [Install]
+          WantedBy=default.target
+          EOF
+
+          echo "✅ Generated ${QUADLET_PATH}"
+
+      - name: Start container
+        run: |
+          CONTAINER_NAME="${PROJECT_NAME}-${{ steps.env.outputs.environment }}-${{ steps.slot.outputs.target }}"
+
+          echo "🔄 Reloading systemd daemon..."
+          systemctl --user daemon-reload
+
+          echo "🛑 Stopping existing container (if any)..."
+          systemctl --user stop ${CONTAINER_NAME} 2>/dev/null || true
+
+          echo "🚀 Starting container..."
+          systemctl --user start ${CONTAINER_NAME}
+
+          echo "✅ Container started"
+
+      - name: Health check
+        run: |
+          echo "🏥 Waiting for container to be healthy..."
+          sleep 5
+
+          for i in {1..30}; do
+            if curl -sf http://localhost:${{ steps.slot.outputs.port }}/health > /dev/null 2>&1; then
+              echo "✅ Health check passed (attempt $i)"
+              exit 0
+            fi
+            echo "⏳ Attempt $i/30 - waiting..."
+            sleep 2
+          done
+
+          echo "❌ Health check failed after 60 seconds"
+          systemctl --user status ${PROJECT_NAME}-${{ steps.env.outputs.environment }}-${{ steps.slot.outputs.target }}
+          exit 1
+
+      - name: Update registry
+        run: |
+          REGISTRY="${REGISTRY_PATH}/${PROJECT_NAME}-${{ steps.env.outputs.environment }}.json"
+
+          jq --arg slot "${{ steps.slot.outputs.target }}" \
+             --arg version "${{ github.sha }}" \
+             --arg time "$(date -Iseconds)" \
+             --arg port "${{ steps.slot.outputs.port }}" \
+             '.[$slot].state = "deployed" |
+              .[$slot].version = $version |
+              .[$slot].port = ($port | tonumber) |
+              .[$slot].deployedAt = $time |
+              .[$slot].healthStatus = "healthy" |
+              .lastUpdated = $time' \
+             "$REGISTRY" > /tmp/registry.json
+
+          mv /tmp/registry.json "$REGISTRY"
+          echo "✅ Registry updated"
+
+      - name: Summary
+        run: |
+          PREVIEW_URL="https://${PROJECT_NAME}-${{ steps.slot.outputs.target }}.preview.codeb.dev"
+
+          echo "## 🚀 Deployment Complete" >> $GITHUB_STEP_SUMMARY
+          echo "" >> $GITHUB_STEP_SUMMARY
+          echo "| Property | Value |" >> $GITHUB_STEP_SUMMARY
+          echo "|----------|-------|" >> $GITHUB_STEP_SUMMARY
+          echo "| **Project** | ${PROJECT_NAME} |" >> $GITHUB_STEP_SUMMARY
+          echo "| **Environment** | ${{ steps.env.outputs.environment }} |" >> $GITHUB_STEP_SUMMARY
+          echo "| **Slot** | ${{ steps.slot.outputs.target }} |" >> $GITHUB_STEP_SUMMARY
+          echo "| **Port** | ${{ steps.slot.outputs.port }} |" >> $GITHUB_STEP_SUMMARY
+          echo "| **Version** | \`${{ github.sha }}\` |" >> $GITHUB_STEP_SUMMARY
+          echo "| **Preview URL** | [${PREVIEW_URL}](${PREVIEW_URL}) |" >> $GITHUB_STEP_SUMMARY
+          echo "" >> $GITHUB_STEP_SUMMARY
+          echo "### Next Steps" >> $GITHUB_STEP_SUMMARY
+          echo "1. Test the preview URL" >> $GITHUB_STEP_SUMMARY
+          echo "2. Run \`we promote ${PROJECT_NAME}\` to switch traffic" >> $GITHUB_STEP_SUMMARY

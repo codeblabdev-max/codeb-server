@@ -1,0 +1,191 @@
+# CodeB v5.0 - Rollback Workflow
+# Instant rollback to previous slot
+#
+# 이 파일은 프로젝트의 .github/workflows/rollback.yml에 복사하세요.
+
+name: Rollback
+
+on:
+  workflow_dispatch:
+    inputs:
+      environment:
+        description: 'Environment to rollback'
+        required: true
+        default: 'staging'
+        type: choice
+        options:
+          - staging
+          - production
+      reason:
+        description: 'Rollback reason (for audit log)'
+        required: true
+        type: string
+
+env:
+  PROJECT_NAME: ${{ github.event.repository.name }}
+  REGISTRY_PATH: /opt/codeb/registry/slots
+
+jobs:
+  rollback:
+    runs-on: self-hosted
+
+    steps:
+      - name: Get slot info
+        id: slot
+        run: |
+          REGISTRY="${REGISTRY_PATH}/${PROJECT_NAME}-${{ inputs.environment }}.json"
+
+          if [ ! -f "$REGISTRY" ]; then
+            echo "❌ No deployment found for ${PROJECT_NAME}/${{ inputs.environment }}"
+            exit 1
+          fi
+
+          ACTIVE=$(jq -r '.activeSlot' "$REGISTRY")
+
+          if [ "$ACTIVE" = "blue" ]; then
+            echo "target=green" >> $GITHUB_OUTPUT
+            echo "current=blue" >> $GITHUB_OUTPUT
+            echo "port=3001" >> $GITHUB_OUTPUT
+          else
+            echo "target=blue" >> $GITHUB_OUTPUT
+            echo "current=green" >> $GITHUB_OUTPUT
+            echo "port=3000" >> $GITHUB_OUTPUT
+          fi
+
+          # Get version info
+          TARGET_VERSION=$(jq -r '.["'$([ "$ACTIVE" = "blue" ] && echo "green" || echo "blue")'"].version' "$REGISTRY")
+          CURRENT_VERSION=$(jq -r '.["'"$ACTIVE"'"].version' "$REGISTRY")
+          echo "target_version=${TARGET_VERSION}" >> $GITHUB_OUTPUT
+          echo "current_version=${CURRENT_VERSION}" >> $GITHUB_OUTPUT
+
+      - name: Verify grace slot
+        run: |
+          REGISTRY="${REGISTRY_PATH}/${PROJECT_NAME}-${{ inputs.environment }}.json"
+          STATE=$(jq -r '.["${{ steps.slot.outputs.target }}"].state' "$REGISTRY")
+
+          if [ "$STATE" != "grace" ]; then
+            echo "❌ Slot ${{ steps.slot.outputs.target }} is not in grace state (state: $STATE)"
+            echo "No previous version available for rollback."
+            exit 1
+          fi
+
+          echo "✅ Grace slot ${{ steps.slot.outputs.target }} available for rollback"
+
+      - name: Health check grace slot
+        run: |
+          echo "🏥 Verifying ${{ steps.slot.outputs.target }} slot health..."
+
+          if ! curl -sf http://localhost:${{ steps.slot.outputs.port }}/health > /dev/null 2>&1; then
+            echo "❌ Grace slot health check failed on port ${{ steps.slot.outputs.port }}"
+            echo "Manual intervention required."
+            exit 1
+          fi
+
+          echo "✅ Grace slot is healthy"
+
+      - name: Update Caddy
+        run: |
+          CADDY_PATH="/etc/caddy/sites/${PROJECT_NAME}-${{ inputs.environment }}.caddy"
+
+          if [ "${{ inputs.environment }}" = "production" ]; then
+            DOMAIN="${PROJECT_NAME}.codeb.dev"
+          else
+            DOMAIN="${PROJECT_NAME}-${{ inputs.environment }}.codeb.dev"
+          fi
+
+          sudo tee "${CADDY_PATH}" << EOF
+          # CodeB v5.0 - Caddy Config (ROLLBACK)
+          # Generated: $(date -Iseconds)
+          # ROLLBACK from ${{ steps.slot.outputs.current }} to ${{ steps.slot.outputs.target }}
+          # Reason: ${{ inputs.reason }}
+
+          ${DOMAIN} {
+              reverse_proxy localhost:${{ steps.slot.outputs.port }} {
+                  health_uri /health
+                  health_interval 10s
+                  health_timeout 5s
+              }
+
+              encode gzip
+
+              header {
+                  X-CodeB-Project ${PROJECT_NAME}
+                  X-CodeB-Environment ${{ inputs.environment }}
+                  X-CodeB-Slot ${{ steps.slot.outputs.target }}
+                  X-CodeB-Version ${{ steps.slot.outputs.target_version }}
+                  X-CodeB-Rollback true
+                  -Server
+              }
+
+              log {
+                  output file /var/log/caddy/${PROJECT_NAME}-${{ inputs.environment }}.log {
+                      roll_size 10mb
+                      roll_keep 5
+                  }
+              }
+          }
+          EOF
+
+          echo "🔄 Reloading Caddy..."
+          sudo systemctl reload caddy
+
+          echo "✅ Traffic rolled back to ${{ steps.slot.outputs.target }}"
+
+      - name: Update registry
+        run: |
+          REGISTRY="${REGISTRY_PATH}/${PROJECT_NAME}-${{ inputs.environment }}.json"
+
+          jq --arg target "${{ steps.slot.outputs.target }}" \
+             --arg current "${{ steps.slot.outputs.current }}" \
+             --arg time "$(date -Iseconds)" \
+             '.activeSlot = $target |
+              .[$target].state = "active" |
+              .[$target].graceExpiresAt = null |
+              .[$current].state = "deployed" |
+              .lastUpdated = $time' \
+             "$REGISTRY" > /tmp/registry.json
+
+          mv /tmp/registry.json "$REGISTRY"
+          echo "✅ Registry updated"
+
+      - name: Log rollback event
+        run: |
+          LOG_DIR="/opt/codeb/logs/rollbacks"
+          LOG_FILE="${LOG_DIR}/${PROJECT_NAME}-${{ inputs.environment }}.log"
+
+          mkdir -p "${LOG_DIR}"
+
+          cat >> "${LOG_FILE}" << EOF
+          {
+            "timestamp": "$(date -Iseconds)",
+            "fromSlot": "${{ steps.slot.outputs.current }}",
+            "toSlot": "${{ steps.slot.outputs.target }}",
+            "fromVersion": "${{ steps.slot.outputs.current_version }}",
+            "toVersion": "${{ steps.slot.outputs.target_version }}",
+            "reason": "${{ inputs.reason }}",
+            "triggeredBy": "${{ github.actor }}"
+          }
+          EOF
+
+          echo "✅ Rollback logged"
+
+      - name: Summary
+        run: |
+          if [ "${{ inputs.environment }}" = "production" ]; then
+            URL="https://${PROJECT_NAME}.codeb.dev"
+          else
+            URL="https://${PROJECT_NAME}-${{ inputs.environment }}.codeb.dev"
+          fi
+
+          echo "## 🔙 Rollback Complete" >> $GITHUB_STEP_SUMMARY
+          echo "" >> $GITHUB_STEP_SUMMARY
+          echo "| Property | Value |" >> $GITHUB_STEP_SUMMARY
+          echo "|----------|-------|" >> $GITHUB_STEP_SUMMARY
+          echo "| **Project** | ${PROJECT_NAME} |" >> $GITHUB_STEP_SUMMARY
+          echo "| **Environment** | ${{ inputs.environment }} |" >> $GITHUB_STEP_SUMMARY
+          echo "| **Rolled back from** | ${{ steps.slot.outputs.current }} (\`${{ steps.slot.outputs.current_version }}\`) |" >> $GITHUB_STEP_SUMMARY
+          echo "| **Rolled back to** | ${{ steps.slot.outputs.target }} (\`${{ steps.slot.outputs.target_version }}\`) |" >> $GITHUB_STEP_SUMMARY
+          echo "| **Reason** | ${{ inputs.reason }} |" >> $GITHUB_STEP_SUMMARY
+          echo "| **URL** | [${URL}](${URL}) |" >> $GITHUB_STEP_SUMMARY
+          echo "" >> $GITHUB_STEP_SUMMARY
+          echo "⚠️ **Note:** The failed version (${{ steps.slot.outputs.current }}) is now in 'deployed' state and can be promoted again after fixes." >> $GITHUB_STEP_SUMMARY

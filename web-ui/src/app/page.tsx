@@ -104,28 +104,28 @@ export default function DashboardPage() {
 
   const statsCards = [
     {
-      name: "Total Projects",
+      name: "전체 프로젝트",
       value: String(stats.totalProjects || 12),
       icon: FolderKanban,
-      change: `${stats.blueGreenActive} with Blue-Green`,
+      change: `${stats.blueGreenActive}개 Blue-Green 활성`,
     },
     {
-      name: "Active Domains",
+      name: "활성 도메인",
       value: String(stats.activeDomains || 18),
       icon: Globe,
-      change: "All SSL enabled",
+      change: "모든 SSL 활성화",
     },
     {
-      name: "Running Slots",
+      name: "실행 중인 슬롯",
       value: String(stats.runningContainers || 24),
       icon: Server,
-      change: "98% uptime",
+      change: "98% 가동률",
     },
     {
-      name: "Pending Promotes",
+      name: "대기 중인 전환",
       value: String(stats.pendingPromotes || 0),
       icon: ArrowRightLeft,
-      change: stats.pendingPromotes > 0 ? "Ready to go live" : "All deployed",
+      change: stats.pendingPromotes > 0 ? "운영 전환 대기" : "모두 배포됨",
       highlight: stats.pendingPromotes > 0,
     },
   ];
@@ -139,12 +139,12 @@ export default function DashboardPage() {
   return (
     <div className="flex flex-col">
       <Header
-        title="Dashboard"
-        description="CodeB v6.0 Blue-Green Deployment Overview"
+        title="대시보드"
+        description="CodeB v6.0 Blue-Green 배포 현황"
         action={
           <Button variant="outline" size="sm" onClick={fetchData} disabled={isLoading}>
             <RefreshCw className={`h-4 w-4 mr-2 ${isLoading ? "animate-spin" : ""}`} />
-            Refresh
+            새로고침
           </Button>
         }
       />
@@ -156,7 +156,7 @@ export default function DashboardPage() {
             <AlertTriangle className="h-5 w-5 text-red-600" />
             <span className="text-red-700">{error}</span>
             <Button variant="outline" size="sm" onClick={fetchData} className="ml-auto">
-              Retry
+              재시도
             </Button>
           </div>
         )}
@@ -191,10 +191,10 @@ export default function DashboardPage() {
           {/* Recent Deployments with Slot Status */}
           <Card className="lg:col-span-2">
             <CardHeader className="flex flex-row items-center justify-between">
-              <CardTitle>Recent Deployments</CardTitle>
+              <CardTitle>최근 배포</CardTitle>
               <Link href="/projects">
                 <Button variant="ghost" size="sm">
-                  View all <ArrowUpRight className="ml-1 h-4 w-4" />
+                  전체 보기 <ArrowUpRight className="ml-1 h-4 w-4" />
                 </Button>
               </Link>
             </CardHeader>
@@ -202,11 +202,11 @@ export default function DashboardPage() {
               <table className="w-full">
                 <thead>
                   <tr className="border-b border-gray-200 text-left text-sm text-gray-500">
-                    <th className="px-6 py-3 font-medium">Project</th>
-                    <th className="px-6 py-3 font-medium">Environment</th>
-                    <th className="px-6 py-3 font-medium">Slots</th>
-                    <th className="px-6 py-3 font-medium">Version</th>
-                    <th className="px-6 py-3 font-medium">Health</th>
+                    <th className="px-6 py-3 font-medium">프로젝트</th>
+                    <th className="px-6 py-3 font-medium">환경</th>
+                    <th className="px-6 py-3 font-medium">슬롯</th>
+                    <th className="px-6 py-3 font-medium">버전</th>
+                    <th className="px-6 py-3 font-medium">상태</th>
                   </tr>
                 </thead>
                 <tbody>
@@ -256,7 +256,7 @@ export default function DashboardPage() {
                   ) : (
                     <tr>
                       <td colSpan={5} className="px-6 py-8 text-center text-gray-500">
-                        {isLoading ? "Loading..." : "No deployments yet"}
+                        {isLoading ? "로딩 중..." : "배포 내역이 없습니다"}
                       </td>
                     </tr>
                   )}
@@ -268,7 +268,7 @@ export default function DashboardPage() {
           {/* Server Health */}
           <Card>
             <CardHeader>
-              <CardTitle>Server Health</CardTitle>
+              <CardTitle>서버 상태</CardTitle>
             </CardHeader>
             <CardContent className="space-y-6">
               {/* Disk Usage */}
@@ -276,7 +276,7 @@ export default function DashboardPage() {
                 <div className="flex items-center justify-between text-sm">
                   <div className="flex items-center gap-2">
                     <HardDrive className="h-4 w-4 text-gray-500" />
-                    <span className="text-gray-600">Disk Usage</span>
+                    <span className="text-gray-600">디스크 사용량</span>
                   </div>
                   <span className="font-medium">{health.disk.used}%</span>
                 </div>
@@ -295,7 +295,7 @@ export default function DashboardPage() {
                 <div className="flex items-center justify-between text-sm">
                   <div className="flex items-center gap-2">
                     <Activity className="h-4 w-4 text-gray-500" />
-                    <span className="text-gray-600">Memory Usage</span>
+                    <span className="text-gray-600">메모리 사용량</span>
                   </div>
                   <span className="font-medium">{health.memory.used}%</span>
                 </div>
@@ -314,7 +314,7 @@ export default function DashboardPage() {
                 <div className="flex items-center justify-between text-sm">
                   <div className="flex items-center gap-2">
                     <Cpu className="h-4 w-4 text-gray-500" />
-                    <span className="text-gray-600">CPU Usage</span>
+                    <span className="text-gray-600">CPU 사용량</span>
                   </div>
                   <span className="font-medium">{health.cpu}%</span>
                 </div>
@@ -330,9 +330,9 @@ export default function DashboardPage() {
 
               <div className="pt-4 border-t border-gray-200">
                 <p className="text-xs text-gray-500">
-                  Last checked: {health.lastChecked ? formatRelativeTime(health.lastChecked) : "Just now"}
+                  마지막 확인: {health.lastChecked ? formatRelativeTime(health.lastChecked) : "방금 전"}
                 </p>
-                <p className="text-xs text-gray-500">Server: 158.247.203.55</p>
+                <p className="text-xs text-gray-500">서버: 158.247.203.55</p>
               </div>
             </CardContent>
           </Card>
@@ -341,32 +341,32 @@ export default function DashboardPage() {
         {/* Quick Actions */}
         <Card>
           <CardHeader>
-            <CardTitle>Quick Actions</CardTitle>
+            <CardTitle>빠른 작업</CardTitle>
           </CardHeader>
           <CardContent>
             <div className="flex flex-wrap gap-3">
               <Link href="/projects/new">
                 <Button>
                   <FolderKanban className="mr-2 h-4 w-4" />
-                  New Project
+                  새 프로젝트
                 </Button>
               </Link>
               <Link href="/deployments/new">
                 <Button variant="secondary">
                   <Rocket className="mr-2 h-4 w-4" />
-                  Deploy
+                  배포
                 </Button>
               </Link>
               <Link href="/domains/new">
                 <Button variant="outline">
                   <Globe className="mr-2 h-4 w-4" />
-                  Add Domain
+                  도메인 추가
                 </Button>
               </Link>
               <Link href="/migrate">
                 <Button variant="outline">
                   <ArrowRightLeft className="mr-2 h-4 w-4" />
-                  Migrate Legacy
+                  레거시 마이그레이션
                 </Button>
               </Link>
             </div>
@@ -379,7 +379,7 @@ export default function DashboardPage() {
             <CardHeader>
               <CardTitle className="flex items-center gap-2">
                 <ArrowRightLeft className="h-5 w-5 text-yellow-600" />
-                Ready to Promote
+                전환 대기 중
               </CardTitle>
             </CardHeader>
             <CardContent>
@@ -397,7 +397,7 @@ export default function DashboardPage() {
                           <p className="text-sm text-gray-500">{slot.environment}</p>
                         </div>
                         <Button size="sm" className="bg-green-600 hover:bg-green-700">
-                          Promote
+                          전환
                         </Button>
                       </div>
                       <div className="mt-2 flex items-center gap-2 text-sm text-gray-600">
@@ -407,7 +407,7 @@ export default function DashboardPage() {
                             : `Green (v${slot.green.version})`}
                         </span>
                         <span className="text-gray-400">→</span>
-                        <span>Production</span>
+                        <span>운영</span>
                       </div>
                     </div>
                   ))}

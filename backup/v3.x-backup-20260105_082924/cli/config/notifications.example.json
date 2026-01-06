@@ -1,0 +1,51 @@
+{
+  "enabled": true,
+  "channels": {
+    "slack": {
+      "enabled": true,
+      "webhookUrl": "https://hooks.slack.com/services/YOUR/WEBHOOK/URL",
+      "defaultChannel": "#deployments",
+      "mentionOnCritical": true,
+      "mentionUsers": ["@channel", "@devops"]
+    },
+    "discord": {
+      "enabled": true,
+      "webhookUrl": "https://discord.com/api/webhooks/YOUR/WEBHOOK/URL",
+      "username": "CodeB Notifier",
+      "avatarUrl": "https://codeb.dev/logo.png"
+    },
+    "email": {
+      "enabled": true,
+      "smtp": {
+        "host": "smtp.gmail.com",
+        "port": 587,
+        "secure": false,
+        "auth": {
+          "user": "your-email@gmail.com",
+          "pass": "your-app-password"
+        }
+      },
+      "from": "noreply@codeb.dev",
+      "to": [
+        "admin@example.com",
+        "devops@example.com"
+      ]
+    }
+  },
+  "rules": {
+    "deployment.started": ["slack", "discord"],
+    "deployment.success": ["slack", "discord"],
+    "deployment.failed": ["slack", "discord", "email"],
+    "server.up": ["slack"],
+    "server.down": ["slack", "discord", "email"],
+    "healthcheck.failed": ["slack", "discord"],
+    "resource.threshold": ["slack", "email"],
+    "backup.completed": ["slack"],
+    "backup.failed": ["slack", "email"]
+  },
+  "thresholds": {
+    "disk": 85,
+    "memory": 90,
+    "cpu": 80
+  }
+}

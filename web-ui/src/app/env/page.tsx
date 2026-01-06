@@ -139,8 +139,8 @@ export default function EnvPage() {
   return (
     <div className="flex flex-col h-full">
       <Header
-        title="Environment Variables"
-        description="Manage environment variables for your projects"
+        title="환경 변수"
+        description="프로젝트 환경 변수 관리"
       />
 
       <div className="flex-1 overflow-auto p-6 space-y-6">
@@ -148,7 +148,7 @@ export default function EnvPage() {
         <div className="flex items-center gap-4 flex-wrap">
           <div className="flex-1 max-w-xs">
             <Select
-              label="Project"
+              label="프로젝트"
               value={selectedProject}
               onChange={setSelectedProject}
               options={projects.map((p) => ({ value: p.name, label: p.name }))}
@@ -164,7 +164,7 @@ export default function EnvPage() {
                   : "bg-gray-100 text-gray-700 hover:bg-gray-200"
               }`}
             >
-              Production
+              프로덕션
             </button>
             <button
               onClick={() => setSelectedEnv("staging")}
@@ -174,13 +174,13 @@ export default function EnvPage() {
                   : "bg-gray-100 text-gray-700 hover:bg-gray-200"
               }`}
             >
-              Staging
+              스테이징
             </button>
           </div>
 
           <Button onClick={handleAddNew} className="ml-auto">
             <Plus className="mr-2 h-4 w-4" />
-            Add Variable
+            변수 추가
           </Button>
         </div>
 
@@ -192,11 +192,11 @@ export default function EnvPage() {
                 <AlertCircle className="h-5 w-5 text-yellow-600 flex-shrink-0 mt-0.5" />
                 <div>
                   <h4 className="font-medium text-yellow-900">
-                    Production Environment
+                    프로덕션 환경
                   </h4>
                   <p className="text-sm text-yellow-700 mt-1">
-                    Changes to production variables require a deployment to take
-                    effect. Make sure to test in staging first.
+                    프로덕션 변수 변경은 배포 후 적용됩니다. 먼저 스테이징에서
+                    테스트하세요.
                   </p>
                 </div>
               </div>
@@ -214,7 +214,7 @@ export default function EnvPage() {
                 </div>
                 <div>
                   <p className="text-2xl font-bold">{currentVars.length}</p>
-                  <p className="text-sm text-gray-500">Total Variables</p>
+                  <p className="text-sm text-gray-500">전체 변수</p>
                 </div>
               </div>
             </CardContent>
@@ -230,7 +230,7 @@ export default function EnvPage() {
                   <p className="text-2xl font-bold">
                     {currentVars.filter((v) => v.required).length}
                   </p>
-                  <p className="text-sm text-gray-500">Required</p>
+                  <p className="text-sm text-gray-500">필수</p>
                 </div>
               </div>
             </CardContent>
@@ -246,7 +246,7 @@ export default function EnvPage() {
                   <p className="text-2xl font-bold">
                     {currentVars.filter((v) => v.secure).length}
                   </p>
-                  <p className="text-sm text-gray-500">Secure</p>
+                  <p className="text-sm text-gray-500">보안</p>
                 </div>
               </div>
             </CardContent>
@@ -262,7 +262,7 @@ export default function EnvPage() {
                   <p className="text-2xl font-bold">
                     {currentVars.filter((v) => !v.required).length}
                   </p>
-                  <p className="text-sm text-gray-500">Optional</p>
+                  <p className="text-sm text-gray-500">선택</p>
                 </div>
               </div>
             </CardContent>
@@ -273,9 +273,9 @@ export default function EnvPage() {
         <Card>
           <CardHeader>
             <CardTitle>
-              Environment Variables
+              환경 변수
               <span className="ml-2 text-sm font-normal text-gray-500">
-                ({selectedProject} - {selectedEnv})
+                ({selectedProject} - {selectedEnv === "production" ? "프로덕션" : "스테이징"})
               </span>
             </CardTitle>
           </CardHeader>
@@ -284,14 +284,14 @@ export default function EnvPage() {
               <div className="flex flex-col items-center justify-center py-12">
                 <Key className="h-12 w-12 text-gray-400 mb-4" />
                 <h3 className="text-lg font-medium text-gray-900">
-                  No environment variables
+                  환경 변수 없음
                 </h3>
                 <p className="text-sm text-gray-500 mt-1">
-                  Add your first environment variable to get started
+                  첫 번째 환경 변수를 추가하세요
                 </p>
                 <Button onClick={handleAddNew} className="mt-4">
                   <Plus className="mr-2 h-4 w-4" />
-                  Add Variable
+                  변수 추가
                 </Button>
               </div>
             ) : (
@@ -299,12 +299,12 @@ export default function EnvPage() {
                 <table className="w-full">
                   <thead>
                     <tr className="border-b border-gray-200 text-left text-sm text-gray-500">
-                      <th className="px-6 py-3 font-medium">Key</th>
-                      <th className="px-6 py-3 font-medium">Value</th>
-                      <th className="px-6 py-3 font-medium">Type</th>
-                      <th className="px-6 py-3 font-medium">Required</th>
-                      <th className="px-6 py-3 font-medium">Last Updated</th>
-                      <th className="px-6 py-3 font-medium">Actions</th>
+                      <th className="px-6 py-3 font-medium">키</th>
+                      <th className="px-6 py-3 font-medium">값</th>
+                      <th className="px-6 py-3 font-medium">타입</th>
+                      <th className="px-6 py-3 font-medium">필수 여부</th>
+                      <th className="px-6 py-3 font-medium">마지막 수정</th>
+                      <th className="px-6 py-3 font-medium">작업</th>
                     </tr>
                   </thead>
                   <tbody>
@@ -356,16 +356,16 @@ export default function EnvPage() {
                         </td>
                         <td className="px-6 py-4">
                           {variable.secure ? (
-                            <Badge variant="warning">Secure</Badge>
+                            <Badge variant="warning">보안</Badge>
                           ) : (
-                            <Badge variant="default">Public</Badge>
+                            <Badge variant="default">공개</Badge>
                           )}
                         </td>
                         <td className="px-6 py-4">
                           {variable.required ? (
-                            <Badge variant="error">Required</Badge>
+                            <Badge variant="error">필수</Badge>
                           ) : (
-                            <Badge variant="default">Optional</Badge>
+                            <Badge variant="default">선택</Badge>
                           )}
                         </td>
                         <td className="px-6 py-4">
@@ -396,30 +396,30 @@ export default function EnvPage() {
         {isAddingNew && (
           <Card className="border-blue-200 bg-blue-50">
             <CardHeader>
-              <CardTitle>Add New Environment Variable</CardTitle>
+              <CardTitle>새 환경 변수 추가</CardTitle>
             </CardHeader>
             <CardContent className="space-y-4">
               <div className="grid gap-4 sm:grid-cols-2">
-                <Input label="Key" placeholder="DATABASE_URL" />
-                <Input label="Value" placeholder="postgres://..." />
+                <Input label="키" placeholder="DATABASE_URL" />
+                <Input label="값" placeholder="postgres://..." />
               </div>
 
               <div className="flex items-center gap-6">
                 <label className="flex items-center gap-2">
                   <input type="checkbox" className="rounded" />
-                  <span className="text-sm text-gray-700">Secure (Hide value)</span>
+                  <span className="text-sm text-gray-700">보안 (값 숨기기)</span>
                 </label>
 
                 <label className="flex items-center gap-2">
                   <input type="checkbox" className="rounded" />
-                  <span className="text-sm text-gray-700">Required</span>
+                  <span className="text-sm text-gray-700">필수</span>
                 </label>
               </div>
 
               <div className="flex gap-2 pt-4">
-                <Button>Save Variable</Button>
+                <Button>변수 저장</Button>
                 <Button variant="outline" onClick={handleCancelAdd}>
-                  Cancel
+                  취소
                 </Button>
               </div>
             </CardContent>

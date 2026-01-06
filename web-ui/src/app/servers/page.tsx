@@ -134,8 +134,8 @@ export default function ServersPage() {
   return (
     <div className="flex flex-col h-full">
       <Header
-        title="Servers"
-        description={`Monitoring ${servers.length} servers`}
+        title="서버"
+        description={`${servers.length}개 서버 모니터링`}
       />
 
       <div className="flex-1 overflow-auto p-6 space-y-6">
@@ -206,7 +206,7 @@ export default function ServersPage() {
                     <div className="flex items-center justify-between text-xs mb-1">
                       <div className="flex items-center gap-1">
                         <Activity className="h-3 w-3 text-gray-500" />
-                        <span className="text-gray-600">Memory</span>
+                        <span className="text-gray-600">메모리</span>
                       </div>
                       <span className="font-medium">{server.memory}%</span>
                     </div>
@@ -225,7 +225,7 @@ export default function ServersPage() {
                     <div className="flex items-center justify-between text-xs mb-1">
                       <div className="flex items-center gap-1">
                         <HardDrive className="h-3 w-3 text-gray-500" />
-                        <span className="text-gray-600">Disk</span>
+                        <span className="text-gray-600">디스크</span>
                       </div>
                       <span className="font-medium">{server.disk}%</span>
                     </div>
@@ -244,7 +244,7 @@ export default function ServersPage() {
                 <div className="flex items-center justify-between pt-3 border-t border-gray-100">
                   <div className="flex items-center gap-1 text-xs text-gray-500">
                     <Container className="h-3 w-3" />
-                    <span>{server.containerCount} containers</span>
+                    <span>{server.containerCount}개 컨테이너</span>
                   </div>
                   <span className="text-xs text-gray-500">
                     {formatUptime(server.uptime)}
@@ -264,12 +264,12 @@ export default function ServersPage() {
                 <AlertCircle className="h-5 w-5 text-yellow-600 flex-shrink-0 mt-0.5" />
                 <div>
                   <h4 className="font-medium text-yellow-900">
-                    High Disk Usage Warning
+                    높은 디스크 사용량 경고
                   </h4>
                   <p className="text-sm text-yellow-700 mt-1">
-                    {servers.filter((s) => s.disk > 80).length} server(s) have disk
-                    usage above 80%. Consider cleaning up old containers or
-                    expanding storage.
+                    {servers.filter((s) => s.disk > 80).length}개 서버의 디스크
+                    사용량이 80%를 초과했습니다. 오래된 컨테이너를 정리하거나
+                    스토리지를 확장하세요.
                   </p>
                 </div>
               </div>
@@ -281,10 +281,10 @@ export default function ServersPage() {
         <Card>
           <CardHeader className="flex flex-row items-center justify-between">
             <CardTitle>
-              All Containers
+              전체 컨테이너
               {selectedServer && (
                 <span className="ml-2 text-sm font-normal text-gray-500">
-                  (Filtered:{" "}
+                  (필터:{" "}
                   {servers.find((s) => s.id === selectedServer)?.name})
                 </span>
               )}
@@ -296,7 +296,7 @@ export default function ServersPage() {
                   size="sm"
                   onClick={() => setSelectedServer(null)}
                 >
-                  Show All
+                  전체 보기
                 </Button>
               )}
               <Button variant="ghost" size="sm">
@@ -309,14 +309,14 @@ export default function ServersPage() {
               <table className="w-full">
                 <thead>
                   <tr className="border-b border-gray-200 text-left text-sm text-gray-500">
-                    <th className="px-6 py-3 font-medium">Container</th>
-                    <th className="px-6 py-3 font-medium">Image</th>
-                    <th className="px-6 py-3 font-medium">Server</th>
-                    <th className="px-6 py-3 font-medium">Status</th>
+                    <th className="px-6 py-3 font-medium">컨테이너</th>
+                    <th className="px-6 py-3 font-medium">이미지</th>
+                    <th className="px-6 py-3 font-medium">서버</th>
+                    <th className="px-6 py-3 font-medium">상태</th>
                     <th className="px-6 py-3 font-medium">CPU</th>
-                    <th className="px-6 py-3 font-medium">Memory</th>
-                    <th className="px-6 py-3 font-medium">Uptime</th>
-                    <th className="px-6 py-3 font-medium">Actions</th>
+                    <th className="px-6 py-3 font-medium">메모리</th>
+                    <th className="px-6 py-3 font-medium">가동시간</th>
+                    <th className="px-6 py-3 font-medium">작업</th>
                   </tr>
                 </thead>
                 <tbody>
@@ -365,10 +365,10 @@ export default function ServersPage() {
                         <td className="px-6 py-4">
                           <div className="flex gap-1">
                             <Button variant="ghost" size="sm">
-                              Logs
+                              로그
                             </Button>
                             <Button variant="ghost" size="sm">
-                              Restart
+                              재시작
                             </Button>
                           </div>
                         </td>

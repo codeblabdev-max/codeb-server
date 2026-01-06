@@ -28,19 +28,19 @@ interface SlotStatusProps {
 }
 
 const slotStateConfig: Record<SlotState, { label: string; color: string; bgColor: string }> = {
-  empty: { label: "Empty", color: "text-gray-500", bgColor: "bg-gray-100" },
-  deploying: { label: "Deploying", color: "text-blue-600", bgColor: "bg-blue-100" },
-  deployed: { label: "Deployed", color: "text-yellow-600", bgColor: "bg-yellow-100" },
-  active: { label: "Active", color: "text-green-600", bgColor: "bg-green-100" },
-  grace: { label: "Grace", color: "text-orange-600", bgColor: "bg-orange-100" },
-  draining: { label: "Draining", color: "text-purple-600", bgColor: "bg-purple-100" },
+  empty: { label: "비어있음", color: "text-gray-500", bgColor: "bg-gray-100" },
+  deploying: { label: "배포 중", color: "text-blue-600", bgColor: "bg-blue-100" },
+  deployed: { label: "배포됨", color: "text-yellow-600", bgColor: "bg-yellow-100" },
+  active: { label: "활성", color: "text-green-600", bgColor: "bg-green-100" },
+  grace: { label: "대기", color: "text-orange-600", bgColor: "bg-orange-100" },
+  draining: { label: "종료 중", color: "text-purple-600", bgColor: "bg-purple-100" },
 };
 
 const healthConfig = {
-  healthy: { icon: CheckCircle, color: "text-green-500" },
-  unhealthy: { icon: XCircle, color: "text-red-500" },
-  degraded: { icon: AlertCircle, color: "text-yellow-500" },
-  unknown: { icon: Circle, color: "text-gray-400" },
+  healthy: { icon: CheckCircle, color: "text-green-500", label: "정상" },
+  unhealthy: { icon: XCircle, color: "text-red-500", label: "비정상" },
+  degraded: { icon: AlertCircle, color: "text-yellow-500", label: "저하됨" },
+  unknown: { icon: Circle, color: "text-gray-400", label: "알 수 없음" },
 };
 
 function SlotCard({
@@ -68,7 +68,7 @@ function SlotCard({
           : "border-gray-200 bg-white"
       }`}
     >
-      {/* Slot Label */}
+      {/* 슬롯 라벨 */}
       <div className="flex items-center justify-between mb-3">
         <div className="flex items-center gap-2">
           <div
@@ -79,7 +79,7 @@ function SlotCard({
           <span className="font-semibold capitalize">{slotName}</span>
           {isActive && (
             <Badge variant="success" className="text-xs">
-              Active
+              활성
             </Badge>
           )}
         </div>
@@ -88,40 +88,40 @@ function SlotCard({
         </span>
       </div>
 
-      {/* Slot Content */}
+      {/* 슬롯 내용 */}
       {slot.state !== "empty" ? (
         <div className="space-y-2">
-          {/* Version */}
+          {/* 버전 */}
           <div className="flex items-center gap-2 text-sm">
             <Server className="h-4 w-4 text-gray-400" />
-            <span className="text-gray-600">Version:</span>
+            <span className="text-gray-600">버전:</span>
             <span className="font-mono text-gray-900">{slot.version || "N/A"}</span>
           </div>
 
-          {/* Port */}
+          {/* 포트 */}
           <div className="flex items-center gap-2 text-sm">
             <Activity className="h-4 w-4 text-gray-400" />
-            <span className="text-gray-600">Port:</span>
+            <span className="text-gray-600">포트:</span>
             <span className="font-mono text-gray-900">{slot.port}</span>
           </div>
 
-          {/* Health */}
+          {/* 상태 */}
           <div className="flex items-center gap-2 text-sm">
             <HealthIcon className={`h-4 w-4 ${health.color}`} />
-            <span className="text-gray-600">Health:</span>
-            <span className={`font-medium ${health.color}`}>{slot.healthStatus}</span>
+            <span className="text-gray-600">상태:</span>
+            <span className={`font-medium ${health.color}`}>{health.label}</span>
           </div>
 
-          {/* Deployed At */}
+          {/* 배포 시간 */}
           {slot.deployedAt && (
             <div className="flex items-center gap-2 text-sm">
               <Clock className="h-4 w-4 text-gray-400" />
-              <span className="text-gray-600">Deployed:</span>
+              <span className="text-gray-600">배포:</span>
               <span className="text-gray-900">{formatRelativeTime(slot.deployedAt)}</span>
             </div>
           )}
 
-          {/* Preview URL (for deployed but not active) */}
+          {/* 프리뷰 URL (배포됨 상태) */}
           {slot.state === "deployed" && previewUrl && (
             <a
               href={previewUrl}
@@ -130,11 +130,11 @@ function SlotCard({
               className="flex items-center gap-1 text-sm text-blue-600 hover:underline mt-2"
             >
               <ExternalLink className="h-3 w-3" />
-              Preview URL
+              프리뷰 URL
             </a>
           )}
 
-          {/* Error */}
+          {/* 에러 */}
           {slot.error && (
             <div className="mt-2 p-2 bg-red-50 border border-red-200 rounded text-sm text-red-700">
               {slot.error}
@@ -143,7 +143,7 @@ function SlotCard({
         </div>
       ) : (
         <div className="flex items-center justify-center h-24 text-gray-400">
-          <span className="text-sm">No deployment</span>
+          <span className="text-sm">배포 없음</span>
         </div>
       )}
     </div>
@@ -162,15 +162,15 @@ export function SlotStatus({
   const hasGraceSlot = registry.blue.state === "grace" || registry.green.state === "grace";
   const deployedSlot = registry.blue.state === "deployed" ? "blue" : registry.green.state === "deployed" ? "green" : null;
 
-  // Generate preview URL for deployed slot
+  // 배포된 슬롯의 프리뷰 URL 생성
   const previewUrl = deployedSlot
-    ? `https://${registry.projectName}-${deployedSlot}.preview.codeb.dev`
+    ? `https://${registry.projectName}-${deployedSlot}.preview.codeb.kr`
     : undefined;
 
   if (compact) {
     return (
       <div className="flex items-center gap-3">
-        {/* Blue Slot Indicator */}
+        {/* Blue 슬롯 표시 */}
         <div className="flex items-center gap-1">
           <div
             className={`w-2.5 h-2.5 rounded-full ${
@@ -184,10 +184,10 @@ export function SlotStatus({
           <span className="text-xs text-gray-500">B</span>
         </div>
 
-        {/* Arrow */}
+        {/* 화살표 */}
         <ArrowRightLeft className="h-3 w-3 text-gray-400" />
 
-        {/* Green Slot Indicator */}
+        {/* Green 슬롯 표시 */}
         <div className="flex items-center gap-1">
           <div
             className={`w-2.5 h-2.5 rounded-full ${
@@ -201,7 +201,7 @@ export function SlotStatus({
           <span className="text-xs text-gray-500">G</span>
         </div>
 
-        {/* Active Version */}
+        {/* 활성 버전 */}
         {registry.activeSlot && (
           <span className="text-xs font-mono text-gray-600">
             v{registry[registry.activeSlot].version}
@@ -213,18 +213,18 @@ export function SlotStatus({
 
   return (
     <div className="space-y-4">
-      {/* Header */}
+      {/* 헤더 */}
       <div className="flex items-center justify-between">
         <div>
           <h3 className="font-semibold text-gray-900">
-            {registry.projectName} / {registry.environment}
+            {registry.projectName} / {registry.environment === "production" ? "프로덕션" : registry.environment === "staging" ? "스테이징" : registry.environment}
           </h3>
           <p className="text-sm text-gray-500">
-            Last updated: {formatRelativeTime(registry.lastUpdated)}
+            마지막 업데이트: {formatRelativeTime(registry.lastUpdated)}
           </p>
         </div>
 
-        {/* Actions */}
+        {/* 액션 */}
         <div className="flex gap-2">
           {hasDeployedSlot && onPromote && (
             <Button
@@ -238,7 +238,7 @@ export function SlotStatus({
               ) : (
                 <ArrowRightLeft className="h-4 w-4 mr-1" />
               )}
-              Promote
+              전환
             </Button>
           )}
 
@@ -249,19 +249,19 @@ export function SlotStatus({
               ) : (
                 <RotateCcw className="h-4 w-4 mr-1" />
               )}
-              Rollback
+              롤백
             </Button>
           )}
 
           {onDeploy && (
             <Button onClick={onDeploy} disabled={isLoading} size="sm" variant="secondary">
-              Deploy
+              배포
             </Button>
           )}
         </div>
       </div>
 
-      {/* Slot Cards */}
+      {/* 슬롯 카드 */}
       <div className="grid grid-cols-2 gap-4">
         <SlotCard
           slot={registry.blue}
@@ -277,23 +277,23 @@ export function SlotStatus({
         />
       </div>
 
-      {/* Flow Indicator */}
+      {/* 트래픽 흐름 표시 */}
       <div className="flex items-center justify-center gap-2 text-sm text-gray-500">
-        <span>Traffic Flow:</span>
+        <span>트래픽 흐름:</span>
         {registry.activeSlot ? (
           <span className="flex items-center gap-1">
             <span className="font-medium capitalize">{registry.activeSlot}</span>
-            <span className="text-gray-400">(Port {registry[registry.activeSlot].port})</span>
+            <span className="text-gray-400">(포트 {registry[registry.activeSlot].port})</span>
           </span>
         ) : (
-          <span className="text-gray-400">No active slot</span>
+          <span className="text-gray-400">활성 슬롯 없음</span>
         )}
       </div>
     </div>
   );
 }
 
-// Mini slot indicator for tables/lists
+// 테이블/리스트용 미니 슬롯 표시
 export function SlotIndicator({
   activeSlot,
   blueState,
