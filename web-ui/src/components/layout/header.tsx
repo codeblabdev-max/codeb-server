@@ -1,20 +1,25 @@
 "use client";
 
+import { ReactNode } from "react";
 import { Bell, Search, User } from "lucide-react";
 
 interface HeaderProps {
   title: string;
   description?: string;
+  action?: ReactNode;
 }
 
-export function Header({ title, description }: HeaderProps) {
+export function Header({ title, description, action }: HeaderProps) {
   return (
     <header className="flex h-16 items-center justify-between border-b border-gray-200 bg-white px-6">
-      <div>
-        <h1 className="text-xl font-semibold text-gray-900">{title}</h1>
-        {description && (
-          <p className="text-sm text-gray-500">{description}</p>
-        )}
+      <div className="flex items-center gap-4">
+        <div>
+          <h1 className="text-xl font-semibold text-gray-900">{title}</h1>
+          {description && (
+            <p className="text-sm text-gray-500">{description}</p>
+          )}
+        </div>
+        {action && <div className="ml-4">{action}</div>}
       </div>
 
       <div className="flex items-center gap-4">

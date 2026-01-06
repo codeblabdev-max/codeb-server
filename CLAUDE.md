@@ -1,434 +1,868 @@
-# CLAUDE.md v3.2.9 - CodeB Project Rules
+# CLAUDE.md v6.0 - CodeB Unified Deployment System
+
+> **Team-based API Key Authentication + Blue-Green Deployment + Edge Functions + Analytics + Beautiful CLI DX**
+
+---
+
+## Vercel 수준 달성 (v6.0)
+
+```
+┌─────────────────────────────────────────────────────────────────┐
+│                  CodeB v6.0 vs Vercel 비교                       │
+├─────────────────────────────────────────────────────────────────┤
+│                                                                 │
+│  Feature             │ Vercel │ CodeB v6.0 │ Rating             │
+│  ────────────────────┼────────┼────────────┼──────────────────  │
+│  Blue-Green Deploy   │   ✅   │     ✅     │ ⭐⭐⭐⭐⭐         │
+│  Zero-Downtime       │   ✅   │     ✅     │ ⭐⭐⭐⭐⭐         │
+│  Instant Rollback    │   ✅   │     ✅     │ ⭐⭐⭐⭐⭐         │
+│  Team RBAC           │   ✅   │     ✅     │ ⭐⭐⭐⭐⭐         │
+│  Preview URL         │   ✅   │     ✅     │ ⭐⭐⭐⭐⭐         │
+│  Edge Functions      │   ✅   │     ✅     │ ⭐⭐⭐⭐⭐         │
+│  Analytics/Vitals    │   ✅   │     ✅     │ ⭐⭐⭐⭐⭐         │
+│  CLI DX              │   ✅   │     ✅     │ ⭐⭐⭐⭐⭐         │
+│                                                                 │
+└─────────────────────────────────────────────────────────────────┘
+```
+
+---
+
+## v6.0 주요 변경사항
+
+```
+┌─────────────────────────────────────────────────────────────────┐
+│                    CodeB v6.0 New Features                       │
+├─────────────────────────────────────────────────────────────────┤
+│                                                                 │
+│  1. Team-based API Key Authentication (Vercel 스타일)           │
+│     └─→ API Key 형식: codeb_{teamId}_{role}_{token}             │
+│     └─→ 역할: owner > admin > member > viewer                  │
+│                                                                 │
+│  2. Edge Functions (Deno Runtime)                               │
+│     └─→ 4가지 타입: middleware, api, rewrite, redirect         │
+│     └─→ Regional deployment with CDN routing                   │
+│     └─→ 6개 도구: deploy, list, logs, delete, invoke, metrics  │
+│                                                                 │
+│  3. Real-time Analytics & Web Vitals                            │
+│     └─→ Web Vitals: LCP, FID, CLS, TTFB, FCP, INP              │
+│     └─→ Speed Insights: Vercel 스타일 점수 (0-100)             │
+│     └─→ 실시간 방문자 및 이벤트 추적                            │
+│     └─→ SDK: React, Next.js App Router, Pages Router 지원      │
+│                                                                 │
+│  4. Beautiful CLI DX (Ink React TUI)                            │
+│     └─→ 실시간 배포 진행률 with spinners                        │
+│     └─→ Interactive 프로젝트 선택                               │
+│     └─→ 로그 스트리밍 with 필터링                               │
+│     └─→ CI-friendly 모드 (--ci flag)                           │
+│                                                                 │
+│  5. TypeScript MCP Server                                       │
+│     └─→ Express + TypeScript + Zod 기반 HTTP API               │
+│     └─→ 30개 API Tool 지원                                     │
+│     └─→ Rate limiting + Audit logging                          │
+│                                                                 │
+└─────────────────────────────────────────────────────────────────┘
+```
+
+---
+
+## 핵심 원칙
+
+### Blue-Green 배포 (Vercel 스타일)
+
+```
+┌─────────────────────────────────────────────────────────────────┐
+│                    CodeB v6.0 배포 흐름                          │
+├─────────────────────────────────────────────────────────────────┤
+│                                                                 │
+│  1. we deploy myapp                                             │
+│     └─→ 비활성 Slot에 배포 → Preview URL 반환                    │
+│         https://myapp-green.preview.codeb.dev                   │
+│                                                                 │
+│  2. we promote myapp                                            │
+│     └─→ Caddy 설정만 변경 → 무중단 트래픽 전환                    │
+│         이전 Slot → grace 상태 (48시간 유지)                     │
+│                                                                 │
+│  3. we rollback myapp                                           │
+│     └─→ 즉시 이전 버전으로 롤백 (grace Slot 활성화)              │
+│                                                                 │
+└─────────────────────────────────────────────────────────────────┘
+```
+
+### Slot 상태 다이어그램
+
+```
+┌──────────┐    deploy    ┌──────────┐   promote   ┌──────────┐
+│  empty   │ ──────────→  │ deployed │ ─────────→  │  active  │
+└──────────┘              └──────────┘             └──────────┘
+                                                        │
+                                                        │ promote (다른 slot)
+                                                        ▼
+                                                  ┌──────────┐
+                                                  │  grace   │
+                                                  │ (48시간) │
+                                                  └──────────┘
+                                                        │
+                                                        │ 48시간 후 또는 새 배포
+                                                        ▼
+                                                  ┌──────────┐
+                                                  │  empty   │
+                                                  └──────────┘
+```
+
+---
 
 ## Critical Rules
 
-### 1. NEVER Run Dangerous Commands Directly
+### 1. 절대 금지 명령어
 
 ```bash
-# 절대 금지 (Hooks가 차단함)
+# Hooks가 자동 차단함
 podman rm -f <container>       # 직접 컨테이너 삭제
 podman volume rm <volume>      # 직접 볼륨 삭제
 docker-compose down -v         # 볼륨 포함 삭제
 rm -rf /opt/codeb/projects/*   # 프로젝트 폴더 삭제
+ssh root@*                     # 직접 SSH 접속 (Admin 제외)
 ```
 
-### 2. ALWAYS Use CLI Commands
+### 2. 올바른 CLI 명령어
 
 ```bash
-# 올바른 방법
-we workflow init <project>     # 프로젝트 초기화
-we deploy <project>            # 배포
-we workflow stop <project>     # 서비스 중지
-we workflow scan <project>     # 상태 확인
-we ssot sync                   # 서버 데이터 동기화
+# Blue-Green 배포
+we deploy <project>            # 비활성 Slot에 배포 → Preview URL
+we promote <project>           # 트래픽 전환 (무중단)
+we rollback <project>          # 즉시 롤백
+
+# Slot 관리
+we slot status <project>       # Slot 상태 확인
+we slot cleanup <project>      # Grace 만료 Slot 정리
+
+# 환경 관리
+we env get <project>           # ENV 조회
+we env set <project> KEY=val   # ENV 설정
+we env restore <project>       # master.env에서 복구
+
+# 상태 확인
+we health                      # 전체 시스템 헬스체크
+we registry status             # SSOT 레지스트리 상태
 ```
 
-### 3. Server Access Control
-
-**⚠️ 직접 SSH 접속 금지 (Admin 제외)**
-
-팀원/AI 코딩 도구는 SSH 직접 접속 없이 MCP API로만 서버 작업합니다.
+### 3. SSH 접근 금지 (Admin 제외)
 
 ```bash
 # ❌ 절대 금지 (팀원/AI)
 ssh root@158.247.203.55
 ssh root@app.codeb.kr
 
-# ✅ 올바른 방법 - we CLI 명령어 사용
+# ✅ 올바른 방법 - MCP API 사용
 we deploy myapp           # MCP API로 배포
 we env restore myapp      # MCP API로 ENV 복구
 we health                 # MCP API로 상태 확인
 ```
 
-**서버 정보 (MCP로만 접근):**
-- 158.247.203.55 (App - app.codeb.kr)
-- 141.164.42.213 (Streaming - ws.codeb.kr)
-- 64.176.226.119 (Storage - db.codeb.kr)
-- 141.164.37.63 (Backup - backup.codeb.kr)
+---
 
-> Admin만 SSH 직접 접속 가능. 팀원은 `we` CLI + MCP API 사용.
+## 4-Server Architecture
 
-### 4. Environment File Protection
-
-- NEVER overwrite existing .env files without backup
-- Protected variables: DATABASE_URL, REDIS_URL, POSTGRES_*
-
-### 5. ENV Backup System (Critical)
-
-**모든 ENV 파일은 백업 서버에 자동 보관됩니다.**
+### 서버 구성
 
 ```
-백업 서버: backup.codeb.kr (141.164.37.63)
-백업 경로: /opt/codeb/env-backup/{project}/{environment}/
+┌─────────────────────────────────────────────────────────────────┐
+│                     CodeB 4-Server Architecture                  │
+├─────────────────────────────────────────────────────────────────┤
+│                                                                 │
+│  ┌─────────────┐     ┌─────────────┐     ┌─────────────┐       │
+│  │ App Server  │     │  Streaming  │     │   Storage   │       │
+│  │ 158.247.    │     │ 141.164.    │     │  64.176.    │       │
+│  │   203.55    │     │   42.213    │     │   226.119   │       │
+│  │             │     │             │     │             │       │
+│  │ • Next.js   │     │ • Centri-   │     │ • Postgres  │       │
+│  │ • MCP API   │     │   fugo      │     │ • Redis     │       │
+│  │ • Caddy     │     │ • WebSocket │     │             │       │
+│  │ • Podman    │     │             │     │             │       │
+│  │ • Edge RT   │     │             │     │             │       │
+│  └─────────────┘     └─────────────┘     └─────────────┘       │
+│         │                   │                   │               │
+│         └───────────────────┼───────────────────┘               │
+│                             │                                   │
+│                     ┌─────────────┐                             │
+│                     │   Backup    │                             │
+│                     │ 141.164.    │                             │
+│                     │   37.63     │                             │
+│                     │             │                             │
+│                     │ • ENV 백업  │                             │
+│                     │ • Prometheus│                             │
+│                     │ • Grafana   │                             │
+│                     └─────────────┘                             │
+│                                                                 │
+└─────────────────────────────────────────────────────────────────┘
 ```
 
-**백업 파일 구조:**
-- `master.env` - 최초 생성 시 저장 (절대 변경 안됨, 복구 기준)
-- `current.env` - 최신 버전
-- `{timestamp}.env` - 변경 이력
+### 서버 역할 매핑
 
-**규칙:**
-1. ❌ ENV 파일 직접 수정/삭제 금지
-2. ✅ 항상 `we env` 명령어 사용
-3. ✅ 문제 발생 시 `master.env`에서 복구
+| 역할 | IP | 도메인 | 서비스 |
+|------|-----|--------|--------|
+| **App** | 158.247.203.55 | app.codeb.kr, api.codeb.kr | Next.js, MCP API v6.0, Caddy, Podman, Edge Runtime |
+| **Streaming** | 141.164.42.213 | ws.codeb.kr | Centrifugo (WebSocket) |
+| **Storage** | 64.176.226.119 | db.codeb.kr | PostgreSQL, Redis |
+| **Backup** | 141.164.37.63 | backup.codeb.kr | ENV 백업, Prometheus, Grafana |
 
-**ENV 명령어:**
+### 포트 할당
+
+| 환경 | App Port | Blue | Green |
+|------|----------|------|-------|
+| **Staging** | 3000-3499 | basePort | basePort+1 |
+| **Production** | 4000-4499 | basePort | basePort+1 |
+| **Preview** | 5000-5999 | basePort | basePort+1 |
+| **Edge Functions** | 9200 | - | - |
+
+---
+
+## MCP API v6.0
+
+### 엔드포인트
+
+```
+Primary:  https://api.codeb.kr/api
+Health:   https://api.codeb.kr/health
+```
+
+### 인증 (v6.0 Team-based)
+
 ```bash
-we env scan <project>              # 서버/로컬 ENV 비교
-we env backups <project>           # 백업 목록 조회
-we env restore <project> --version master   # master에서 복구 (권장)
-we env restore <project> --version current  # 최신 백업에서 복구
-we env pull <project>              # 서버에서 로컬로 가져오기
+# API Key 형식 (v6.0)
+X-API-Key: codeb_{teamId}_{role}_{randomToken}
+
+# 예시
+X-API-Key: codeb_team123_admin_a1b2c3d4e5f6
+
+# 역할 계층 (높은순)
+owner  - 팀 삭제, 모든 작업
+admin  - 멤버 관리, 토큰 관리, 슬롯 정리
+member - 배포, promote, rollback, ENV 설정
+viewer - 조회만 (상태, 로그, 메트릭)
+```
+
+### Tool 목록 (30개)
+
+#### Team Management (11개)
+| Tool | 설명 | 최소 권한 |
+|------|------|----------|
+| `team_create` | 팀 생성 | owner |
+| `team_list` | 팀 목록 조회 | viewer |
+| `team_get` | 팀 상세 조회 | viewer |
+| `team_delete` | 팀 삭제 | owner |
+| `team_settings` | 팀 설정 변경 | admin |
+| `member_invite` | 멤버 초대 | admin |
+| `member_remove` | 멤버 제거 | admin |
+| `member_list` | 멤버 목록 | viewer |
+| `token_create` | API 토큰 생성 | admin |
+| `token_revoke` | API 토큰 폐기 | member |
+| `token_list` | 토큰 목록 조회 | member |
+
+#### Blue-Green Deployment (6개)
+| Tool | 설명 | 최소 권한 |
+|------|------|----------|
+| `deploy` / `deploy_project` | Blue-Green Slot 배포 | member |
+| `promote` / `slot_promote` | 트래픽 전환 | member |
+| `rollback` | 이전 버전으로 롤백 | member |
+| `slot_status` | Slot 상태 조회 | viewer |
+| `slot_cleanup` | Grace 만료 Slot 정리 | admin |
+| `slot_list` | 전체 Slot 목록 | viewer |
+
+#### Edge Functions (6개)
+| Tool | 설명 | 최소 권한 |
+|------|------|----------|
+| `edge_deploy` | Edge 함수 배포 | member |
+| `edge_list` | Edge 함수 목록 | viewer |
+| `edge_logs` | Edge 함수 로그 | viewer |
+| `edge_delete` | Edge 함수 삭제 | member |
+| `edge_invoke` | Edge 함수 테스트 호출 | member |
+| `edge_metrics` | Edge 함수 메트릭 | viewer |
+
+#### Analytics (5개)
+| Tool | 설명 | 최소 권한 |
+|------|------|----------|
+| `analytics_overview` | 트래픽 개요 | viewer |
+| `analytics_webvitals` | Web Vitals (LCP, FID, CLS) | viewer |
+| `analytics_deployments` | 배포별 성능 | viewer |
+| `analytics_realtime` | 실시간 메트릭 | viewer |
+| `analytics_speed_insights` | Speed Insights 점수 | viewer |
+
+### API 호출 예시
+
+```bash
+# 배포
+curl -X POST https://api.codeb.kr/api/tool \
+  -H "X-API-Key: codeb_myteam_member_xxxxx" \
+  -H "Content-Type: application/json" \
+  -d '{
+    "tool": "deploy",
+    "params": {
+      "projectName": "myapp",
+      "environment": "staging",
+      "version": "v1.2.3"
+    }
+  }'
+
+# 응답
+{
+  "success": true,
+  "result": {
+    "slot": "green",
+    "port": 3001,
+    "previewUrl": "https://myapp-green.preview.codeb.dev",
+    "duration": 45000
+  }
+}
+
+# Promote
+curl -X POST https://api.codeb.kr/api/tool \
+  -H "X-API-Key: codeb_myteam_member_xxxxx" \
+  -d '{"tool": "promote", "params": {"projectName": "myapp", "environment": "staging"}}'
+
+# Edge Function 배포
+curl -X POST https://api.codeb.kr/api/tool \
+  -H "X-API-Key: codeb_myteam_member_xxxxx" \
+  -d '{
+    "tool": "edge_deploy",
+    "params": {
+      "projectName": "myapp",
+      "environment": "production",
+      "functions": [{
+        "name": "auth-middleware",
+        "code": "export default function(req) { return req; }",
+        "routes": ["/api/*"],
+        "type": "middleware"
+      }]
+    }
+  }'
+
+# Analytics 조회
+curl -X POST https://api.codeb.kr/api/tool \
+  -H "X-API-Key: codeb_myteam_viewer_xxxxx" \
+  -d '{"tool": "analytics_webvitals", "params": {"projectName": "myapp", "period": "week"}}'
 ```
 
 ---
 
-## Server Infrastructure
+## Edge Functions
 
-### 서버 역할 및 IP 매핑
+### 개요
 
-| 역할 | IP | 도메인 | 주요 서비스 |
-|------|-----|--------|------------|
-| **App** | 158.247.203.55 | app.codeb.kr | Next.js 앱, Dashboard, PowerDNS |
-| **Streaming** | 141.164.42.213 | ws.codeb.kr, streaming.codeb.kr | **Centrifugo** (WebSocket) |
-| **Storage** | 64.176.226.119 | db.codeb.kr, storage.codeb.kr | PostgreSQL, Redis (공유) |
-| **Backup** | 141.164.37.63 | backup.codeb.kr | 백업, 모니터링 |
+v6.0에서 추가된 Edge Functions는 Vercel Edge Functions와 유사한 서버리스 함수 실행 환경입니다.
 
-### 네임서버 (PowerDNS)
-- n1.codeb.kr → 158.247.203.55 (Primary NS)
-- n2.codeb.kr → 158.247.203.55 (Secondary NS)
+### 지원 타입
 
-### 포트 할당 규칙
+| Type | 설명 | 사용 사례 |
+|------|------|----------|
+| `middleware` | 요청 전처리 | 인증, 로깅, 헤더 수정 |
+| `api` | API 엔드포인트 | REST API, Webhook |
+| `rewrite` | URL 재작성 | A/B 테스트, 프록시 |
+| `redirect` | 리디렉션 | 301/302 리디렉트 |
 
-| 서비스 | 포트 | 서버 |
-|--------|------|------|
-| PostgreSQL | 5432 | Storage (db.codeb.kr) |
-| Redis | 6379 | Storage (db.codeb.kr) |
-| Centrifugo | 8000 | Streaming (ws.codeb.kr) |
-| MCP HTTP API | 9101 | App (app.codeb.kr) |
-| 스테이징 앱 | 3000-3499 | App (app.codeb.kr) |
-| 프로덕션 앱 | 4000-4499 | App (app.codeb.kr) |
-| Preview 앱 | 5000-5999 | App (app.codeb.kr) |
+### 리소스 제한
 
-### 상세 포트 범위 (port-utils.js)
+| 리소스 | 기본값 | 최대값 |
+|--------|--------|--------|
+| Timeout | 10s | 30s |
+| Memory | 64MB | 128MB |
+| Code Size | - | 1MB |
 
-| 환경 | App Port | DB Port | Redis Port |
-|------|----------|---------|------------|
-| staging | 3000-3499 | 5432-5449 | 6379-6399 |
-| production | 4000-4499 | 5450-5469 | 6400-6419 |
-| preview | 5000-5999 | 5470-5499 | 6420-6439 |
+### Edge Function 예시
+
+```typescript
+// auth-middleware.ts
+export default function authMiddleware(request: Request) {
+  const token = request.headers.get('Authorization');
+
+  if (!token) {
+    return new Response('Unauthorized', { status: 401 });
+  }
+
+  // 요청 계속 진행
+  return request;
+}
+```
 
 ---
 
-## Real-time Communication (WebSocket)
+## Analytics & Web Vitals
 
-### ❌ NEVER Use Socket.IO
+### 수집 메트릭
 
-```javascript
-// 절대 금지 - Socket.IO 사용 금지
-import { Server } from 'socket.io';
-import { io } from 'socket.io-client';
+| 메트릭 | 설명 | 목표값 |
+|--------|------|--------|
+| LCP | Largest Contentful Paint | < 2.5s |
+| FID | First Input Delay | < 100ms |
+| CLS | Cumulative Layout Shift | < 0.1 |
+| TTFB | Time to First Byte | < 800ms |
+| FCP | First Contentful Paint | < 1.8s |
+| INP | Interaction to Next Paint | < 200ms |
+
+### Speed Insights 점수
+
+| 점수 | 등급 | 설명 |
+|------|------|------|
+| 90-100 | Good | 최적화됨 |
+| 50-89 | Needs Improvement | 개선 필요 |
+| 0-49 | Poor | 심각한 문제 |
+
+### Analytics SDK 통합
+
+#### Next.js App Router
+
+```tsx
+// app/layout.tsx
+import { CodeBAnalytics } from '@codeb/analytics/react';
+
+export default function RootLayout({ children }) {
+  return (
+    <html>
+      <body>
+        {children}
+        <CodeBAnalytics
+          projectId="myapp"
+          webVitals={true}
+          speedInsights={true}
+        />
+      </body>
+    </html>
+  );
+}
 ```
 
-### ✅ ALWAYS Use Centrifugo
+#### Next.js Pages Router
 
-Centrifugo는 Go로 작성된 고성능 실시간 메시징 서버입니다.
+```tsx
+// pages/_app.tsx
+import { CodeBAnalytics } from '@codeb/analytics/react';
 
-**Centrifugo 서버 정보:**
-- Host: `ws.codeb.kr` (141.164.42.213)
-- Port: `8000`
-- WebSocket: `wss://ws.codeb.kr/connection/websocket`
-- HTTP API: `http://ws.codeb.kr:8000/api`
+export default function App({ Component, pageProps }) {
+  return (
+    <>
+      <Component {...pageProps} />
+      <CodeBAnalytics projectId="myapp" />
+    </>
+  );
+}
+```
 
-**클라이언트 연결 (JavaScript):**
+#### React
+
+```tsx
+import { CodeBAnalytics, useWebVitals } from '@codeb/analytics/react';
+
+function App() {
+  useWebVitals(); // Hook 방식
+
+  return (
+    <>
+      <MyApp />
+      <CodeBAnalytics projectId="myapp" />
+    </>
+  );
+}
+```
+
+---
+
+## ENV 관리 시스템
+
+### 백업 구조
+
+```
+/opt/codeb/env-backup/{project}/{environment}/
+├── master.env           # 최초 생성 시 저장 (불변, 복구 기준)
+├── current.env          # 현재 버전
+├── 2024-01-15T10:30:00.env  # 변경 이력
+├── 2024-01-14T15:20:00.env
+└── ...
+```
+
+### 규칙
+
+```bash
+# 금지
+직접 .env 파일 수정/삭제
+
+# 올바른 방법
+we env get myapp                          # 조회
+we env set myapp DATABASE_URL="..."       # 설정
+we env restore myapp --version master     # master에서 복구
+we env restore myapp --version current    # 최신 백업에서 복구
+we env history myapp                      # 변경 이력
+```
+
+---
+
+## Real-time Communication
+
+### Centrifugo (WebSocket)
+
+```bash
+# Socket.IO 사용 금지
+import { Server } from 'socket.io';  # 금지
+
+# Centrifugo 사용
+Host: ws.codeb.kr (141.164.42.213)
+Port: 8000
+WebSocket: wss://ws.codeb.kr/connection/websocket
+HTTP API: http://ws.codeb.kr:8000/api
+```
+
+### 클라이언트 연결
+
 ```javascript
 import { Centrifuge } from 'centrifuge';
 
 const centrifuge = new Centrifuge('wss://ws.codeb.kr/connection/websocket', {
-  token: await getConnectionToken()  // JWT 토큰
+  token: await getConnectionToken()
 });
 
-// 채널 구독
 const sub = centrifuge.newSubscription('chat:room123');
-sub.on('publication', (ctx) => {
-  console.log('메시지:', ctx.data);
-});
+sub.on('publication', (ctx) => console.log(ctx.data));
 sub.subscribe();
-
 centrifuge.connect();
 ```
 
-**서버에서 메시지 발행 (Node.js):**
-```javascript
-// 백엔드에서 Centrifugo API로 메시지 발행
-const response = await fetch('http://ws.codeb.kr:8000/api/publish', {
-  method: 'POST',
-  headers: {
-    'Authorization': `apikey ${CENTRIFUGO_API_KEY}`,
-    'Content-Type': 'application/json'
+---
+
+## Registry (SSOT)
+
+### 파일 구조 (v6.0)
+
+```
+/opt/codeb/registry/
+├── ssot.json              # 단일 진실 소스
+│   ├── version: "6.0"
+│   ├── projects: {}       # 프로젝트별 설정
+│   ├── ports: { used, reserved }
+│   └── updatedAt
+│
+├── slots/
+│   └── {project}-{env}.json   # Slot 상태
+│       ├── projectName
+│       ├── teamId            # NEW: 팀 ID
+│       ├── activeSlot: "blue" | "green"
+│       ├── blue: { state, port, version, ... }
+│       └── green: { state, port, version, ... }
+│
+├── teams/
+│   └── teams.json            # NEW: 팀 레지스트리
+│       ├── teams: { teamId: { name, projects, ... } }
+│       └── updatedAt
+│
+├── api-keys/
+│   └── keys.json             # NEW: API 키 레지스트리
+│       ├── keys: { keyId: { teamId, role, keyHash, ... } }
+│       └── updatedAt
+│
+├── edge-functions/
+│   └── {project}/manifest.json  # NEW: Edge 함수 매니페스트
+│
+└── domains/
+    └── {project}.json     # 도메인 매핑
+```
+
+### Slot 레지스트리 예시 (v6.0)
+
+```json
+{
+  "projectName": "myapp",
+  "teamId": "team123",
+  "environment": "staging",
+  "activeSlot": "blue",
+  "blue": {
+    "name": "blue",
+    "state": "active",
+    "port": 3000,
+    "version": "v1.2.3",
+    "deployedAt": "2024-01-15T10:30:00Z",
+    "deployedBy": "key_abc123",
+    "promotedAt": "2024-01-15T10:35:00Z",
+    "promotedBy": "key_abc123",
+    "healthStatus": "healthy"
   },
-  body: JSON.stringify({
-    channel: 'chat:room123',
-    data: { message: 'Hello!', user: 'john' }
-  })
-});
-```
-
-**ENV 설정:**
-```bash
-# Centrifugo 설정 (Socket.IO 대신 사용)
-CENTRIFUGO_URL=wss://ws.codeb.kr/connection/websocket
-CENTRIFUGO_API_URL=http://ws.codeb.kr:8000/api
-CENTRIFUGO_API_KEY=pRMupNs6HlGp7G6xkPsAFrI8hN4g6U0G
-CENTRIFUGO_SECRET=of0KuRFjjzhq5LlBURCuKqzTUAA08hwL
+  "green": {
+    "name": "green",
+    "state": "deployed",
+    "port": 3001,
+    "version": "v1.2.4",
+    "deployedAt": "2024-01-15T11:00:00Z",
+    "deployedBy": "key_abc123",
+    "healthStatus": "healthy"
+  },
+  "lastUpdated": "2024-01-15T11:00:00Z"
+}
 ```
 
 ---
 
-## ENV Auto-Generation
+## GitHub Actions Integration
 
-`we workflow init` 실행 시 자동 생성되는 환경 변수:
-
-```bash
-# 자동 생성 항목
-NODE_ENV=production
-PORT=3000
-
-# PostgreSQL (Storage 서버 연결)
-DATABASE_URL=postgresql://postgres:password@db.codeb.kr:5432/myapp?schema=public
-
-# Redis (Storage 서버 연결)
-REDIS_URL=redis://db.codeb.kr:6379/0
-REDIS_PREFIX=myapp:
-
-# Centrifugo (Streaming 서버 연결)
-CENTRIFUGO_URL=wss://ws.codeb.kr/connection/websocket
-CENTRIFUGO_API_URL=http://ws.codeb.kr:8000/api
-CENTRIFUGO_API_KEY=pRMupNs6HlGp7G6xkPsAFrI8hN4g6U0G
-CENTRIFUGO_SECRET=of0KuRFjjzhq5LlBURCuKqzTUAA08hwL
-```
-
----
-
-## Quick Reference
-
-```bash
-# 프로젝트 초기화
-we workflow init myapp --type nextjs --database --redis
-
-# 서버 상태 확인
-we ssot status
-we ssot projects
-we workflow scan myapp
-
-# 배포
-we deploy myapp --environment staging
-
-# 도메인 설정
-we domain setup myapp.codeb.dev --ssl
-```
-
-## Permission Model
-
-- **Admin**: SSH + deploy + server settings
-- **Developer**: Git Push only → GitHub Actions → auto deploy
-
----
-
-## Deployment Method (v3.2.3+)
-
-### ✅ MCP API (기본값, 권장)
-
-**모든 배포는 MCP API를 통해 진행합니다.**
+### deploy.yml (v6.0)
 
 ```yaml
-# GitHub Actions - deploy.yml
-# Deploy: API (Developer - CODEB_API_KEY)
+name: Deploy
 
-- name: Deploy via CodeB API
-  run: |
-    curl -sf -X POST "https://app.codeb.kr/api/deploy" \
-      -H "Authorization: Bearer ${{ secrets.CODEB_API_KEY }}" \
-      -H "Content-Type: application/json" \
-      -d '{"project": "myapp", "environment": "production", ...}'
+on:
+  push:
+    branches: [main]
+
+jobs:
+  deploy:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Build & Push
+        run: |
+          echo "${{ secrets.GHCR_PAT }}" | docker login ghcr.io -u ${{ github.actor }} --password-stdin
+          docker build -t ghcr.io/${{ github.repository }}:${{ github.sha }} .
+          docker push ghcr.io/${{ github.repository }}:${{ github.sha }}
+
+      - name: Deploy via CodeB API v6.0
+        run: |
+          RESULT=$(curl -sf -X POST "https://api.codeb.kr/api/tool" \
+            -H "X-API-Key: ${{ secrets.CODEB_API_KEY }}" \
+            -H "Content-Type: application/json" \
+            -d '{
+              "tool": "deploy",
+              "params": {
+                "projectName": "${{ github.event.repository.name }}",
+                "environment": "staging",
+                "version": "${{ github.sha }}",
+                "image": "ghcr.io/${{ github.repository }}:${{ github.sha }}"
+              }
+            }')
+          echo "Preview URL: $(echo $RESULT | jq -r '.result.previewUrl')"
 ```
 
-**필요한 GitHub Secrets:**
-- `CODEB_API_KEY`: MCP API 배포 키 (app.codeb.kr/settings에서 발급)
-- `GHCR_PAT`: GitHub Container Registry 토큰
+### 필요한 Secrets
 
-### ❌ SSH Deploy (Admin 전용)
+| Secret | 설명 |
+|--------|------|
+| `CODEB_API_KEY` | v6.0 Team API Key (codeb_{teamId}_{role}_{token}) |
+| `GHCR_PAT` | GitHub Container Registry 토큰 |
 
-SSH 배포는 **Admin만** 사용 가능합니다. 일반 개발자는 사용하지 마세요.
+---
 
-```bash
-# SSH 배포가 감지되면 경고 표시
-we workflow scan myapp
-# ⚠️ SSH deploy detected (Admin only) - run "we workflow migrate" for MCP API
+## CLI DX (Developer Experience) v6.0
+
+### 개요
+
+v6.0 CLI는 **Ink React**를 사용한 Beautiful Terminal UI를 제공합니다.
+
+```
+┌─────────────────────────────────────────────────────────────────┐
+│                    CodeB CLI DX Features                         │
+├─────────────────────────────────────────────────────────────────┤
+│                                                                 │
+│  ✨ Real-time Deploy Progress                                   │
+│     └─→ Animated spinners, step indicators                     │
+│     └─→ 진행률 표시 및 소요 시간                                │
+│                                                                 │
+│  🎨 Interactive UI                                              │
+│     └─→ 프로젝트/환경 선택 메뉴                                 │
+│     └─→ Blue-Green Slot 상태 시각화                            │
+│                                                                 │
+│  📊 Log Streaming                                               │
+│     └─→ 실시간 로그 with 필터링                                 │
+│     └─→ 색상 코딩된 로그 레벨                                   │
+│                                                                 │
+│  🤖 CI-Friendly Mode                                            │
+│     └─→ --ci 플래그로 인터랙티브 비활성화                       │
+│     └─→ JSON 출력 지원                                          │
+│                                                                 │
+└─────────────────────────────────────────────────────────────────┘
 ```
 
-**배포 플로우:**
+### 주요 컴포넌트
+
+| 컴포넌트 | 설명 |
+|----------|------|
+| `DeployProgress.tsx` | 배포 진행률 UI with spinners |
+| `InteractiveApp.tsx` | Full-screen TUI 앱 |
+| `SlotStatus.tsx` | Blue-Green Slot 시각화 |
+| `LogViewer.tsx` | 실시간 로그 스트리밍 |
+
+### 배포 화면 예시
+
 ```
-Developer: Git Push → GitHub Actions → Build → ghcr.io → MCP API → Deploy
-Admin:     Git Push → GitHub Actions → Build → ghcr.io → SSH Direct → Deploy
+╔════════════════════════════════════════════════════════════╗
+║  CodeB Deploy                                    v6.0.0    ║
+╠════════════════════════════════════════════════════════════╣
+║                                                            ║
+║  Project: myapp                                            ║
+║  Environment: staging                                      ║
+║  Target Slot: green (port 3001)                           ║
+║                                                            ║
+║  ✓ Pulling image              2.3s                        ║
+║  ✓ Starting container         1.2s                        ║
+║  ✓ Health check passed        0.8s                        ║
+║  ● Updating registry...                                   ║
+║                                                            ║
+║  ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━  75%         ║
+║                                                            ║
+╚════════════════════════════════════════════════════════════╝
 ```
 
-### 마이그레이션
+### Slot 상태 화면 예시
 
-기존 SSH 배포 프로젝트를 MCP API로 전환:
-
-```bash
-we workflow migrate myapp
-# 1. GitHub Actions를 MCP API 방식으로 업데이트
-# 2. CODEB_API_KEY 시크릿 등록 안내
-# 3. SSH 시크릿 제거 안내 (선택)
+```
+╔════════════════════════════════════════════════════════════╗
+║  myapp - staging                                           ║
+╠════════════════════════════════════════════════════════════╣
+║                                                            ║
+║  BLUE (active)         │   GREEN (deployed)               ║
+║  ─────────────────────────────────────────────────────    ║
+║  Port: 3000            │   Port: 3001                     ║
+║  Version: v1.2.3       │   Version: v1.2.4                ║
+║  Health: ✓ healthy     │   Health: ✓ healthy              ║
+║  Deployed: 2h ago      │   Deployed: 5m ago               ║
+║                        │                                  ║
+║  [  ACTIVE  ]          │   [ PROMOTE ]                    ║
+║                                                            ║
+╚════════════════════════════════════════════════════════════╝
 ```
 
 ---
 
-## Version Management (Critical)
+## CLI Quick Reference
 
-**버전은 반드시 한 곳에서 관리합니다.**
-
-```
-codeb-server/
-├── VERSION           # 단일 진실 소스 (Single Source of Truth)
-├── cli/package.json  # VERSION 파일 참조
-└── api/package.json  # VERSION 파일 참조
-```
-
-**버전 업데이트 방법:**
 ```bash
-# 1. VERSION 파일 업데이트 후 모든 package.json 동기화
-./scripts/sync-version.sh 3.2.3
+# 인증
+we login                           # API Key 입력
+we whoami                          # 현재 사용자 정보
+we link                            # 현재 디렉토리를 프로젝트에 연결
 
-# 2. CLI 배포
-cd cli && npm publish
+# 초기화
+we init myapp --type nextjs --database --redis
 
-# 3. API 서버 배포
-scp api/* root@158.247.203.55:/opt/codeb/mcp-api/
-ssh root@158.247.203.55 "pkill -f 'node.*mcp-http-api'; cd /opt/codeb/mcp-api && nohup node mcp-http-api.js &"
+# Blue-Green 배포 (Real-time Progress UI)
+we deploy                          # 현재 프로젝트 배포 → Preview URL
+we deploy myapp                    # 특정 프로젝트 배포
+we deploy --ci                     # CI 모드 (non-interactive)
+we promote myapp                   # → Production 전환
+we rollback myapp                  # → 즉시 롤백
 
-# 4. 커밋
-git add . && git commit -m "chore: bump version to 3.2.3"
-```
+# 상태 확인 (Visual UI)
+we slot status myapp               # Slot 상태 (그래픽 UI)
+we health                          # 시스템 헬스
+we registry status                 # SSOT 상태
 
-**금지 사항:**
-- ❌ 개별 package.json 버전 직접 수정
-- ❌ 하드코딩된 버전 문자열 사용
-- ✅ VERSION 파일에서 읽어서 사용
+# 로그 (Real-time Streaming)
+we logs myapp                      # 실시간 로그 스트리밍
+we logs myapp --filter error       # 에러만 필터링
+we logs myapp --tail 100           # 최근 100줄
 
----
+# ENV 관리
+we env get myapp                   # 전체 조회
+we env set myapp KEY=value         # 설정
+we env restore myapp               # 복구
+we env history myapp               # 이력
 
-## Blue-Green Slot Deployment (v3.2+)
+# 도메인
+we domain setup myapp.codeb.dev    # 도메인 설정
+we domain ssl myapp.codeb.dev      # SSL 인증서
 
-**새로운 배포 방식 - Vercel 스타일 무중단 배포**
+# Edge Functions (v6.0)
+we edge deploy myapp               # Edge 함수 배포
+we edge list myapp                 # Edge 함수 목록
+we edge logs myapp                 # Edge 함수 로그
+we edge delete myapp auth-mw       # Edge 함수 삭제
+we edge invoke myapp auth-mw       # Edge 함수 테스트 호출
 
-```
-배포 흐름:
-1. deploy → 비활성 Slot에 컨테이너 배포 (Preview URL 제공)
-2. 테스트 후 promote → Caddy 설정만 변경 (무중단 트래픽 전환)
-3. 이전 Slot은 48시간 Grace Period 후 정리
-4. 문제 시 rollback → 즉시 이전 Slot으로 전환
-```
-
-**Slot 상태:**
-| 상태 | 설명 |
-|------|------|
-| empty | 컨테이너 없음 |
-| deployed | 배포됨, 트래픽 미수신 |
-| active | 트래픽 수신 중 |
-| grace-period | 이전 버전, 48시간 후 정리 |
-
-**CLI 명령어:**
-```bash
-we deploy myapp                    # Blue-Green Slot 배포
-we promote myapp                   # 트래픽 전환
-we rollback myapp                  # 이전 버전으로 롤백
-we slot status myapp               # Slot 상태 확인
-we workflow scan myapp             # 워크플로우 분석
-```
-
-**API 엔드포인트:**
-```
-Base URL: https://api.codeb.kr/api
-Fallback: http://158.247.203.55:9101/api
-
-Authentication: X-API-Key: codeb_{role}_{token}
-Roles: admin (전체), dev (배포), view (조회)
-```
-
-**포트 할당:**
-```
-Staging:    3000~3499 (Blue: basePort, Green: basePort+1)
-Production: 4000~4499 (Blue: basePort, Green: basePort+1)
-Preview:    5000~5999 (Blue: basePort, Green: basePort+1)
+# Analytics (v6.0)
+we analytics myapp                 # 트래픽 개요
+we analytics myapp --webvitals     # Web Vitals (LCP, FID, CLS, INP)
+we analytics myapp --realtime      # 실시간 메트릭
+we analytics myapp --speed         # Speed Insights 점수
 ```
 
 ---
 
-## Port & Registry Management
+## Permission Model (v6.0)
 
-### 레지스트리 파일 (서버)
+### 역할 계층
 
-| 파일 | 경로 | 역할 |
-|------|------|------|
-| ssot.json | `/opt/codeb/registry/ssot.json` | 단일 진실 소스 (포트/도메인/프로젝트) |
-| slots.json | `/opt/codeb/registry/slots.json` | Blue-Green Slot 상태 |
-| api-keys.json | `/opt/codeb/config/api-keys.json` | API 키 관리 |
-| api-access.json | `/opt/codeb/logs/api-access.json` | API 접근 로그 |
-
-### 포트 관리 CLI 파일
-
-| 파일 | 역할 |
-|------|------|
-| `cli/src/commands/workflow/port-utils.js` | 포트 범위 정의, 스캔, 검증 |
-| `cli/src/commands/workflow/registry.js` | SSOT ↔ Legacy 변환 |
-| `cli/src/lib/ssot-client.js` | CLI에서 SSOT 접근 (30초 캐시) |
-
-### 포트 관리 명령어
-
-```bash
-we ssot status                # SSOT 상태 확인
-we ssot projects              # 등록된 프로젝트 목록
-we ssot validate              # 무결성 검증
-we ssot validate --fix        # 자동 수정
-we ssot sync                  # 서버 상태와 동기화
-we ssot sync --dry-run        # 변경 미리보기
 ```
+owner   ─────→ 모든 권한 + 팀 삭제
+   │
+admin   ─────→ 멤버 관리, 토큰 생성, 슬롯 정리
+   │
+member  ─────→ 배포, promote, rollback, ENV 설정
+   │
+viewer  ─────→ 조회만 (상태, 로그, 메트릭)
+```
+
+### 권한 매트릭스
+
+| 작업 | owner | admin | member | viewer |
+|------|:-----:|:-----:|:------:|:------:|
+| team.delete | O | X | X | X |
+| member.invite | O | O | X | X |
+| token.create | O | O | X | X |
+| slot.cleanup | O | O | X | X |
+| deploy | O | O | O | X |
+| promote | O | O | O | X |
+| rollback | O | O | O | X |
+| env.set | O | O | O | X |
+| slot.view | O | O | O | O |
+| logs.view | O | O | O | O |
+| metrics.view | O | O | O | O |
 
 ---
 
-## Monitoring System
+## Version
 
-### CLI 모니터링
+- **CLAUDE.md**: v6.0.1
+- **CLI**: @codeb/cli@6.0.x (Ink React TUI)
+- **MCP Server**: codeb-mcp-server@6.0.0 (TypeScript + Express + Zod)
+- **Analytics SDK**: @codeb/analytics@6.0.x
+- **API Endpoint**: https://api.codeb.kr/api (30 tools)
 
-```bash
-we monitor --metrics cpu,memory,disk --interval 5
-we health                     # 서버 헬스체크
-we ssot status               # SSOT 상태
+### v6.0 신규 파일
+
+```
+v6.0/mcp-server/
+├── src/
+│   ├── index.ts                 # Express HTTP API 서버
+│   ├── lib/
+│   │   ├── auth.ts              # Team-based 인증
+│   │   ├── types.ts             # TypeScript 타입
+│   │   ├── ssh.ts               # SSH Connection Pool
+│   │   └── servers.ts           # 서버 설정
+│   └── tools/
+│       ├── team.ts              # 팀 관리 (11개)
+│       ├── deploy.ts            # 배포
+│       ├── promote.ts           # 트래픽 전환
+│       ├── rollback.ts          # 롤백
+│       ├── slot.ts              # Slot 관리
+│       ├── edge.ts              # Edge Functions (6개)
+│       └── analytics.ts         # Analytics (5개)
+│
+├── cli/
+│   ├── src/
+│   │   ├── index.tsx            # Commander 엔트리
+│   │   ├── commands/
+│   │   │   ├── login.tsx        # 인증
+│   │   │   ├── deploy.tsx       # 배포
+│   │   │   ├── promote.tsx      # Promote
+│   │   │   └── rollback.tsx     # Rollback
+│   │   └── components/
+│   │       ├── DeployProgress.tsx
+│   │       ├── SlotStatus.tsx
+│   │       └── LogViewer.tsx
+│   └── package.json
+│
+└── analytics-sdk/
+    ├── src/
+    │   ├── core.ts              # 코어 수집 로직
+    │   ├── web-vitals.ts        # Web Vitals
+    │   ├── speed-insights.ts    # Speed Insights
+    │   └── react/               # React 통합
+    └── package.json
 ```
 
-### API 모니터링 엔드포인트
-
-```bash
-# API 사용 통계 (7일)
-curl -X POST https://api.codeb.kr/api/tool \
-  -H "X-API-Key: codeb_admin_xxx" \
-  -d '{"tool": "api_access_stats", "params": {"days": 7}}'
-
-# 활성 사용자 (24시간)
-curl -X POST https://api.codeb.kr/api/tool \
-  -H "X-API-Key: codeb_admin_xxx" \
-  -d '{"tool": "api_active_users", "params": {"hours": 24}}'
-
-# 서버 헬스체크
-curl -X POST https://api.codeb.kr/api/tool \
-  -H "X-API-Key: codeb_view_xxx" \
-  -d '{"tool": "full_health_check"}'
-
-# Slot 상태
-curl -X POST https://api.codeb.kr/api/tool \
-  -H "X-API-Key: codeb_view_xxx" \
-  -d '{"tool": "slot_list"}'
-```
+> 이 파일은 CLI 설치/업데이트 시 자동으로 최신 버전으로 교체됩니다.

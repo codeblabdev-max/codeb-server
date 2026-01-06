@@ -1,0 +1,75 @@
+{
+  "$schema": "./version.schema.json",
+  "version": "6.0.0",
+  "codename": "Blue-Green",
+  "releaseDate": "2026-01-07",
+  "packages": {
+    "@codeb/cli": {
+      "version": "6.0.0",
+      "path": "v6.0/cli",
+      "description": "CodeB CLI - Vercel-style DX with Ink React UI"
+    },
+    "@codeb/mcp-server": {
+      "version": "6.0.0",
+      "path": "v6.0/mcp-server",
+      "description": "CodeB MCP Server - Unified HTTP API"
+    },
+    "@codeb/analytics": {
+      "version": "6.0.0",
+      "path": "v6.0/analytics-sdk",
+      "description": "CodeB Analytics SDK - Web Vitals"
+    },
+    "codeb-web-ui": {
+      "version": "6.0.0",
+      "path": "web-ui",
+      "description": "CodeB Dashboard - Blue-Green Monitoring"
+    },
+    "@codeblabdev-max/we-cli": {
+      "version": "6.0.0",
+      "path": "cli",
+      "description": "Legacy CLI (v3.x compatibility)"
+    },
+    "codeb-api": {
+      "version": "6.0.0",
+      "path": "api",
+      "description": "Legacy API Server"
+    },
+    "codeb-root": {
+      "version": "6.0.0",
+      "path": ".",
+      "description": "Root package"
+    }
+  },
+  "compatibility": {
+    "node": ">=20.0.0",
+    "npm": ">=10.0.0"
+  },
+  "changelog": {
+    "6.0.0": {
+      "date": "2026-01-07",
+      "changes": [
+        "Blue-Green Slot 배포 시스템 도입",
+        "Vercel 스타일 CLI DX (Ink React)",
+        "Zero-downtime 마이그레이션",
+        "Quadlet/systemd 통합",
+        "실시간 모니터링 (Centrifugo)",
+        "통합 버전 관리 시스템"
+      ]
+    },
+    "5.0.0": {
+      "date": "2025-12-01",
+      "changes": [
+        "SSOT 레지스트리 시스템",
+        "ENV 백업/복구",
+        "MCP API 통합"
+      ]
+    },
+    "3.2.10": {
+      "date": "2025-11-15",
+      "changes": [
+        "워크플로우 시스템",
+        "GitHub Actions 통합"
+      ]
+    }
+  }
+}

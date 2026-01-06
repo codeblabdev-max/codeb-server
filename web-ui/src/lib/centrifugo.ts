@@ -18,6 +18,13 @@ export const CHANNELS = {
   SERVER: (server: string) => `server:${server}`,
   NOTIFICATIONS: (userId: string) => `user:${userId}:notifications`,
   SYSTEM: 'system:alerts',
+  // v6.0 Blue-Green Slot channels
+  SLOT: (project: string, env: string) => `slot:${project}:${env}`,
+  SLOT_ALL: 'slot:all',
+  HEALTH: (project: string) => `health:${project}`,
+  HEALTH_ALL: 'health:all',
+  PROMOTE: (project: string) => `promote:${project}`,
+  ROLLBACK: (project: string) => `rollback:${project}`,
 } as const;
 
 /**
@@ -324,4 +331,233 @@ export function getClientConfig() {
     url: CENTRIFUGO_URL,
     channels: CHANNELS,
   };
+}
+
+// ============================================================================
+// v6.0 Blue-Green Slot Events
+// ============================================================================
+
+export type SlotName = 'blue' | 'green';
+export type SlotState = 'empty' | 'deploying' | 'deployed' | 'active' | 'grace' | 'draining';
+
+export interface SlotEvent {
+  type: 'deploy_start' | 'deploy_progress' | 'deploy_complete' | 'promote' | 'rollback' | 'health_change' | 'slot_cleanup';
+  project: string;
+  environment: string;
+  slot: SlotName;
+  state: SlotState;
+  version?: string;
+  previousSlot?: SlotName;
+  message: string;
+  progress?: number;
+  previewUrl?: string;
+  healthStatus?: 'healthy' | 'unhealthy' | 'degraded' | 'unknown';
+  timestamp: string;
+  metadata?: Record<string, unknown>;
+}
+
+/**
+ * 슬롯 배포 시작 이벤트 발행
+ */
+export async function slotDeployStart(
+  project: string,
+  environment: string,
+  slot: SlotName,
+  version: string
+): Promise<void> {
+  const event: SlotEvent = {
+    type: 'deploy_start',
+    project,
+    environment,
+    slot,
+    state: 'deploying',
+    version,
+    message: `Deploying ${version} to ${slot} slot`,
+    progress: 0,
+    timestamp: new Date().toISOString(),
+  };
+
+  await publish(CHANNELS.SLOT(project, environment), event);
+  await publish(CHANNELS.SLOT_ALL, event);
+  await publish(CHANNELS.DEPLOY(project), event);
+}
+
+/**
+ * 슬롯 배포 진행 이벤트 발행
+ */
+export async function slotDeployProgress(
+  project: string,
+  environment: string,
+  slot: SlotName,
+  message: string,
+  progress: number
+): Promise<void> {
+  const event: SlotEvent = {
+    type: 'deploy_progress',
+    project,
+    environment,
+    slot,
+    state: 'deploying',
+    message,
+    progress,
+    timestamp: new Date().toISOString(),
+  };
+
+  await publish(CHANNELS.SLOT(project, environment), event);
+}
+
+/**
+ * 슬롯 배포 완료 이벤트 발행 (Preview URL 포함)
+ */
+export async function slotDeployComplete(
+  project: string,
+  environment: string,
+  slot: SlotName,
+  version: string,
+  previewUrl: string
+): Promise<void> {
+  const event: SlotEvent = {
+    type: 'deploy_complete',
+    project,
+    environment,
+    slot,
+    state: 'deployed',
+    version,
+    message: `Deployment complete. Preview at ${previewUrl}`,
+    progress: 100,
+    previewUrl,
+    timestamp: new Date().toISOString(),
+  };
+
+  await publish(CHANNELS.SLOT(project, environment), event);
+  await publish(CHANNELS.SLOT_ALL, event);
+  await publish(CHANNELS.DEPLOY(project), event);
+}
+
+/**
+ * 슬롯 프로모트 이벤트 발행
+ */
+export async function slotPromote(
+  project: string,
+  environment: string,
+  newActiveSlot: SlotName,
+  previousSlot: SlotName | null,
+  version: string
+): Promise<void> {
+  const event: SlotEvent = {
+    type: 'promote',
+    project,
+    environment,
+    slot: newActiveSlot,
+    state: 'active',
+    version,
+    previousSlot: previousSlot || undefined,
+    message: `Traffic switched to ${newActiveSlot} slot (${version})`,
+    timestamp: new Date().toISOString(),
+  };
+
+  await publish(CHANNELS.SLOT(project, environment), event);
+  await publish(CHANNELS.SLOT_ALL, event);
+  await publish(CHANNELS.PROMOTE(project), event);
+  await publish(CHANNELS.SYSTEM, {
+    type: 'success',
+    title: 'Promotion Complete',
+    message: `${project}/${environment} is now running ${version}`,
+    timestamp: new Date().toISOString(),
+  });
+}
+
+/**
+ * 슬롯 롤백 이벤트 발행
+ */
+export async function slotRollback(
+  project: string,
+  environment: string,
+  rolledBackSlot: SlotName,
+  restoredSlot: SlotName,
+  version: string,
+  reason?: string
+): Promise<void> {
+  const event: SlotEvent = {
+    type: 'rollback',
+    project,
+    environment,
+    slot: restoredSlot,
+    state: 'active',
+    version,
+    previousSlot: rolledBackSlot,
+    message: `Rolled back to ${restoredSlot} slot (${version})${reason ? `: ${reason}` : ''}`,
+    timestamp: new Date().toISOString(),
+    metadata: reason ? { reason } : undefined,
+  };
+
+  await publish(CHANNELS.SLOT(project, environment), event);
+  await publish(CHANNELS.SLOT_ALL, event);
+  await publish(CHANNELS.ROLLBACK(project), event);
+  await publish(CHANNELS.SYSTEM, {
+    type: 'warning',
+    title: 'Rollback Performed',
+    message: `${project}/${environment} rolled back to ${version}`,
+    timestamp: new Date().toISOString(),
+  });
+}
+
+/**
+ * 슬롯 헬스 변경 이벤트 발행
+ */
+export async function slotHealthChange(
+  project: string,
+  environment: string,
+  slot: SlotName,
+  healthStatus: 'healthy' | 'unhealthy' | 'degraded' | 'unknown',
+  previousStatus?: string
+): Promise<void> {
+  const event: SlotEvent = {
+    type: 'health_change',
+    project,
+    environment,
+    slot,
+    state: 'active',
+    healthStatus,
+    message: `${slot} slot health: ${healthStatus}${previousStatus ? ` (was ${previousStatus})` : ''}`,
+    timestamp: new Date().toISOString(),
+    metadata: previousStatus ? { previousStatus } : undefined,
+  };
+
+  await publish(CHANNELS.SLOT(project, environment), event);
+  await publish(CHANNELS.HEALTH(project), event);
+
+  // Critical health changes go to system alerts
+  if (healthStatus === 'unhealthy') {
+    await publish(CHANNELS.SYSTEM, {
+      type: 'error',
+      title: 'Health Check Failed',
+      message: `${project}/${environment} ${slot} slot is unhealthy`,
+      timestamp: new Date().toISOString(),
+    });
+  }
+}
+
+/**
+ * 슬롯 정리 이벤트 발행
+ */
+export async function slotCleanup(
+  project: string,
+  environment: string,
+  slot: SlotName,
+  reason: string
+): Promise<void> {
+  const event: SlotEvent = {
+    type: 'slot_cleanup',
+    project,
+    environment,
+    slot,
+    state: 'empty',
+    message: `${slot} slot cleaned up: ${reason}`,
+    timestamp: new Date().toISOString(),
+    metadata: { reason },
+  };
+
+  await publish(CHANNELS.SLOT(project, environment), event);
+  await publish(CHANNELS.SLOT_ALL, event);
 }

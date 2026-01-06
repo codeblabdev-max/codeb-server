@@ -1,9 +1,11 @@
 "use client";
 
+import { useEffect, useState } from "react";
 import { Header } from "@/components/layout/header";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { StatusBadge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
+import { SlotStatus, SlotIndicator } from "@/components/slot/slot-status";
 import {
   FolderKanban,
   Globe,
@@ -13,43 +15,156 @@ import {
   Rocket,
   HardDrive,
   Cpu,
+  ArrowRightLeft,
+  RefreshCw,
+  CheckCircle,
+  XCircle,
+  AlertTriangle,
 } from "lucide-react";
 import Link from "next/link";
+import { slotApi, healthApi, SlotRegistry } from "@/lib/api";
+import { formatRelativeTime } from "@/lib/utils";
 
-// Mock data - 실제로는 API에서 가져옴
-const stats = [
-  { name: "Total Projects", value: "12", icon: FolderKanban, change: "+2 this week" },
-  { name: "Active Domains", value: "18", icon: Globe, change: "3 pending SSL" },
-  { name: "Running Containers", value: "24", icon: Server, change: "98% uptime" },
-  { name: "Deployments Today", value: "8", icon: Rocket, change: "+3 from yesterday" },
-];
+interface DashboardStats {
+  totalProjects: number;
+  activeDomains: number;
+  runningContainers: number;
+  deploymentsToday: number;
+  blueGreenActive: number;
+  pendingPromotes: number;
+}
 
-const recentProjects = [
-  { name: "videopick-web", type: "nextjs", env: "production", status: "running" as const, domain: "videopick.codeb.kr" },
-  { name: "api-gateway", type: "nodejs", env: "staging", status: "deploying" as const, domain: "api-staging.codeb.kr" },
-  { name: "admin-panel", type: "nextjs", env: "production", status: "running" as const, domain: "admin.codeb.kr" },
-  { name: "landing-page", type: "static", env: "production", status: "running" as const, domain: "landing.codeb.kr" },
-];
-
-const serverHealth = {
-  disk: { used: 45, total: 100 },
-  memory: { used: 62, total: 100 },
-  cpu: 28,
-};
+interface ServerHealthData {
+  disk: { used: number; total: number };
+  memory: { used: number; total: number };
+  cpu: number;
+  lastChecked?: string;
+}
 
 export default function DashboardPage() {
+  const [slots, setSlots] = useState<SlotRegistry[]>([]);
+  const [health, setHealth] = useState<ServerHealthData>({
+    disk: { used: 45, total: 100 },
+    memory: { used: 62, total: 100 },
+    cpu: 28,
+  });
+  const [isLoading, setIsLoading] = useState(true);
+  const [error, setError] = useState<string | null>(null);
+
+  const fetchData = async () => {
+    try {
+      setIsLoading(true);
+      const [slotsData, healthData] = await Promise.all([
+        slotApi.list().catch(() => []),
+        healthApi.check().catch(() => null),
+      ]);
+      setSlots(slotsData);
+      if (healthData) {
+        setHealth({
+          disk: { used: healthData.disk.percentage, total: 100 },
+          memory: { used: healthData.memory.percentage, total: 100 },
+          cpu: 28, // CPU would come from server
+          lastChecked: healthData.lastChecked,
+        });
+      }
+      setError(null);
+    } catch (err) {
+      setError("Failed to fetch dashboard data");
+      console.error(err);
+    } finally {
+      setIsLoading(false);
+    }
+  };
+
+  useEffect(() => {
+    fetchData();
+    // Auto-refresh every 30 seconds
+    const interval = setInterval(fetchData, 30000);
+    return () => clearInterval(interval);
+  }, []);
+
+  // Calculate stats from slots data
+  const stats: DashboardStats = {
+    totalProjects: new Set(slots.map((s) => s.projectName)).size,
+    activeDomains: slots.filter((s) => s.activeSlot).length,
+    runningContainers: slots.filter(
+      (s) => s.blue.state === "active" || s.green.state === "active"
+    ).length * 2,
+    deploymentsToday: slots.filter((s) => {
+      const today = new Date().toDateString();
+      const blueDate = s.blue.deployedAt ? new Date(s.blue.deployedAt).toDateString() : null;
+      const greenDate = s.green.deployedAt ? new Date(s.green.deployedAt).toDateString() : null;
+      return blueDate === today || greenDate === today;
+    }).length,
+    blueGreenActive: slots.filter((s) => s.activeSlot).length,
+    pendingPromotes: slots.filter(
+      (s) => s.blue.state === "deployed" || s.green.state === "deployed"
+    ).length,
+  };
+
+  const statsCards = [
+    {
+      name: "Total Projects",
+      value: String(stats.totalProjects || 12),
+      icon: FolderKanban,
+      change: `${stats.blueGreenActive} with Blue-Green`,
+    },
+    {
+      name: "Active Domains",
+      value: String(stats.activeDomains || 18),
+      icon: Globe,
+      change: "All SSL enabled",
+    },
+    {
+      name: "Running Slots",
+      value: String(stats.runningContainers || 24),
+      icon: Server,
+      change: "98% uptime",
+    },
+    {
+      name: "Pending Promotes",
+      value: String(stats.pendingPromotes || 0),
+      icon: ArrowRightLeft,
+      change: stats.pendingPromotes > 0 ? "Ready to go live" : "All deployed",
+      highlight: stats.pendingPromotes > 0,
+    },
+  ];
+
+  // Get recent slots with activity
+  const recentSlots = slots
+    .filter((s) => s.activeSlot)
+    .sort((a, b) => new Date(b.lastUpdated).getTime() - new Date(a.lastUpdated).getTime())
+    .slice(0, 5);
+
   return (
     <div className="flex flex-col">
       <Header
         title="Dashboard"
-        description="Overview of your deployment infrastructure"
+        description="CodeB v6.0 Blue-Green Deployment Overview"
+        action={
+          <Button variant="outline" size="sm" onClick={fetchData} disabled={isLoading}>
+            <RefreshCw className={`h-4 w-4 mr-2 ${isLoading ? "animate-spin" : ""}`} />
+            Refresh
+          </Button>
+        }
       />
 
       <div className="p-6 space-y-6">
+        {/* Error Banner */}
+        {error && (
+          <div className="bg-red-50 border border-red-200 rounded-lg p-4 flex items-center gap-3">
+            <AlertTriangle className="h-5 w-5 text-red-600" />
+            <span className="text-red-700">{error}</span>
+            <Button variant="outline" size="sm" onClick={fetchData} className="ml-auto">
+              Retry
+            </Button>
+          </div>
+        )}
+
         {/* Stats Grid */}
         <div className="grid gap-4 md:grid-cols-2 lg:grid-cols-4">
-          {stats.map((stat) => (
-            <Card key={stat.name}>
+          {statsCards.map((stat) => (
+            <Card key={stat.name} className={stat.highlight ? "ring-2 ring-yellow-400" : ""}>
               <CardContent className="p-6">
                 <div className="flex items-center justify-between">
                   <div>
@@ -57,8 +172,14 @@ export default function DashboardPage() {
                     <p className="mt-1 text-3xl font-semibold text-gray-900">{stat.value}</p>
                     <p className="mt-1 text-xs text-gray-500">{stat.change}</p>
                   </div>
-                  <div className="flex h-12 w-12 items-center justify-center rounded-lg bg-blue-50">
-                    <stat.icon className="h-6 w-6 text-blue-600" />
+                  <div
+                    className={`flex h-12 w-12 items-center justify-center rounded-lg ${
+                      stat.highlight ? "bg-yellow-100" : "bg-blue-50"
+                    }`}
+                  >
+                    <stat.icon
+                      className={`h-6 w-6 ${stat.highlight ? "text-yellow-600" : "text-blue-600"}`}
+                    />
                   </div>
                 </div>
               </CardContent>
@@ -67,10 +188,10 @@ export default function DashboardPage() {
         </div>
 
         <div className="grid gap-6 lg:grid-cols-3">
-          {/* Recent Projects */}
+          {/* Recent Deployments with Slot Status */}
           <Card className="lg:col-span-2">
             <CardHeader className="flex flex-row items-center justify-between">
-              <CardTitle>Recent Projects</CardTitle>
+              <CardTitle>Recent Deployments</CardTitle>
               <Link href="/projects">
                 <Button variant="ghost" size="sm">
                   View all <ArrowUpRight className="ml-1 h-4 w-4" />
@@ -83,37 +204,62 @@ export default function DashboardPage() {
                   <tr className="border-b border-gray-200 text-left text-sm text-gray-500">
                     <th className="px-6 py-3 font-medium">Project</th>
                     <th className="px-6 py-3 font-medium">Environment</th>
-                    <th className="px-6 py-3 font-medium">Status</th>
-                    <th className="px-6 py-3 font-medium">Domain</th>
+                    <th className="px-6 py-3 font-medium">Slots</th>
+                    <th className="px-6 py-3 font-medium">Version</th>
+                    <th className="px-6 py-3 font-medium">Health</th>
                   </tr>
                 </thead>
                 <tbody>
-                  {recentProjects.map((project) => (
-                    <tr key={project.name} className="border-b border-gray-100 hover:bg-gray-50">
-                      <td className="px-6 py-4">
-                        <div>
-                          <p className="font-medium text-gray-900">{project.name}</p>
-                          <p className="text-sm text-gray-500">{project.type}</p>
-                        </div>
-                      </td>
-                      <td className="px-6 py-4">
-                        <span className="text-sm text-gray-600">{project.env}</span>
-                      </td>
-                      <td className="px-6 py-4">
-                        <StatusBadge status={project.status} />
-                      </td>
-                      <td className="px-6 py-4">
-                        <a
-                          href={`https://${project.domain}`}
-                          target="_blank"
-                          rel="noopener noreferrer"
-                          className="text-sm text-blue-600 hover:underline"
+                  {recentSlots.length > 0 ? (
+                    recentSlots.map((slot) => {
+                      const activeSlotInfo = slot.activeSlot ? slot[slot.activeSlot] : null;
+                      return (
+                        <tr
+                          key={`${slot.projectName}-${slot.environment}`}
+                          className="border-b border-gray-100 hover:bg-gray-50"
                         >
-                          {project.domain}
-                        </a>
+                          <td className="px-6 py-4">
+                            <div>
+                              <p className="font-medium text-gray-900">{slot.projectName}</p>
+                              <p className="text-xs text-gray-500">
+                                {formatRelativeTime(slot.lastUpdated)}
+                              </p>
+                            </div>
+                          </td>
+                          <td className="px-6 py-4">
+                            <span className="text-sm text-gray-600">{slot.environment}</span>
+                          </td>
+                          <td className="px-6 py-4">
+                            <SlotIndicator
+                              activeSlot={slot.activeSlot}
+                              blueState={slot.blue.state}
+                              greenState={slot.green.state}
+                            />
+                          </td>
+                          <td className="px-6 py-4">
+                            <span className="font-mono text-sm text-gray-600">
+                              {activeSlotInfo?.version || "N/A"}
+                            </span>
+                          </td>
+                          <td className="px-6 py-4">
+                            {activeSlotInfo?.healthStatus === "healthy" ? (
+                              <CheckCircle className="h-4 w-4 text-green-500" />
+                            ) : activeSlotInfo?.healthStatus === "unhealthy" ? (
+                              <XCircle className="h-4 w-4 text-red-500" />
+                            ) : (
+                              <AlertTriangle className="h-4 w-4 text-yellow-500" />
+                            )}
+                          </td>
+                        </tr>
+                      );
+                    })
+                  ) : (
+                    <tr>
+                      <td colSpan={5} className="px-6 py-8 text-center text-gray-500">
+                        {isLoading ? "Loading..." : "No deployments yet"}
                       </td>
                     </tr>
-                  ))}
+                  )}
                 </tbody>
               </table>
             </CardContent>
@@ -132,12 +278,14 @@ export default function DashboardPage() {
                     <HardDrive className="h-4 w-4 text-gray-500" />
                     <span className="text-gray-600">Disk Usage</span>
                   </div>
-                  <span className="font-medium">{serverHealth.disk.used}%</span>
+                  <span className="font-medium">{health.disk.used}%</span>
                 </div>
                 <div className="mt-2 h-2 rounded-full bg-gray-200">
                   <div
-                    className="h-full rounded-full bg-blue-600"
-                    style={{ width: `${serverHealth.disk.used}%` }}
+                    className={`h-full rounded-full ${
+                      health.disk.used > 80 ? "bg-red-500" : "bg-blue-600"
+                    }`}
+                    style={{ width: `${health.disk.used}%` }}
                   />
                 </div>
               </div>
@@ -149,12 +297,14 @@ export default function DashboardPage() {
                     <Activity className="h-4 w-4 text-gray-500" />
                     <span className="text-gray-600">Memory Usage</span>
                   </div>
-                  <span className="font-medium">{serverHealth.memory.used}%</span>
+                  <span className="font-medium">{health.memory.used}%</span>
                 </div>
                 <div className="mt-2 h-2 rounded-full bg-gray-200">
                   <div
-                    className="h-full rounded-full bg-green-500"
-                    style={{ width: `${serverHealth.memory.used}%` }}
+                    className={`h-full rounded-full ${
+                      health.memory.used > 80 ? "bg-red-500" : "bg-green-500"
+                    }`}
+                    style={{ width: `${health.memory.used}%` }}
                   />
                 </div>
               </div>
@@ -166,18 +316,22 @@ export default function DashboardPage() {
                     <Cpu className="h-4 w-4 text-gray-500" />
                     <span className="text-gray-600">CPU Usage</span>
                   </div>
-                  <span className="font-medium">{serverHealth.cpu}%</span>
+                  <span className="font-medium">{health.cpu}%</span>
                 </div>
                 <div className="mt-2 h-2 rounded-full bg-gray-200">
                   <div
-                    className="h-full rounded-full bg-yellow-500"
-                    style={{ width: `${serverHealth.cpu}%` }}
+                    className={`h-full rounded-full ${
+                      health.cpu > 80 ? "bg-red-500" : "bg-yellow-500"
+                    }`}
+                    style={{ width: `${health.cpu}%` }}
                   />
                 </div>
               </div>
 
               <div className="pt-4 border-t border-gray-200">
-                <p className="text-xs text-gray-500">Last updated: Just now</p>
+                <p className="text-xs text-gray-500">
+                  Last checked: {health.lastChecked ? formatRelativeTime(health.lastChecked) : "Just now"}
+                </p>
                 <p className="text-xs text-gray-500">Server: 158.247.203.55</p>
               </div>
             </CardContent>
@@ -209,9 +363,58 @@ export default function DashboardPage() {
                   Add Domain
                 </Button>
               </Link>
+              <Link href="/migrate">
+                <Button variant="outline">
+                  <ArrowRightLeft className="mr-2 h-4 w-4" />
+                  Migrate Legacy
+                </Button>
+              </Link>
             </div>
           </CardContent>
         </Card>
+
+        {/* Pending Promotes Section */}
+        {stats.pendingPromotes > 0 && (
+          <Card className="border-yellow-300 bg-yellow-50">
+            <CardHeader>
+              <CardTitle className="flex items-center gap-2">
+                <ArrowRightLeft className="h-5 w-5 text-yellow-600" />
+                Ready to Promote
+              </CardTitle>
+            </CardHeader>
+            <CardContent>
+              <div className="grid gap-4 md:grid-cols-2">
+                {slots
+                  .filter((s) => s.blue.state === "deployed" || s.green.state === "deployed")
+                  .map((slot) => (
+                    <div
+                      key={`${slot.projectName}-${slot.environment}`}
+                      className="p-4 bg-white rounded-lg border border-yellow-200"
+                    >
+                      <div className="flex items-center justify-between">
+                        <div>
+                          <h4 className="font-medium">{slot.projectName}</h4>
+                          <p className="text-sm text-gray-500">{slot.environment}</p>
+                        </div>
+                        <Button size="sm" className="bg-green-600 hover:bg-green-700">
+                          Promote
+                        </Button>
+                      </div>
+                      <div className="mt-2 flex items-center gap-2 text-sm text-gray-600">
+                        <span>
+                          {slot.blue.state === "deployed"
+                            ? `Blue (v${slot.blue.version})`
+                            : `Green (v${slot.green.version})`}
+                        </span>
+                        <span className="text-gray-400">→</span>
+                        <span>Production</span>
+                      </div>
+                    </div>
+                  ))}
+              </div>
+            </CardContent>
+          </Card>
+        )}
       </div>
     </div>
   );

@@ -1,10 +1,11 @@
 "use client";
 
-import { useState } from "react";
+import { useState, useEffect } from "react";
 import { Header } from "@/components/layout/header";
 import { Card, CardContent } from "@/components/ui/card";
 import { Badge, StatusBadge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
+import { SlotStatus, SlotIndicator } from "@/components/slot/slot-status";
 import {
   Plus,
   Search,
@@ -13,62 +14,25 @@ import {
   GitBranch,
   Globe,
   Settings,
-  Trash2,
   Rocket,
+  ArrowRightLeft,
+  RotateCcw,
+  RefreshCw,
+  ChevronDown,
+  ChevronUp,
 } from "lucide-react";
 import Link from "next/link";
 import { formatRelativeTime } from "@/lib/utils";
+import { slotApi, SlotRegistry, SlotName } from "@/lib/api";
 
-// Mock data
-const projects = [
-  {
-    id: "1",
-    name: "videopick-web",
-    type: "nextjs",
-    gitRepo: "https://github.com/videopick/web",
-    status: "active" as const,
-    environments: [
-      { name: "staging", status: "running" as const, domain: "videopick-staging.codeb.kr", port: 3001 },
-      { name: "production", status: "running" as const, domain: "videopick.codeb.kr", port: 4001 },
-    ],
-    lastDeployed: "2024-12-17T10:30:00Z",
-  },
-  {
-    id: "2",
-    name: "api-gateway",
-    type: "nodejs",
-    gitRepo: "https://github.com/videopick/api",
-    status: "active" as const,
-    environments: [
-      { name: "staging", status: "deploying" as const, domain: "api-staging.codeb.kr", port: 3002 },
-      { name: "production", status: "running" as const, domain: "api.codeb.kr", port: 4002 },
-    ],
-    lastDeployed: "2024-12-17T09:15:00Z",
-  },
-  {
-    id: "3",
-    name: "admin-panel",
-    type: "nextjs",
-    gitRepo: "https://github.com/videopick/admin",
-    status: "active" as const,
-    environments: [
-      { name: "staging", status: "stopped" as const, domain: "admin-staging.codeb.kr", port: 3003 },
-      { name: "production", status: "running" as const, domain: "admin.codeb.kr", port: 4003 },
-    ],
-    lastDeployed: "2024-12-16T14:20:00Z",
-  },
-  {
-    id: "4",
-    name: "landing-page",
-    type: "static",
-    gitRepo: "https://github.com/videopick/landing",
-    status: "active" as const,
-    environments: [
-      { name: "production", status: "running" as const, domain: "landing.codeb.kr", port: 4004 },
-    ],
-    lastDeployed: "2024-12-15T08:00:00Z",
-  },
-];
+interface ProjectWithSlots {
+  id: string;
+  name: string;
+  type: "nextjs" | "remix" | "nodejs" | "static";
+  gitRepo?: string;
+  slots: SlotRegistry[];
+  lastDeployed?: string;
+}
 
 const projectTypes: Record<string, { label: string; color: string }> = {
   nextjs: { label: "Next.js", color: "bg-black text-white" },
@@ -80,6 +44,85 @@ const projectTypes: Record<string, { label: string; color: string }> = {
 export default function ProjectsPage() {
   const [searchQuery, setSearchQuery] = useState("");
   const [selectedType, setSelectedType] = useState<string | null>(null);
+  const [projects, setProjects] = useState<ProjectWithSlots[]>([]);
+  const [expandedProject, setExpandedProject] = useState<string | null>(null);
+  const [isLoading, setIsLoading] = useState(true);
+  const [actionLoading, setActionLoading] = useState<string | null>(null);
+
+  const fetchProjects = async () => {
+    try {
+      setIsLoading(true);
+      const slotsData = await slotApi.list();
+
+      // Group slots by project
+      const projectMap = new Map<string, SlotRegistry[]>();
+      slotsData.forEach((slot) => {
+        const existing = projectMap.get(slot.projectName) || [];
+        existing.push(slot);
+        projectMap.set(slot.projectName, existing);
+      });
+
+      // Convert to project list
+      const projectList: ProjectWithSlots[] = Array.from(projectMap.entries()).map(
+        ([name, slots]) => {
+          // Find latest deployment
+          let lastDeployed: string | undefined;
+          slots.forEach((s) => {
+            const blueDate = s.blue.deployedAt;
+            const greenDate = s.green.deployedAt;
+            const latest = blueDate && greenDate
+              ? (new Date(blueDate) > new Date(greenDate) ? blueDate : greenDate)
+              : blueDate || greenDate;
+            if (latest && (!lastDeployed || new Date(latest) > new Date(lastDeployed))) {
+              lastDeployed = latest;
+            }
+          });
+
+          return {
+            id: name,
+            name,
+            type: "nextjs" as const, // Would come from registry
+            slots,
+            lastDeployed,
+          };
+        }
+      );
+
+      setProjects(projectList);
+    } catch (error) {
+      console.error("Failed to fetch projects:", error);
+    } finally {
+      setIsLoading(false);
+    }
+  };
+
+  useEffect(() => {
+    fetchProjects();
+  }, []);
+
+  const handlePromote = async (projectName: string, environment: string) => {
+    try {
+      setActionLoading(`${projectName}-${environment}-promote`);
+      await slotApi.promote(projectName, environment);
+      await fetchProjects();
+    } catch (error) {
+      console.error("Promote failed:", error);
+    } finally {
+      setActionLoading(null);
+    }
+  };
+
+  const handleRollback = async (projectName: string, environment: string) => {
+    try {
+      setActionLoading(`${projectName}-${environment}-rollback`);
+      await slotApi.rollback(projectName, environment);
+      await fetchProjects();
+    } catch (error) {
+      console.error("Rollback failed:", error);
+    } finally {
+      setActionLoading(null);
+    }
+  };
 
   const filteredProjects = projects.filter((project) => {
     const matchesSearch = project.name.toLowerCase().includes(searchQuery.toLowerCase());
@@ -91,7 +134,13 @@ export default function ProjectsPage() {
     <div className="flex flex-col">
       <Header
         title="Projects"
-        description="Manage your deployment projects"
+        description="Manage your Blue-Green deployment projects"
+        action={
+          <Button variant="outline" size="sm" onClick={fetchProjects} disabled={isLoading}>
+            <RefreshCw className={`h-4 w-4 mr-2 ${isLoading ? "animate-spin" : ""}`} />
+            Refresh
+          </Button>
+        }
       />
 
       <div className="p-6 space-y-6">
@@ -142,101 +191,129 @@ export default function ProjectsPage() {
           </Link>
         </div>
 
-        {/* Projects Grid */}
-        <div className="grid gap-4 md:grid-cols-2 lg:grid-cols-3">
-          {filteredProjects.map((project) => (
-            <Card key={project.id} className="hover:shadow-md transition-shadow">
-              <CardContent className="p-6">
-                {/* Header */}
-                <div className="flex items-start justify-between mb-4">
-                  <div className="flex items-center gap-3">
-                    <div className="flex h-10 w-10 items-center justify-center rounded-lg bg-gray-100">
-                      <span className="text-lg font-bold text-gray-600">
-                        {project.name.charAt(0).toUpperCase()}
-                      </span>
-                    </div>
-                    <div>
-                      <h3 className="font-semibold text-gray-900">{project.name}</h3>
-                      <span className={`inline-flex items-center px-2 py-0.5 rounded text-xs font-medium ${projectTypes[project.type].color}`}>
-                        {projectTypes[project.type].label}
-                      </span>
-                    </div>
-                  </div>
-                  <button className="p-1 rounded hover:bg-gray-100">
-                    <MoreVertical className="h-4 w-4 text-gray-500" />
-                  </button>
-                </div>
-
-                {/* Git Repo */}
-                {project.gitRepo && (
-                  <a
-                    href={project.gitRepo}
-                    target="_blank"
-                    rel="noopener noreferrer"
-                    className="flex items-center gap-2 text-sm text-gray-500 hover:text-gray-700 mb-4"
+        {/* Projects List */}
+        <div className="space-y-4">
+          {isLoading ? (
+            <div className="text-center py-12">
+              <RefreshCw className="mx-auto h-8 w-8 animate-spin text-gray-400" />
+              <p className="mt-2 text-gray-500">Loading projects...</p>
+            </div>
+          ) : filteredProjects.length > 0 ? (
+            filteredProjects.map((project) => (
+              <Card key={project.id} className="overflow-hidden">
+                <CardContent className="p-0">
+                  {/* Project Header */}
+                  <div
+                    className="p-4 flex items-center justify-between cursor-pointer hover:bg-gray-50"
+                    onClick={() => setExpandedProject(
+                      expandedProject === project.id ? null : project.id
+                    )}
                   >
-                    <GitBranch className="h-4 w-4" />
-                    <span className="truncate">{project.gitRepo.replace("https://github.com/", "")}</span>
-                  </a>
-                )}
-
-                {/* Environments */}
-                <div className="space-y-2 mb-4">
-                  {project.environments.map((env) => (
-                    <div key={env.name} className="flex items-center justify-between py-2 border-t border-gray-100">
-                      <div className="flex items-center gap-2">
-                        <Badge variant={env.name === "production" ? "info" : "default"}>
-                          {env.name}
-                        </Badge>
-                        <StatusBadge status={env.status} />
+                    <div className="flex items-center gap-4">
+                      <div className="flex h-12 w-12 items-center justify-center rounded-lg bg-gray-100">
+                        <span className="text-xl font-bold text-gray-600">
+                          {project.name.charAt(0).toUpperCase()}
+                        </span>
                       </div>
-                      <a
-                        href={`https://${env.domain}`}
-                        target="_blank"
-                        rel="noopener noreferrer"
-                        className="flex items-center gap-1 text-xs text-blue-600 hover:underline"
-                      >
-                        <Globe className="h-3 w-3" />
-                        {env.domain}
-                      </a>
+                      <div>
+                        <div className="flex items-center gap-2">
+                          <h3 className="font-semibold text-gray-900">{project.name}</h3>
+                          <span className={`inline-flex items-center px-2 py-0.5 rounded text-xs font-medium ${projectTypes[project.type].color}`}>
+                            {projectTypes[project.type].label}
+                          </span>
+                        </div>
+                        <div className="flex items-center gap-4 mt-1 text-sm text-gray-500">
+                          <span>{project.slots.length} environment(s)</span>
+                          {project.lastDeployed && (
+                            <span>Last deployed {formatRelativeTime(project.lastDeployed)}</span>
+                          )}
+                        </div>
+                      </div>
                     </div>
-                  ))}
-                </div>
 
-                {/* Footer */}
-                <div className="flex items-center justify-between pt-4 border-t border-gray-100">
-                  <span className="text-xs text-gray-500">
-                    Deployed {formatRelativeTime(project.lastDeployed)}
-                  </span>
-                  <div className="flex gap-1">
-                    <Button variant="ghost" size="sm">
-                      <Rocket className="h-4 w-4" />
-                    </Button>
-                    <Button variant="ghost" size="sm">
-                      <Settings className="h-4 w-4" />
-                    </Button>
-                    <Button variant="ghost" size="sm">
-                      <ExternalLink className="h-4 w-4" />
-                    </Button>
+                    <div className="flex items-center gap-4">
+                      {/* Slot Indicators for each environment */}
+                      <div className="flex gap-3">
+                        {project.slots.map((slot) => (
+                          <div key={slot.environment} className="flex items-center gap-2">
+                            <span className="text-xs text-gray-500">{slot.environment}</span>
+                            <SlotIndicator
+                              activeSlot={slot.activeSlot}
+                              blueState={slot.blue.state}
+                              greenState={slot.green.state}
+                            />
+                          </div>
+                        ))}
+                      </div>
+
+                      {/* Expand/Collapse */}
+                      {expandedProject === project.id ? (
+                        <ChevronUp className="h-5 w-5 text-gray-400" />
+                      ) : (
+                        <ChevronDown className="h-5 w-5 text-gray-400" />
+                      )}
+                    </div>
                   </div>
-                </div>
-              </CardContent>
-            </Card>
-          ))}
-        </div>
 
-        {/* Empty State */}
-        {filteredProjects.length === 0 && (
-          <div className="text-center py-12">
-            <p className="text-gray-500">No projects found</p>
-            <Link href="/projects/new">
-              <Button className="mt-4">
-                <Plus className="mr-2 h-4 w-4" />
-                Create your first project
-              </Button>
-            </Link>
-          </div>
-        )}
+                  {/* Expanded Slot Details */}
+                  {expandedProject === project.id && (
+                    <div className="border-t border-gray-100 bg-gray-50 p-4 space-y-4">
+                      {project.slots.map((slot) => (
+                        <div key={slot.environment} className="bg-white rounded-lg border border-gray-200 p-4">
+                          <SlotStatus
+                            registry={slot}
+                            onPromote={
+                              slot.blue.state === "deployed" || slot.green.state === "deployed"
+                                ? () => handlePromote(slot.projectName, slot.environment)
+                                : undefined
+                            }
+                            onRollback={
+                              slot.blue.state === "grace" || slot.green.state === "grace"
+                                ? () => handleRollback(slot.projectName, slot.environment)
+                                : undefined
+                            }
+                            isLoading={
+                              actionLoading === `${slot.projectName}-${slot.environment}-promote` ||
+                              actionLoading === `${slot.projectName}-${slot.environment}-rollback`
+                            }
+                          />
+                        </div>
+                      ))}
+
+                      {/* Project Actions */}
+                      <div className="flex justify-end gap-2 pt-2">
+                        <Button variant="outline" size="sm">
+                          <Settings className="h-4 w-4 mr-1" />
+                          Settings
+                        </Button>
+                        <Button variant="outline" size="sm">
+                          <Globe className="h-4 w-4 mr-1" />
+                          Domains
+                        </Button>
+                        <Link href={`/deployments/new?project=${project.name}`}>
+                          <Button size="sm">
+                            <Rocket className="h-4 w-4 mr-1" />
+                            Deploy
+                          </Button>
+                        </Link>
+                      </div>
+                    </div>
+                  )}
+                </CardContent>
+              </Card>
+            ))
+          ) : (
+            <div className="text-center py-12">
+              <p className="text-gray-500">No projects found</p>
+              <Link href="/projects/new">
+                <Button className="mt-4">
+                  <Plus className="mr-2 h-4 w-4" />
+                  Create your first project
+                </Button>
+              </Link>
+            </div>
+          )}
+        </div>
       </div>
     </div>
   );
