@@ -78,17 +78,47 @@ interface RollbackResult {
 const DEFAULT_API_URL = 'https://api.codeb.kr/api';
 const FALLBACK_API_URL = 'http://158.247.203.55:9101/api';
 
-export class ApiClient {
+export interface ConfigLike {
+  getApiKey(): string;
+  getApiUrl(): string;
+}
+
+// Simple implementation for standalone API key usage
+export class SimpleConfig implements ConfigLike {
   private apiKey: string;
   private apiUrl: string;
+
+  constructor(apiKey: string, apiUrl: string = 'https://api.codeb.kr/api') {
+    this.apiKey = apiKey;
+    this.apiUrl = apiUrl;
+  }
+
+  getApiKey(): string {
+    return this.apiKey;
+  }
+
+  getApiUrl(): string {
+    return this.apiUrl;
+  }
+}
+
+export class ApiClient {
+  private config: ConfigLike;
   private defaultHeaders: Record<string, string>;
 
-  constructor(apiKey: string, apiUrl?: string) {
-    this.apiKey = apiKey;
-    this.apiUrl = apiUrl || DEFAULT_API_URL;
+  constructor(config: ConfigLike) {
+    this.config = config;
     this.defaultHeaders = {
       'Content-Type': 'application/json',
     };
+  }
+
+  private get apiKey(): string {
+    return this.config.getApiKey();
+  }
+
+  private get apiUrl(): string {
+    return this.config.getApiUrl();
   }
 
   /**
@@ -120,14 +150,14 @@ export class ApiClient {
         });
 
         if (!response.ok) {
-          const errorData = await response.json().catch(() => ({}));
+          const errorData = await response.json().catch(() => ({})) as { error?: string };
           return {
             success: false,
             error: errorData.error || `HTTP ${response.status}: ${response.statusText}`,
           };
         }
 
-        return await response.json();
+        return await response.json() as ApiResponse<T>;
       } catch (error) {
         // Try next URL
         if (url === urls[urls.length - 1]) {
@@ -149,21 +179,21 @@ export class ApiClient {
    * Deploy to Blue-Green slot
    */
   async deploy(params: DeployParams): Promise<ApiResponse<DeployResult>> {
-    return this.call<DeployResult>('deploy', params);
+    return this.call<DeployResult>('deploy', params as unknown as Record<string, unknown>);
   }
 
   /**
    * Promote deployment to production
    */
   async promote(params: PromoteParams): Promise<ApiResponse<PromoteResult>> {
-    return this.call<PromoteResult>('promote', params);
+    return this.call<PromoteResult>('promote', params as unknown as Record<string, unknown>);
   }
 
   /**
    * Rollback to previous version
    */
   async rollback(params: RollbackParams): Promise<ApiResponse<RollbackResult>> {
-    return this.call<RollbackResult>('rollback', params);
+    return this.call<RollbackResult>('rollback', params as unknown as Record<string, unknown>);
   }
 
   /**
@@ -191,7 +221,7 @@ export class ApiClient {
     };
     lastUpdated: string;
   }>> {
-    return this.call('slot_status', params);
+    return this.call('slot_status', params as unknown as Record<string, unknown>);
   }
 
   /**
@@ -199,10 +229,11 @@ export class ApiClient {
    */
   async whoami(): Promise<ApiResponse<WhoamiData>> {
     // First try to get team info
-    const teamsResult = await this.call<{ teams: Array<{ id: string; name: string }> }>('team_list', {});
+    // Note: team_list returns { success, teams: [...] } not { success, data: { teams: [...] } }
+    const teamsResult = await this.call<unknown>('team_list', {}) as ApiResponse & { teams?: Array<{ id: string; name: string }> };
 
-    if (teamsResult.success && teamsResult.data?.teams?.[0]) {
-      const team = teamsResult.data.teams[0];
+    if (teamsResult.success && teamsResult.teams?.[0]) {
+      const team = teamsResult.teams[0];
 
       // Parse API key to extract info
       // Format: codeb_{teamId}_{role}_{token}

@@ -3,7 +3,7 @@
  * Full-screen interactive mode with project selection and quick actions
  */
 
-import React, { useState, useEffect } from 'react';
+import { useState, useEffect } from 'react';
 import { Box, Text, Newline, useInput, useApp } from 'ink';
 import Spinner from 'ink-spinner';
 import figures from 'figures';
@@ -55,7 +55,7 @@ export function InteractiveApp() {
       return;
     }
 
-    const client = new ApiClient(apiKey);
+    const client = new ApiClient(config);
 
     try {
       // Fetch user info and projects in parallel

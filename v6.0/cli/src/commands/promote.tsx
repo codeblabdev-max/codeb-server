@@ -3,7 +3,7 @@
  * Zero-downtime traffic switch to deployed slot
  */
 
-import React, { useState, useEffect } from 'react';
+import { useState, useEffect } from 'react';
 import { Box, Text, Newline, useApp } from 'ink';
 import Spinner from 'ink-spinner';
 import figures from 'figures';
@@ -74,7 +74,7 @@ export function PromoteCommand({
       return;
     }
 
-    const client = new ApiClient(apiKey);
+    const client = new ApiClient(config);
 
     try {
       const statusResult = await client.slotStatus({
@@ -118,7 +118,7 @@ export function PromoteCommand({
     setState('promoting');
 
     const apiKey = config.getApiKey();
-    const client = new ApiClient(apiKey!);
+    const client = new ApiClient(config);
 
     try {
       const promoteResult = await client.promote({

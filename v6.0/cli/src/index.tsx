@@ -4,7 +4,6 @@
  * Vercel-style developer experience with Ink React components
  */
 
-import React from 'react';
 import { render } from 'ink';
 import { Command } from 'commander';
 import updateNotifier from 'update-notifier';
@@ -26,8 +25,8 @@ import {
 
 // Package info
 const pkg = {
-  name: '@codeb/cli',
-  version: '6.0.0',
+  name: '@codeblabdev-max/we-cli',
+  version: '6.0.2',
 };
 
 // Check for updates
@@ -56,7 +55,7 @@ program
   .option('-k, --api-key <key>', 'API key (or set CODEB_API_KEY env)')
   .action(async (options) => {
     const { waitUntilExit } = render(
-      <LoginCommand options={options} config={config} api={api} />
+      <LoginCommand token={options.apiKey} />
     );
     await waitUntilExit();
   });
@@ -74,7 +73,7 @@ program
   .description('Show current user info')
   .action(async () => {
     const { waitUntilExit } = render(
-      <WhoamiCommand config={config} api={api} />
+      <WhoamiCommand />
     );
     await waitUntilExit();
   });
@@ -94,9 +93,8 @@ program
     const { waitUntilExit } = render(
       <DeployCommand
         project={project}
-        options={options}
-        config={config}
-        api={api}
+        environment={options.prod ? 'production' : options.environment}
+        ci={!!process.env.CI}
       />
     );
     await waitUntilExit();
@@ -111,9 +109,9 @@ program
     const { waitUntilExit } = render(
       <PromoteCommand
         project={project}
-        options={options}
-        config={config}
-        api={api}
+        environment={options.environment}
+        yes={options.yes}
+        ci={!!process.env.CI}
       />
     );
     await waitUntilExit();
@@ -129,9 +127,10 @@ program
     const { waitUntilExit } = render(
       <RollbackCommand
         project={project}
-        options={options}
-        config={config}
-        api={api}
+        environment={options.environment}
+        reason={options.reason}
+        yes={options.yes}
+        ci={!!process.env.CI}
       />
     );
     await waitUntilExit();
@@ -185,16 +184,21 @@ program
       });
 
       if (result.success && result.data) {
+        const d = result.data as {
+          activeSlot: string;
+          blue: { state: string; port: number; version?: string };
+          green: { state: string; port: number; version?: string };
+        };
         console.log(chalk.bold(`\nSlot Status: ${projectName} (${options.environment})\n`));
-        console.log(`Active: ${chalk.green(result.data.activeSlot)}`);
+        console.log(`Active: ${chalk.green(d.activeSlot)}`);
         console.log(`\nBlue Slot:`);
-        console.log(`  State: ${result.data.blue.state}`);
-        console.log(`  Port: ${result.data.blue.port}`);
-        console.log(`  Version: ${result.data.blue.version || 'none'}`);
+        console.log(`  State: ${d.blue.state}`);
+        console.log(`  Port: ${d.blue.port}`);
+        console.log(`  Version: ${d.blue.version || 'none'}`);
         console.log(`\nGreen Slot:`);
-        console.log(`  State: ${result.data.green.state}`);
-        console.log(`  Port: ${result.data.green.port}`);
-        console.log(`  Version: ${result.data.green.version || 'none'}`);
+        console.log(`  State: ${d.green.state}`);
+        console.log(`  Port: ${d.green.port}`);
+        console.log(`  Version: ${d.green.version || 'none'}`);
       } else {
         console.log(chalk.red(`Error: ${result.error}`));
       }
@@ -228,14 +232,19 @@ env
         environment: options.environment,
       });
 
-      if (result.success) {
+      if (result.success && result.data) {
+        const d = result.data as {
+          masterExists: boolean;
+          currentExists: boolean;
+          backups?: Array<{ timestamp: string; version: string }>;
+        };
         console.log(chalk.bold(`\nENV Backups: ${projectName} (${options.environment})\n`));
-        console.log(`Master: ${result.masterExists ? chalk.green('exists') : chalk.red('missing')}`);
-        console.log(`Current: ${result.currentExists ? chalk.green('exists') : chalk.red('missing')}`);
+        console.log(`Master: ${d.masterExists ? chalk.green('exists') : chalk.red('missing')}`);
+        console.log(`Current: ${d.currentExists ? chalk.green('exists') : chalk.red('missing')}`);
 
-        if (result.backups && result.backups.length > 0) {
+        if (d.backups && d.backups.length > 0) {
           console.log(chalk.bold('\nRecent backups:'));
-          for (const backup of result.backups) {
+          for (const backup of d.backups) {
             console.log(`  ${chalk.gray(backup.timestamp)} - ${backup.version}`);
           }
         }
@@ -254,16 +263,23 @@ env
     try {
       const result = await api.call('env_scan', {});
 
-      if (result.success) {
+      if (result.success && result.data) {
+        const d = result.data as {
+          summary: { totalProjects: number; legacyEnvs: number; v6Envs: number; needsMigration: number };
+          projects?: Array<{
+            projectName: string;
+            environments: Array<{ name: string; isV6Format: boolean; issues: string[] }>;
+          }>;
+        };
         console.log(chalk.bold('\nENV Configuration Scan\n'));
-        console.log(`Total Projects: ${result.summary.totalProjects}`);
-        console.log(`Legacy ENVs: ${chalk.yellow(result.summary.legacyEnvs)}`);
-        console.log(`v6.0 ENVs: ${chalk.green(result.summary.v6Envs)}`);
-        console.log(`Needs Migration: ${chalk.red(result.summary.needsMigration)}`);
+        console.log(`Total Projects: ${d.summary.totalProjects}`);
+        console.log(`Legacy ENVs: ${chalk.yellow(d.summary.legacyEnvs)}`);
+        console.log(`v6.0 ENVs: ${chalk.green(d.summary.v6Envs)}`);
+        console.log(`Needs Migration: ${chalk.red(d.summary.needsMigration)}`);
 
-        if (result.projects) {
+        if (d.projects) {
           console.log(chalk.bold('\nProjects:'));
-          for (const project of result.projects) {
+          for (const project of d.projects) {
             console.log(`\n  ${chalk.cyan(project.projectName)}`);
             for (const env of project.environments) {
               const status = env.isV6Format ? chalk.green('v6.0') : chalk.yellow('legacy');
@@ -305,10 +321,14 @@ env
         dryRun: options.dryRun ?? true,
       });
 
-      if (result.success) {
-        if (result.changes && result.changes.length > 0) {
+      if (result.success && result.data) {
+        const d = result.data as {
+          changes?: Array<{ type: string; key: string; reason: string }>;
+          warnings?: string[];
+        };
+        if (d.changes && d.changes.length > 0) {
           console.log(chalk.bold('Changes:'));
-          for (const change of result.changes) {
+          for (const change of d.changes) {
             const icon = change.type === 'added' ? chalk.green('+') :
                         change.type === 'removed' ? chalk.red('-') :
                         change.type === 'modified' ? chalk.yellow('~') :
@@ -319,9 +339,9 @@ env
           console.log(chalk.green('No changes needed. ENV is already in v6.0 format.'));
         }
 
-        if (result.warnings && result.warnings.length > 0) {
+        if (d.warnings && d.warnings.length > 0) {
           console.log(chalk.bold('\nWarnings:'));
-          for (const warning of result.warnings) {
+          for (const warning of d.warnings) {
             console.log(`  ${chalk.yellow('!')} ${warning}`);
           }
         }
@@ -359,8 +379,9 @@ env
         version: options.version,
       });
 
-      if (result.success) {
-        console.log(chalk.green(`ENV restored successfully from ${result.restoredFrom}`));
+      if (result.success && result.data) {
+        const d = result.data as { restoredFrom: string };
+        console.log(chalk.green(`ENV restored successfully from ${d.restoredFrom}`));
       } else {
         console.log(chalk.red(`Error: ${result.error}`));
       }
@@ -407,7 +428,17 @@ program
       });
 
       if (result.success && result.data) {
-        const d = result.data;
+        const d = result.data as {
+          pageViews: number;
+          uniqueVisitors: number;
+          bounceRate: number;
+          lcp: number;
+          cls: number;
+          inp: number;
+          ttfb: number;
+          deployments: number;
+          successRate: number;
+        };
         console.log(chalk.bold(`\nAnalytics: ${projectName} (${options.period})\n`));
         console.log(`Page Views: ${chalk.cyan(d.pageViews.toLocaleString())}`);
         console.log(`Unique Visitors: ${chalk.cyan(d.uniqueVisitors.toLocaleString())}`);
@@ -518,10 +549,11 @@ migrate
         migrationId: options.id,
       });
 
-      if (result.success) {
-        console.log(chalk.green(`\n${result.message}\n`));
+      if (result.success && result.data) {
+        const d = result.data as { message: string };
+        console.log(chalk.green(`\n${d.message}\n`));
       } else {
-        console.log(chalk.red(`Error: ${result.error || result.message}`));
+        console.log(chalk.red(`Error: ${result.error}`));
       }
     } catch (error) {
       console.log(chalk.red(`Error: ${error}`));
@@ -545,16 +577,23 @@ migrate
       console.log(chalk.bold('Step 1: Detecting legacy systems...'));
       const detection = await api.call('migrate_detect', {});
 
-      if (!detection.success || detection.projects?.length === 0) {
+      interface DetectionData {
+        projects: Array<{ name: string }>;
+        systemType: string;
+        warnings?: string[];
+      }
+
+      const dd = detection.data as DetectionData | undefined;
+      if (!detection.success || !dd?.projects?.length) {
         console.log(chalk.yellow('No legacy projects found to migrate.'));
         return;
       }
 
-      console.log(chalk.green(`  Found ${detection.projects.length} project(s)`));
-      console.log(chalk.green(`  System type: ${detection.systemType}`));
+      console.log(chalk.green(`  Found ${dd.projects.length} project(s)`));
+      console.log(chalk.green(`  System type: ${dd.systemType}`));
 
-      if (detection.warnings) {
-        for (const warning of detection.warnings) {
+      if (dd.warnings) {
+        for (const warning of dd.warnings) {
           console.log(chalk.yellow(`  ! ${warning}`));
         }
       }
@@ -569,13 +608,30 @@ migrate
         force: options.force ?? false,
       });
 
-      if (result.success) {
-        console.log(chalk.green(`\n✅ Migration ${result.migrationId} completed!\n`));
+      interface MigrationResult {
+        migrationId: string;
+        registeredProjects?: Array<{
+          status: string;
+          name: string;
+          environment: string;
+          currentPort: number;
+          bluePort: number;
+          greenPort: number;
+          volumes: string[];
+        }>;
+        warnings?: string[];
+        nextSteps?: string[];
+        errors?: string[];
+      }
 
-        if (result.registeredProjects && result.registeredProjects.length > 0) {
+      const rd = result.data as MigrationResult | undefined;
+      if (result.success && rd) {
+        console.log(chalk.green(`\n Migration ${rd.migrationId} completed!\n`));
+
+        if (rd.registeredProjects && rd.registeredProjects.length > 0) {
           console.log(chalk.bold('Registered Projects:'));
-          for (const project of result.registeredProjects) {
-            const statusIcon = project.status === 'ready' ? chalk.green('✓') : chalk.yellow('○');
+          for (const project of rd.registeredProjects) {
+            const statusIcon = project.status === 'ready' ? chalk.green('v') : chalk.yellow('o');
             console.log(`  ${statusIcon} ${chalk.cyan(project.name)} (${project.environment})`);
             console.log(chalk.gray(`      Current: port ${project.currentPort}`));
             console.log(chalk.gray(`      Blue: port ${project.bluePort} | Green: port ${project.greenPort}`));
@@ -585,21 +641,21 @@ migrate
           }
         }
 
-        if (result.warnings && result.warnings.length > 0) {
+        if (rd.warnings && rd.warnings.length > 0) {
           console.log(chalk.bold('\nWarnings:'));
-          for (const warning of result.warnings) {
+          for (const warning of rd.warnings) {
             console.log(chalk.yellow(`  ! ${warning}`));
           }
         }
 
         console.log(chalk.bold('\nNext Steps:'));
-        for (const step of result.nextSteps || []) {
+        for (const step of rd.nextSteps || []) {
           console.log(chalk.gray(`  ${step}`));
         }
       } else {
-        console.log(chalk.red(`\n❌ Migration failed`));
-        if (result.errors) {
-          for (const error of result.errors) {
+        console.log(chalk.red(`\n Migration failed`));
+        if (rd?.errors) {
+          for (const error of rd.errors) {
             console.log(chalk.red(`  ${error}`));
           }
         }
@@ -624,12 +680,13 @@ migrate
         projectName,
       });
 
-      if (result.success) {
+      if (result.success && result.data) {
+        const d = result.data as { workflow: string };
         console.log(chalk.bold.cyan(`\nGitHub Actions Workflow for ${projectName}\n`));
         console.log(chalk.gray('Save this as .github/workflows/deploy.yml\n'));
-        console.log(chalk.gray('─'.repeat(60)));
-        console.log(result.workflow);
-        console.log(chalk.gray('─'.repeat(60)));
+        console.log(chalk.gray('-'.repeat(60)));
+        console.log(d.workflow);
+        console.log(chalk.gray('-'.repeat(60)));
         console.log(chalk.bold('\nRequired GitHub Secrets:'));
         console.log(chalk.gray('  CODEB_API_KEY - Your CodeB API key'));
         console.log(chalk.gray('  GHCR_PAT - GitHub Container Registry token'));
@@ -648,38 +705,52 @@ migrate
     try {
       const detection = await api.call('migrate_detect', {});
 
-      console.log(chalk.bold.cyan('\n📊 Migration Status\n'));
+      interface StatusData {
+        systemType: string;
+        hasSSOT: boolean;
+        projects?: Array<{
+          name: string;
+          canMigrate: boolean;
+          migrationBlocker?: string;
+          environments: Array<{ name: string; status: string; port?: number }>;
+        }>;
+        containers?: Array<{ name: string; status: string; isQuadlet?: boolean }>;
+        warnings?: string[];
+      }
 
-      console.log(chalk.bold('System Type:'), detection.systemType);
-      console.log(chalk.bold('SSOT:'), detection.hasSSOT ? chalk.green('Present') : chalk.gray('Not found'));
+      const d = detection.data as StatusData | undefined;
+      console.log(chalk.bold.cyan('\n Migration Status\n'));
 
-      if (detection.projects && detection.projects.length > 0) {
-        console.log(chalk.bold(`\nProjects (${detection.projects.length}):`));
-        for (const project of detection.projects) {
+      console.log(chalk.bold('System Type:'), d?.systemType || 'unknown');
+      console.log(chalk.bold('SSOT:'), d?.hasSSOT ? chalk.green('Present') : chalk.gray('Not found'));
+
+      if (d?.projects && d.projects.length > 0) {
+        console.log(chalk.bold(`\nProjects (${d.projects.length}):`));
+        for (const project of d.projects) {
           const status = project.canMigrate ? chalk.green('ready') : chalk.yellow('blocked');
           console.log(`  ${chalk.cyan(project.name)} [${status}]`);
           for (const env of project.environments) {
-            const envStatus = env.status === 'running' ? chalk.green('●') : chalk.gray('○');
+            const envStatus = env.status === 'running' ? chalk.green('*') : chalk.gray('o');
             console.log(chalk.gray(`    ${envStatus} ${env.name}: port ${env.port || 'N/A'}`));
           }
           if (!project.canMigrate && project.migrationBlocker) {
-            console.log(chalk.yellow(`    → ${project.migrationBlocker}`));
+            console.log(chalk.yellow(`    -> ${project.migrationBlocker}`));
           }
         }
       }
 
-      if (detection.containers && detection.containers.length > 0) {
-        console.log(chalk.bold(`\nContainers (${detection.containers.length}):`));
-        for (const container of detection.containers) {
-          const status = container.status === 'running' ? chalk.green('●') : chalk.gray('○');
+      if (d?.containers && d.containers.length > 0) {
+        console.log(chalk.bold(`\nContainers (${d.containers.length}):`));
+        for (const container of d.containers) {
+          const status = container.status === 'running' ? chalk.green('*') : chalk.gray('o');
           const quadlet = container.isQuadlet ? chalk.cyan('[Quadlet]') : '';
           console.log(`  ${status} ${container.name} ${quadlet}`);
         }
       }
 
-      if (detection.warnings && detection.warnings.length > 0) {
+      if (d?.warnings && d.warnings.length > 0) {
         console.log(chalk.bold('\nWarnings:'));
-        for (const warning of detection.warnings) {
+        for (const warning of d.warnings) {
           console.log(chalk.yellow(`  ! ${warning}`));
         }
       }
@@ -736,7 +807,7 @@ program
   .description('Interactive mode')
   .action(async () => {
     const { waitUntilExit } = render(
-      <InteractiveApp config={config} api={api} />
+      <InteractiveApp />
     );
     await waitUntilExit();
   });

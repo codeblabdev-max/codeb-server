@@ -3,7 +3,7 @@
  * Beautiful deployment experience with real-time progress
  */
 
-import React, { useState, useEffect, useCallback } from 'react';
+import { useState, useEffect, useCallback } from 'react';
 import { Box, Text, Newline, useApp } from 'ink';
 import Spinner from 'ink-spinner';
 import figures from 'figures';
@@ -96,7 +96,7 @@ export function DeployCommand({
       return;
     }
 
-    const client = new ApiClient(apiKey);
+    const client = new ApiClient(config);
 
     try {
       // Simulate step-by-step progress (API returns final result)

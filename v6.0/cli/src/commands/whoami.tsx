@@ -3,7 +3,7 @@
  * Display current user and team information
  */
 
-import React, { useState, useEffect } from 'react';
+import { useState, useEffect } from 'react';
 import { Box, Text, Newline } from 'ink';
 import Spinner from 'ink-spinner';
 import figures from 'figures';
@@ -43,7 +43,7 @@ export function WhoamiCommand() {
       }
 
       try {
-        const client = new ApiClient(apiKey);
+        const client = new ApiClient(config);
         const result = await client.whoami();
 
         if (result.success && result.data) {

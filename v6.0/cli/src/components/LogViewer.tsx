@@ -3,7 +3,7 @@
  * Real-time log streaming with filtering
  */
 
-import React, { useState, useEffect, useCallback } from 'react';
+import { useState, useEffect } from 'react';
 import { Box, Text, useInput, useApp } from 'ink';
 import Spinner from 'ink-spinner';
 import figures from 'figures';
@@ -75,7 +75,7 @@ export function LogViewer({
         return;
       }
 
-      const client = new ApiClient(apiKey);
+      const client = new ApiClient(config);
 
       try {
         const result = await client.call('logs', {

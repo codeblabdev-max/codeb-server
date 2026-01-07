@@ -3,12 +3,12 @@
  * Authenticate with CodeB API
  */
 
-import React, { useState, useEffect } from 'react';
+import { useState, useEffect } from 'react';
 import { Box, Text, Newline } from 'ink';
 import TextInput from 'ink-text-input';
 import Spinner from 'ink-spinner';
 import figures from 'figures';
-import { ApiClient } from '../lib/api-client.js';
+import { ApiClient, SimpleConfig } from '../lib/api-client.js';
 import { ConfigStore } from '../lib/config.js';
 
 interface LoginCommandProps {
@@ -41,12 +41,12 @@ export function LoginCommand({ token: initialToken }: LoginCommandProps) {
     setError(null);
 
     try {
-      const client = new ApiClient(apiKey);
+      const client = new ApiClient(new SimpleConfig(apiKey));
       const result = await client.whoami();
 
       if (result.success && result.data) {
         // Save token
-        config.setApiKey(apiKey);
+        config.set('apiKey', apiKey);
 
         setUserInfo({
           teamId: result.data.teamId,

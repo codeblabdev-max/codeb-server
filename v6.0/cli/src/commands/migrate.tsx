@@ -3,7 +3,7 @@
  * 레거시 시스템(v3.x/v5.x)에서 v6.0 Blue-Green 슬롯 시스템으로 마이그레이션
  */
 
-import React, { useState, useEffect } from 'react';
+import { useState, useEffect } from 'react';
 import { Box, Text, Newline, useApp } from 'ink';
 import Spinner from 'ink-spinner';
 import figures from 'figures';
@@ -60,7 +60,7 @@ export function MigrateDetectCommand({ verbose = false }: MigrateDetectProps) {
         return;
       }
 
-      const client = new ApiClient(apiKey);
+      const client = new ApiClient(config);
 
       try {
         const response = await client.call<DetectionResult>('migrate_detect', {});
@@ -273,7 +273,7 @@ export function MigratePlanCommand({ projects, dryRun = true }: MigratePlanProps
         return;
       }
 
-      const client = new ApiClient(apiKey);
+      const client = new ApiClient(config);
 
       try {
         const response = await client.call<{ plan: MigrationPlan }>('migrate_plan', {
@@ -470,7 +470,7 @@ export function MigrateExecuteCommand({
       return;
     }
 
-    const client = new ApiClient(apiKey);
+    const client = new ApiClient(config);
 
     try {
       // 먼저 계획 가져오기

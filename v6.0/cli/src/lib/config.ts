@@ -68,6 +68,11 @@ export class ConfigStore {
     return process.env.CODEB_API_KEY || this.conf.get('apiKey');
   }
 
+  // Set API key
+  setApiKey(apiKey: string): void {
+    this.conf.set('apiKey', apiKey);
+  }
+
   // Get API URL (with env override)
   getApiUrl(): string {
     return process.env.CODEB_API_URL || this.conf.get('apiUrl');

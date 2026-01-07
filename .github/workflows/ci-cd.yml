@@ -1,24 +1,24 @@
-# CodeB CLI CI/CD Pipeline
-# Simple CI for CLI tool - install verification only
+# CodeB CLI v6.0 CI/CD Pipeline
+# Publish to GitHub Package Registry
 
-name: CodeB CLI CI
+name: CodeB CLI v6.0 CI
 
 on:
   push:
-    branches: [main, develop]
-    tags:
-      - 'v*'
-  pull_request:
     branches: [main]
+    paths:
+      - 'v6.0/cli/**'
+    tags:
+      - 'v6.*'
   workflow_dispatch:
 
 env:
   NODE_VERSION: '20.x'
 
 jobs:
-  # CLI 설치 및 기본 검증
-  install-verify:
-    name: Install & Verify CLI
+  # CLI 빌드 및 검증
+  build-verify:
+    name: Build & Verify CLI
     runs-on: ubuntu-latest
 
     steps:
@@ -28,30 +28,30 @@ jobs:
         uses: actions/setup-node@v4
         with:
           node-version: ${{ env.NODE_VERSION }}
-          cache: 'npm'
 
       - name: Install dependencies
+        working-directory: ./v6.0/cli
         run: npm ci
 
-      - name: Verify CLI installation
+      - name: Build
+        working-directory: ./v6.0/cli
+        run: npm run build
+
+      - name: Verify CLI
+        working-directory: ./v6.0/cli
         run: |
-          echo "✅ Dependencies installed successfully"
+          echo "✅ Build successful"
           echo "📦 Package info:"
           cat package.json | grep -E '"name"|"version"'
 
-      - name: Run tests
-        run: npm test
-
-  # GitHub Package Registry 발행 (태그 push 또는 cli/** 변경 시)
+  # GitHub Package Registry 발행
   publish:
-    name: Publish to GitHub Package Registry
+    name: Publish to GitHub Packages
     runs-on: ubuntu-latest
-    needs: install-verify
-    if: startsWith(github.ref, 'refs/tags/v') || (github.ref == 'refs/heads/main' && contains(github.event.head_commit.modified, 'cli/'))
+    needs: build-verify
     permissions:
       contents: read
       packages: write
-      id-token: write
 
     steps:
       - uses: actions/checkout@v4
@@ -64,11 +64,15 @@ jobs:
           scope: '@codeblabdev-max'
 
       - name: Install dependencies
-        working-directory: ./cli
+        working-directory: ./v6.0/cli
         run: npm ci
 
+      - name: Build
+        working-directory: ./v6.0/cli
+        run: npm run build
+
       - name: Publish package
-        working-directory: ./cli
+        working-directory: ./v6.0/cli
         run: npm publish
         env:
           NODE_AUTH_TOKEN: ${{ secrets.GHCR_PAT }}

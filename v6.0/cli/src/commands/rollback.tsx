@@ -3,7 +3,7 @@
  * Instant rollback to previous version
  */
 
-import React, { useState, useEffect } from 'react';
+import { useState, useEffect } from 'react';
 import { Box, Text, Newline, useApp } from 'ink';
 import Spinner from 'ink-spinner';
 import figures from 'figures';
@@ -77,7 +77,7 @@ export function RollbackCommand({
       return;
     }
 
-    const client = new ApiClient(apiKey);
+    const client = new ApiClient(config);
 
     try {
       const statusResult = await client.slotStatus({
@@ -122,7 +122,7 @@ export function RollbackCommand({
     setState('rolling-back');
 
     const apiKey = config.getApiKey();
-    const client = new ApiClient(apiKey!);
+    const client = new ApiClient(config);
 
     try {
       const rollbackResult = await client.rollback({

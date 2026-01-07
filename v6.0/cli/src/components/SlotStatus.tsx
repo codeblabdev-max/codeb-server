@@ -3,7 +3,7 @@
  * Visual representation of Blue-Green slot status
  */
 
-import React, { useState, useEffect } from 'react';
+import { useState, useEffect } from 'react';
 import { Box, Text, Newline } from 'ink';
 import Spinner from 'ink-spinner';
 import figures from 'figures';
@@ -52,7 +52,7 @@ export function SlotStatus({ project, environment }: SlotStatusProps) {
         return;
       }
 
-      const client = new ApiClient(apiKey);
+      const client = new ApiClient(config);
 
       try {
         const result = await client.slotStatus({
