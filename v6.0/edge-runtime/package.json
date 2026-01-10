@@ -1,0 +1,39 @@
+{
+  "name": "@codeblabdev-max/edge-runtime",
+  "version": "6.0.5",
+  "description": "CodeB Edge Runtime - Deno-based serverless function execution",
+  "type": "module",
+  "main": "dist/index.js",
+  "types": "dist/index.d.ts",
+  "scripts": {
+    "build": "tsc",
+    "start": "node dist/index.js",
+    "dev": "tsx watch src/index.ts",
+    "test": "vitest"
+  },
+  "dependencies": {
+    "express": "^4.21.0",
+    "isolated-vm": "^4.7.2",
+    "prom-client": "^15.1.0",
+    "winston": "^3.17.0",
+    "zod": "^3.24.0"
+  },
+  "devDependencies": {
+    "@types/express": "^4.17.21",
+    "@types/node": "^22.10.5",
+    "tsx": "^4.19.2",
+    "typescript": "^5.7.2",
+    "vitest": "^2.1.8"
+  },
+  "engines": {
+    "node": ">=20.0.0"
+  },
+  "keywords": [
+    "edge",
+    "runtime",
+    "serverless",
+    "codeb"
+  ],
+  "author": "CodeB Team",
+  "license": "MIT"
+}

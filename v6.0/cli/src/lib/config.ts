@@ -101,7 +101,7 @@ export class ConfigStore {
   }
 
   // Link project to directory
-  linkProject(projectName: string, cwd: string = process.cwd()): void {
+  linkProject(cwd: string, projectName: string): void {
     const linked = this.conf.get('linkedProjects');
     linked[cwd] = projectName;
     this.conf.set('linkedProjects', linked);

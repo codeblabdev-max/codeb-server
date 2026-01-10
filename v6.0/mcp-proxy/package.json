@@ -1,6 +1,6 @@
 {
   "name": "@codeb/mcp-proxy",
-  "version": "6.0.0",
+  "version": "6.0.5",
   "description": "CodeB MCP Server - HTTP API Proxy (No SSH, API Key Auth Only)",
   "type": "module",
   "main": "dist/index.js",

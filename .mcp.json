@@ -7,7 +7,7 @@
       ],
       "env": {
         "CODEB_API_URL": "https://api.codeb.kr",
-        "CODEB_API_KEY": "${CODEB_API_KEY}"
+        "CODEB_API_KEY": "codeb_codeb-admin_owner_494e5c6ae99f36f5d7ad70897f8173d8"
       }
     }
   }

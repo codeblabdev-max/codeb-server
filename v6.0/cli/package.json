@@ -1,6 +1,6 @@
 {
   "name": "@codeblabdev-max/we-cli",
-  "version": "6.0.2",
+  "version": "6.0.5",
   "description": "CodeB CLI v6.0 - Deploy with confidence (Vercel-style DX)",
   "type": "module",
   "main": "dist/index.js",
@@ -23,6 +23,7 @@
     "access": "public"
   },
   "scripts": {
+    "predev": "../scripts/check-version.sh || true",
     "build": "tsc",
     "dev": "tsx watch src/index.tsx",
     "start": "node dist/index.js",

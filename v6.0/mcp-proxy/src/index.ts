@@ -66,9 +66,9 @@ async function callApi(tool: string, params: Record<string, unknown> = {}): Prom
 
 async function checkHealth(): Promise<boolean> {
   try {
-    const response = await fetch(`${API_URL}/health`);
+    const response = await fetch(`${API_URL}/api/health`);
     const data = await response.json();
-    return data.status === 'healthy';
+    return data.success === true || data.status === 'healthy';
   } catch {
     return false;
   }

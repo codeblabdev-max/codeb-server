@@ -1,6 +1,6 @@
 {
   "name": "@codeb/analytics",
-  "version": "6.0.0",
+  "version": "6.0.5",
   "description": "CodeB Analytics SDK - Web Vitals and custom metrics collection",
   "type": "module",
   "main": "./dist/index.js",

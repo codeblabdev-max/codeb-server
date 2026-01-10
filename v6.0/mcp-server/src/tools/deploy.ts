@@ -380,6 +380,7 @@ async function waitForHealthy(
 
 /**
  * Allocate base port for new project
+ * Checks both SSOT registry AND actual running containers
  */
 async function allocateBasePort(
   ssh: ReturnType<typeof getSSHClient>,
@@ -394,23 +395,50 @@ async function allocateBasePort(
 
   const range = ranges[environment];
 
-  // Read SSOT to find used ports
+  // Read SSOT to find registered ports
   const ssotPath = '/opt/codeb/registry/ssot.json';
-  const result = await ssh.exec(`cat ${ssotPath} 2>/dev/null || echo "{}"`);
+  const ssotResult = await ssh.exec(`cat ${ssotPath} 2>/dev/null || echo "{}"`);
 
   let ssot: { ports?: { used: number[] } } = {};
   try {
-    ssot = JSON.parse(result.stdout);
+    ssot = JSON.parse(ssotResult.stdout);
   } catch {
     ssot = {};
   }
 
-  const usedPorts = new Set(ssot.ports?.used || []);
+  const registeredPorts = new Set(ssot.ports?.used || []);
+
+  // Get actual ports in use by running containers (podman)
+  const portsResult = await ssh.exec(
+    `podman ps --format '{{.Ports}}' 2>/dev/null | grep -oE '[0-9]+->3000' | cut -d'-' -f1 | sort -u || true`
+  );
+  const runningPorts = new Set(
+    portsResult.stdout
+      .split('\n')
+      .filter(Boolean)
+      .map((p: string) => parseInt(p.trim(), 10))
+      .filter((p: number) => !isNaN(p))
+  );
+
+  // Also check ports via ss/netstat for any service
+  const listeningResult = await ssh.exec(
+    `ss -tlnp 2>/dev/null | awk '{print $4}' | grep -oE ':([0-9]+)$' | cut -d':' -f2 | sort -u || true`
+  );
+  const listeningPorts = new Set(
+    listeningResult.stdout
+      .split('\n')
+      .filter(Boolean)
+      .map((p: string) => parseInt(p.trim(), 10))
+      .filter((p: number) => !isNaN(p) && p >= range.start && p <= range.end)
+  );
+
+  // Combine all used ports
+  const usedPorts = new Set([...registeredPorts, ...runningPorts, ...listeningPorts]);
 
   // Find next available even port (blue gets even, green gets odd)
   for (let port = range.start; port <= range.end; port += 2) {
     if (!usedPorts.has(port) && !usedPorts.has(port + 1)) {
-      // Reserve both ports
+      // Reserve both ports in SSOT
       const updatedUsed = [...(ssot.ports?.used || []), port, port + 1];
       const updatedSsot = {
         ...ssot,

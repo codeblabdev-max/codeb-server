@@ -17,6 +17,22 @@ import { RollbackCommand } from './commands/rollback.js';
 import { LoginCommand } from './commands/login.js';
 import { WhoamiCommand } from './commands/whoami.js';
 import { InteractiveApp } from './components/InteractiveApp.js';
+import { LogsCommand } from './commands/logs.js';
+import { LinkCommand } from './commands/link.js';
+import {
+  EdgeListCommand,
+  EdgeDeployCommand,
+  EdgeLogsCommand,
+  EdgeDeleteCommand,
+  EdgeInvokeCommand,
+} from './commands/edge.js';
+import {
+  TeamListCommand,
+  TeamCreateCommand,
+  TeamSwitchCommand,
+  TeamMembersCommand,
+  TeamInviteCommand,
+} from './commands/team.js';
 import {
   MigrateDetectCommand,
   MigratePlanCommand,
@@ -26,7 +42,7 @@ import {
 // Package info
 const pkg = {
   name: '@codeblabdev-max/we-cli',
-  version: '6.0.2',
+  version: '6.0.5',
 };
 
 // Check for updates
@@ -141,11 +157,13 @@ program
 // ============================================================================
 
 program
-  .command('link')
+  .command('link [project]')
   .description('Link current directory to a project')
-  .action(async () => {
-    console.log(chalk.yellow('Interactive project linking...'));
-    // TODO: Implement project linking
+  .action(async (project) => {
+    const { waitUntilExit } = render(
+      <LinkCommand project={project} ci={!!process.env.CI} />
+    );
+    await waitUntilExit();
   });
 
 program
@@ -394,14 +412,106 @@ env
 // Edge Function Commands
 // ============================================================================
 
-program
+// Edge parent command
+const edge = program
   .command('edge')
-  .description('Manage edge functions')
-  .argument('[action]', 'Action: deploy, list, logs, delete')
+  .description('Manage edge functions');
+
+// edge list
+edge
+  .command('list')
+  .alias('ls')
+  .description('List edge functions')
   .option('-p, --project <project>', 'Project name')
-  .option('-f, --function <name>', 'Function name')
-  .action(async (action, options) => {
-    console.log(chalk.yellow('Edge functions coming soon...'));
+  .action(async (options) => {
+    const { waitUntilExit } = render(
+      <EdgeListCommand project={options.project} ci={!!process.env.CI} />
+    );
+    await waitUntilExit();
+  });
+
+// edge deploy
+edge
+  .command('deploy')
+  .description('Deploy an edge function')
+  .option('-p, --project <project>', 'Project name')
+  .option('-f, --file <file>', 'Path to edge function file')
+  .option('-n, --name <name>', 'Function name')
+  .option('-t, --type <type>', 'Function type (middleware, api, rewrite, redirect)', 'middleware')
+  .option('-r, --routes <routes...>', 'Routes to match', ['/*'])
+  .action(async (options) => {
+    const { waitUntilExit } = render(
+      <EdgeDeployCommand
+        project={options.project}
+        file={options.file}
+        name={options.name}
+        type={options.type}
+        routes={options.routes}
+        ci={!!process.env.CI}
+      />
+    );
+    await waitUntilExit();
+  });
+
+// edge logs
+edge
+  .command('logs [functionName]')
+  .description('View edge function logs')
+  .option('-p, --project <project>', 'Project name')
+  .option('-f, --follow', 'Follow logs in real-time')
+  .option('-n, --tail <lines>', 'Number of lines', '50')
+  .action(async (functionName, options) => {
+    const { waitUntilExit } = render(
+      <EdgeLogsCommand
+        project={options.project}
+        functionName={functionName}
+        follow={options.follow}
+        lines={parseInt(options.tail, 10)}
+        ci={!!process.env.CI}
+      />
+    );
+    await waitUntilExit();
+  });
+
+// edge delete
+edge
+  .command('delete <functionName>')
+  .alias('rm')
+  .description('Delete an edge function')
+  .option('-p, --project <project>', 'Project name')
+  .option('-y, --yes', 'Skip confirmation')
+  .action(async (functionName, options) => {
+    const { waitUntilExit } = render(
+      <EdgeDeleteCommand
+        project={options.project}
+        functionName={functionName}
+        yes={options.yes}
+        ci={!!process.env.CI}
+      />
+    );
+    await waitUntilExit();
+  });
+
+// edge invoke
+edge
+  .command('invoke <functionName>')
+  .description('Test invoke an edge function')
+  .option('-p, --project <project>', 'Project name')
+  .option('-m, --method <method>', 'HTTP method', 'GET')
+  .option('--path <path>', 'Request path', '/')
+  .option('-d, --data <data>', 'Request body (JSON)')
+  .action(async (functionName, options) => {
+    const { waitUntilExit } = render(
+      <EdgeInvokeCommand
+        project={options.project}
+        functionName={functionName}
+        method={options.method}
+        path={options.path}
+        data={options.data}
+        ci={!!process.env.CI}
+      />
+    );
+    await waitUntilExit();
   });
 
 // ============================================================================
@@ -461,12 +571,70 @@ program
 // Team Commands
 // ============================================================================
 
-program
+// Team parent command
+const team = program
   .command('team')
-  .description('Manage teams')
-  .argument('[action]', 'Action: list, create, switch, members, invite')
-  .action(async (action) => {
-    console.log(chalk.yellow('Team management coming soon...'));
+  .description('Manage teams');
+
+// team list (default)
+team
+  .command('list')
+  .alias('ls')
+  .description('List teams')
+  .action(async () => {
+    const { waitUntilExit } = render(
+      <TeamListCommand ci={!!process.env.CI} />
+    );
+    await waitUntilExit();
+  });
+
+// team create
+team
+  .command('create [name]')
+  .description('Create a new team')
+  .action(async (name) => {
+    const { waitUntilExit } = render(
+      <TeamCreateCommand name={name} ci={!!process.env.CI} />
+    );
+    await waitUntilExit();
+  });
+
+// team switch
+team
+  .command('switch [teamId]')
+  .description('Switch to another team')
+  .action(async (teamId) => {
+    const { waitUntilExit } = render(
+      <TeamSwitchCommand teamId={teamId} ci={!!process.env.CI} />
+    );
+    await waitUntilExit();
+  });
+
+// team members
+team
+  .command('members')
+  .description('List team members')
+  .action(async () => {
+    const { waitUntilExit } = render(
+      <TeamMembersCommand ci={!!process.env.CI} />
+    );
+    await waitUntilExit();
+  });
+
+// team invite
+team
+  .command('invite [email]')
+  .description('Invite a member to the team')
+  .option('-r, --role <role>', 'Member role (admin, member, viewer)', 'member')
+  .action(async (email, options) => {
+    const { waitUntilExit } = render(
+      <TeamInviteCommand
+        email={email}
+        role={options.role}
+        ci={!!process.env.CI}
+      />
+    );
+    await waitUntilExit();
   });
 
 // ============================================================================
@@ -477,10 +645,21 @@ program
   .command('logs [project]')
   .description('View deployment logs')
   .option('-e, --environment <env>', 'Environment', 'staging')
-  .option('-f, --follow', 'Follow logs in real-time')
-  .option('-n, --tail <lines>', 'Number of lines', '100')
+  .option('-f, --follow', 'Follow logs in real-time', true)
+  .option('-n, --tail <lines>', 'Number of lines', '50')
+  .option('-l, --level <level>', 'Minimum log level (debug, info, warn, error)')
   .action(async (project, options) => {
-    console.log(chalk.yellow('Logs coming soon...'));
+    const { waitUntilExit } = render(
+      <LogsCommand
+        project={project}
+        environment={options.environment}
+        follow={options.follow}
+        lines={parseInt(options.tail, 10)}
+        level={options.level}
+        ci={!!process.env.CI}
+      />
+    );
+    await waitUntilExit();
   });
 
 // ============================================================================

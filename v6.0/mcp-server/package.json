@@ -1,6 +1,6 @@
 {
   "name": "@codeblabdev-max/mcp-server",
-  "version": "6.0.0",
+  "version": "6.0.5",
   "description": "CodeB v6.0 - Unified HTTP API Server with Blue-Green Deployment",
   "type": "module",
   "main": "dist/index.js",
@@ -19,6 +19,7 @@
     "access": "public"
   },
   "scripts": {
+    "predev": "../scripts/check-version.sh || true",
     "build": "tsc",
     "dev": "tsx watch src/index.ts",
     "start": "node dist/index.js",

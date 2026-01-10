@@ -71,6 +71,13 @@ import {
   analyticsSpeedInsightsTool,
 } from './tools/analytics.js';
 
+// Tools - Analytics Ingest (SDK data collection)
+import {
+  analyticsIngestTool,
+  edgeIngestTool,
+  getAnalyticsMetrics,
+} from './tools/analytics-ingest.js';
+
 // Tools - Migration
 import {
   migrateDetectTool,
@@ -114,7 +121,7 @@ import {
 // ============================================================================
 
 const PORT = process.env.PORT || 9101;
-const VERSION = '6.0.0';
+const VERSION = '6.0.5';
 const NODE_ENV = process.env.NODE_ENV || 'development';
 
 // ============================================================================
@@ -340,9 +347,61 @@ app.get('/api', (_req, res) => {
 app.get('/metrics', async (_req, res) => {
   try {
     res.set('Content-Type', metricsRegistry.contentType);
-    res.end(await metricsRegistry.metrics());
+    const coreMetrics = await metricsRegistry.metrics();
+    const analyticsMetrics = await getAnalyticsMetrics();
+    res.end(coreMetrics + '\n' + analyticsMetrics);
   } catch (error) {
     res.status(500).end();
+  }
+});
+
+// ============================================================================
+// Public Analytics Ingest Endpoints (No Auth - for SDK)
+// ============================================================================
+
+// Analytics SDK data ingest (Web Vitals, page views, events)
+app.post('/api/analytics/ingest', async (req, res) => {
+  try {
+    const result = await analyticsIngestTool.execute(req.body);
+
+    if (result.success) {
+      res.json(result);
+    } else {
+      res.status(400).json(result);
+    }
+  } catch (error) {
+    res.status(500).json({
+      success: false,
+      error: error instanceof Error ? error.message : 'Internal error',
+    });
+  }
+});
+
+// Edge analytics ingest (simplified page view from middleware)
+app.post('/api/analytics/edge', async (req, res) => {
+  try {
+    const result = await edgeIngestTool.execute(req.body);
+    res.json(result);
+  } catch (error) {
+    res.status(500).json({
+      success: false,
+      error: error instanceof Error ? error.message : 'Internal error',
+    });
+  }
+});
+
+// Beacon endpoint for sendBeacon API (accepts both POST and GET)
+app.all('/api/analytics/beacon', async (req, res) => {
+  try {
+    const data = req.method === 'GET' ? req.query : req.body;
+
+    // Parse beacon data
+    const payload = typeof data.data === 'string' ? JSON.parse(data.data) : data;
+
+    const result = await analyticsIngestTool.execute(payload);
+    res.status(204).end(); // No content response for beacon
+  } catch (error) {
+    res.status(204).end(); // Still return 204 to not break beacon
   }
 });
 
