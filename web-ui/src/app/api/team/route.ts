@@ -1,20 +1,22 @@
 import { NextRequest, NextResponse } from 'next/server';
 import { readFileSync, writeFileSync, existsSync, mkdirSync } from 'fs';
 import { join, dirname } from 'path';
-import { randomBytes } from 'crypto';
+import { randomBytes, createHash } from 'crypto';
 
-// Config file path - use /tmp for container compatibility or custom path
-const CONFIG_DIR = process.env.CODEB_CONFIG_DIR || '/tmp/codeb-config';
-const CONFIG_PATH = join(CONFIG_DIR, 'team-members.json');
+// Config file path - use shared registry path with MCP API
+// Priority: CODEB_REGISTRY_PATH > /opt/codeb/registry > /tmp/codeb-config (fallback)
+const REGISTRY_PATH = process.env.CODEB_REGISTRY_PATH || '/opt/codeb/registry';
+const CONFIG_PATH = join(REGISTRY_PATH, 'team-members.json');
+const API_KEYS_PATH = join(REGISTRY_PATH, 'api-keys.json');
 
 /**
- * Generate secure API Key
- * Format: codeb_{role}_{random}
+ * Generate secure API Key (v6.0 format)
+ * Format: codeb_{teamId}_{role}_{randomToken}
+ * Matches MCP API server format for unified authentication
  */
-function generateApiKey(role: string): string {
-  const prefix = role === 'admin' ? 'codeb_admin' : role === 'developer' ? 'codeb_dev' : 'codeb_view';
-  const random = randomBytes(16).toString('hex');
-  return `${prefix}_${random}`;
+function generateApiKey(teamId: string, role: string): string {
+  const token = randomBytes(18).toString('base64url'); // 24 chars, URL-safe
+  return `codeb_${teamId}_${role}_${token}`;
 }
 
 interface TeamMember {
@@ -100,26 +102,59 @@ function saveConfig(config: TeamConfig): void {
   }
 
   writeFileSync(CONFIG_PATH, JSON.stringify(config, null, 2));
-
-  // Update API_KEYS for middleware verification
-  updateApiKeysEnv(config);
 }
 
 /**
- * Update API_KEYS environment variable list
- * This syncs with middleware.ts verifyApiKey()
+ * Update API_KEYS registry (v6.0 format)
+ * Syncs with MCP API server's api-keys.json format
  */
-function updateApiKeysEnv(config: TeamConfig): void {
-  const activeApiKeys = config.members
-    .filter(m => m.active && m.apiKey)
-    .map(m => m.apiKey);
+function updateApiKeysRegistry(config: TeamConfig, newMember?: TeamMember, newApiKey?: string): void {
+  // Load existing registry or create new
+  let registry: {
+    version: string;
+    updatedAt: string;
+    keys: Record<string, {
+      id: string;
+      keyHash: string;
+      name: string;
+      teamId: string;
+      role: string;
+      createdAt: string;
+      createdBy: string;
+      scopes: string[];
+      lastUsed?: string;
+    }>;
+  };
 
-  // Write to a separate file for runtime loading
-  const apiKeysPath = join(dirname(CONFIG_PATH), 'api-keys.json');
-  writeFileSync(apiKeysPath, JSON.stringify({
-    keys: activeApiKeys,
-    updatedAt: new Date().toISOString()
-  }, null, 2));
+  try {
+    if (existsSync(API_KEYS_PATH)) {
+      registry = JSON.parse(readFileSync(API_KEYS_PATH, 'utf-8'));
+    } else {
+      registry = { version: '6.0.5', updatedAt: new Date().toISOString(), keys: {} };
+    }
+  } catch {
+    registry = { version: '6.0.5', updatedAt: new Date().toISOString(), keys: {} };
+  }
+
+  // If new member with API key, add to registry
+  if (newMember && newApiKey) {
+    const keyHash = createHash('sha256').update(newApiKey).digest('hex');
+    const keyId = `key_${randomBytes(8).toString('hex')}`;
+
+    registry.keys[keyId] = {
+      id: keyId,
+      keyHash,
+      name: newMember.name,
+      teamId: 'default', // Default team
+      role: newMember.role,
+      createdAt: newMember.createdAt,
+      createdBy: 'web-ui',
+      scopes: ['*'],
+    };
+  }
+
+  registry.updatedAt = new Date().toISOString();
+  writeFileSync(API_KEYS_PATH, JSON.stringify(registry, null, 2));
 }
 
 // GET - 팀원 목록 조회
@@ -179,8 +214,9 @@ export async function POST(request: NextRequest) {
       );
     }
 
-    // Generate API Key for the new member
-    const apiKey = generateApiKey(role);
+    // Generate API Key for the new member (v6.0 format with teamId)
+    const teamId = 'default'; // Use default team, can be expanded later
+    const apiKey = generateApiKey(teamId, role);
 
     const newMember: TeamMember = {
       id,
@@ -195,6 +231,9 @@ export async function POST(request: NextRequest) {
 
     config.members.push(newMember);
     saveConfig(config);
+
+    // Sync to MCP API registry
+    updateApiKeysRegistry(config, newMember, apiKey);
 
     return NextResponse.json({
       success: true,

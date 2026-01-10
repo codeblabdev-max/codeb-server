@@ -1,6 +1,6 @@
 {
   "name": "codeb-web-ui",
-  "version": "6.0.0",
+  "version": "6.0.5",
   "description": "CodeB v6.0 Blue-Green Deployment Dashboard",
   "private": true,
   "scripts": {
