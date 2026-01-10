@@ -107,6 +107,9 @@ jobs:
           sudo podman rm codeb-mcp-api 2>/dev/null || true
 
           # Run new container from local image
+          # Load DB credentials from existing env file
+          source /opt/codeb/mcp-server/.env 2>/dev/null || true
+
           sudo podman run -d \
             --name codeb-mcp-api \
             --restart always \
@@ -114,8 +117,11 @@ jobs:
             -e NODE_ENV=production \
             -e PORT=9101 \
             -e LOG_DIR=/app/logs \
-            -e DATABASE_URL="${{ secrets.DATABASE_URL }}" \
-            -e REDIS_URL="${{ secrets.REDIS_URL }}" \
+            -e CODEB_DB_HOST="${CODEB_DB_HOST:-db.codeb.kr}" \
+            -e CODEB_DB_PORT="${CODEB_DB_PORT:-5432}" \
+            -e CODEB_DB_NAME="${CODEB_DB_NAME:-codeb}" \
+            -e CODEB_DB_USER="${CODEB_DB_USER:-codeb}" \
+            -e CODEB_DB_PASSWORD="${CODEB_DB_PASSWORD}" \
             -v /opt/codeb/logs:/app/logs \
             -v /opt/codeb/registry:/opt/codeb/registry \
             ${{ env.REGISTRY }}/${{ env.IMAGE_NAME }}:$VERSION
