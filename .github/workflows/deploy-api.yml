@@ -50,11 +50,11 @@ jobs:
 
       - name: Login to GitHub Container Registry
         run: |
-          echo "${{ secrets.GITHUB_TOKEN }}" | podman login ghcr.io -u ${{ github.actor }} --password-stdin
+          echo "${{ secrets.GITHUB_TOKEN }}" | sudo podman login ghcr.io -u ${{ github.actor }} --password-stdin
 
       - name: Build image with Podman
         run: |
-          podman build \
+          sudo podman build \
             -t ${{ env.REGISTRY }}/${{ env.IMAGE_NAME }}:${{ steps.version.outputs.version }} \
             -t ${{ env.REGISTRY }}/${{ env.IMAGE_NAME }}:latest \
             -f ./v6.0/mcp-server/Dockerfile \
@@ -62,8 +62,8 @@ jobs:
 
       - name: Push image
         run: |
-          podman push ${{ env.REGISTRY }}/${{ env.IMAGE_NAME }}:${{ steps.version.outputs.version }}
-          podman push ${{ env.REGISTRY }}/${{ env.IMAGE_NAME }}:latest
+          sudo podman push ${{ env.REGISTRY }}/${{ env.IMAGE_NAME }}:${{ steps.version.outputs.version }}
+          sudo podman push ${{ env.REGISTRY }}/${{ env.IMAGE_NAME }}:latest
 
   # Deploy: Self-hosted runner (same server, direct deployment)
   deploy:
@@ -88,12 +88,12 @@ jobs:
 
           echo "🚀 Deploying CodeB API v$VERSION..."
 
-          # Stop existing container (if running)
-          podman stop codeb-api 2>/dev/null || true
-          podman rm codeb-api 2>/dev/null || true
+          # Stop existing container (if running) - use sudo for root containers
+          sudo podman stop codeb-api 2>/dev/null || true
+          sudo podman rm codeb-api 2>/dev/null || true
 
           # Run new container from local image
-          podman run -d \
+          sudo podman run -d \
             --name codeb-api \
             --restart always \
             -p 9101:9101 \

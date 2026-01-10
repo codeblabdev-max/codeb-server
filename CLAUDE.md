@@ -161,6 +161,168 @@ we health                 # MCP API로 상태 확인
 
 ---
 
+## Version Management (서버가 기준)
+
+### 단일 버전 소스 (Single Source of Truth)
+
+```
+v6.0/VERSION              # 서버 버전이 기준 (현재: 6.0.5)
+```
+
+### 버전 관리 원칙
+
+```
+┌─────────────────────────────────────────────────────────────────┐
+│                    CodeB 버전 관리 원칙                          │
+├─────────────────────────────────────────────────────────────────┤
+│                                                                 │
+│  1. 서버가 항상 버전 기준                                        │
+│     └─→ v6.0/VERSION 파일이 단일 진실 소스                       │
+│     └─→ 모든 package.json은 빌드 시 VERSION에서 동기화           │
+│                                                                 │
+│  2. 로컬 개발 전 버전 체크                                       │
+│     └─→ npm run dev 실행 시 자동으로 서버 버전 확인              │
+│     └─→ 버전 불일치 시 경고 (서버 업데이트 또는 git pull 필요)   │
+│                                                                 │
+│  3. 버전 업데이트 절차                                           │
+│     └─→ v6.0/VERSION 파일 수정                                  │
+│     └─→ 커밋 & 푸시 → GitHub Actions 자동 배포                  │
+│     └─→ 서버가 새 버전으로 업데이트됨                            │
+│                                                                 │
+└─────────────────────────────────────────────────────────────────┘
+```
+
+### 버전 체크 명령어
+
+```bash
+# 로컬에서 버전 체크
+./v6.0/scripts/check-version.sh
+
+# 서버 버전 확인
+curl -sf https://api.codeb.kr/health | jq '.version'
+
+# 로컬 버전 확인
+cat v6.0/VERSION
+```
+
+### 버전 업데이트 방법
+
+```bash
+# 1. VERSION 파일 수정
+echo "6.0.6" > v6.0/VERSION
+
+# 2. 커밋 & 푸시
+git add v6.0/VERSION
+git commit -m "chore: bump version to 6.0.6"
+git push origin main
+
+# 3. GitHub Actions가 자동으로:
+#    - package.json 버전 동기화
+#    - Docker 이미지 빌드
+#    - 서버 배포
+```
+
+---
+
+## Self-Hosted Runner
+
+### Runner 구성
+
+```
+┌─────────────────────────────────────────────────────────────────┐
+│                    GitHub Actions Self-Hosted Runner             │
+├─────────────────────────────────────────────────────────────────┤
+│                                                                 │
+│  위치: App Server (158.247.203.55)                              │
+│  경로: /opt/actions-runner                                      │
+│  사용자: runner                                                  │
+│  서비스: actions.runner.codeblabdev-max-codeb-server.*          │
+│                                                                 │
+│  라벨: self-hosted, Linux, X64, codeb, app-server               │
+│                                                                 │
+└─────────────────────────────────────────────────────────────────┘
+```
+
+### Runner가 호스트에서 직접 실행되는 이유
+
+```
+❌ 컨테이너화된 Runner 문제점:
+   - Podman-in-Podman overlay 드라이버 중첩 문제
+   - 호스트 Podman 접근 불가
+   - 복잡한 설정 및 불안정
+
+✅ 호스트 systemd 서비스 장점:
+   - 호스트의 Podman 직접 사용
+   - 안정적이고 빠른 빌드
+   - 간단한 설정 및 유지보수
+```
+
+### Runner 서비스 관리
+
+```bash
+# 상태 확인
+ssh root@app.codeb.kr "cd /opt/actions-runner && ./svc.sh status"
+
+# 서비스 재시작
+ssh root@app.codeb.kr "cd /opt/actions-runner && ./svc.sh stop && ./svc.sh start"
+
+# 로그 확인
+ssh root@app.codeb.kr "journalctl -u 'actions.runner.*' -f"
+```
+
+### Runner 재등록 절차 (문제 발생 시)
+
+```bash
+# 1. 새 토큰 발급
+gh api -X POST repos/codeblabdev-max/codeb-server/actions/runners/registration-token --jq '.token'
+
+# 2. 서버에서 재등록
+ssh root@app.codeb.kr "
+cd /opt/actions-runner
+./svc.sh uninstall
+rm -f .runner .credentials .credentials_rsaparams
+sudo -u runner ./config.sh --url https://github.com/codeblabdev-max/codeb-server \
+  --token <NEW_TOKEN> \
+  --name codeb-app-server \
+  --labels self-hosted,Linux,X64,codeb,app-server \
+  --unattended
+./svc.sh install runner
+./svc.sh start
+"
+```
+
+### GitHub Actions 워크플로우 규칙
+
+```yaml
+# 모든 워크플로우는 self-hosted runner 사용
+jobs:
+  build:
+    runs-on: self-hosted  # ✅ 올바름
+    # runs-on: ubuntu-latest  # ❌ 사용 금지
+
+  deploy:
+    runs-on: self-hosted  # ✅ 올바름
+```
+
+### Runner에서 Podman 사용
+
+```yaml
+# Runner는 호스트의 Podman을 sudo로 실행
+- name: Build with Podman
+  run: |
+    sudo podman build -t myimage .
+    sudo podman push myimage
+
+# 컨테이너 관리도 sudo 필요
+- name: Deploy container
+  run: |
+    sudo podman stop myapp || true
+    sudo podman rm myapp || true
+    sudo podman run -d --name myapp myimage
+```
+
+---
+
 ## 4-Server Architecture
 
 ### 서버 구성
