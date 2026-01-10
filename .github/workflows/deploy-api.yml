@@ -81,6 +81,19 @@ jobs:
           VERSION=$(cat v6.0/VERSION | tr -d '\n')
           echo "version=$VERSION" >> $GITHUB_OUTPUT
 
+      - name: Stop legacy node service (migration to container)
+        run: |
+          # One-time migration: stop legacy systemd node service
+          # This can be removed after first successful container deployment
+          if sudo systemctl is-active codeb-mcp-api.service 2>/dev/null; then
+            echo "⚠️ Stopping legacy node service for container migration..."
+            sudo systemctl stop codeb-mcp-api.service
+            sudo systemctl disable codeb-mcp-api.service
+            echo "✅ Legacy service stopped and disabled"
+          else
+            echo "ℹ️ No legacy service running (already containerized)"
+          fi
+
       - name: Deploy CodeB API
         run: |
           set -e
