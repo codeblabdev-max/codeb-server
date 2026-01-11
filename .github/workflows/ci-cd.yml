@@ -1,5 +1,5 @@
 # CodeB CLI v7.0 CI/CD Pipeline
-# Publish to npm using Self-hosted Runner
+# Publish to GitHub Package Registry using Self-hosted Runner
 
 name: CodeB CLI v7.0 CI
 
@@ -57,9 +57,9 @@ jobs:
           echo "📦 Package info:"
           cat package.json | grep -E '"name"|"version"'
 
-  # npm 발행 (Self-hosted Runner)
+  # GitHub Package Registry 발행 (Self-hosted Runner)
   publish:
-    name: Publish to npm
+    name: Publish to GitHub Packages
     runs-on: self-hosted
     needs: build-verify
     permissions:
@@ -69,11 +69,12 @@ jobs:
     steps:
       - uses: actions/checkout@v4
 
-      - name: Setup Node.js
+      - name: Setup Node.js for GitHub Packages
         uses: actions/setup-node@v4
         with:
           node-version: ${{ env.NODE_VERSION }}
-          registry-url: 'https://registry.npmjs.org'
+          registry-url: 'https://npm.pkg.github.com'
+          scope: '@codeblabdev-max'
 
       - name: Read version from VERSION file
         id: version
@@ -92,8 +93,8 @@ jobs:
         working-directory: ./cli
         run: npm ci
 
-      - name: Publish package
+      - name: Publish to GitHub Packages
         working-directory: ./cli
         run: npm publish --access public
         env:
-          NODE_AUTH_TOKEN: ${{ secrets.NPM_TOKEN }}
+          NODE_AUTH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
