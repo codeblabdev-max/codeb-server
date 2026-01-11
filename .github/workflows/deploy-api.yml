@@ -107,10 +107,14 @@ jobs:
           sudo podman stop codeb-mcp-api 2>/dev/null || true
           sudo podman rm codeb-mcp-api 2>/dev/null || true
 
-          # Run new container from local image
+          # Force pull the new image (avoid using cached local image)
+          echo "📥 Pulling image: ${{ env.REGISTRY }}/${{ env.IMAGE_NAME }}:$VERSION"
+          sudo podman pull ${{ env.REGISTRY }}/${{ env.IMAGE_NAME }}:$VERSION
+
           # Load DB credentials from existing env file
           source /opt/codeb/mcp-server/.env 2>/dev/null || true
 
+          # Run new container
           sudo podman run -d \
             --name codeb-mcp-api \
             --restart always \
