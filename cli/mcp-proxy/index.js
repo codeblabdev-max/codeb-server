@@ -111,7 +111,7 @@ async function callApi(tool, params = {}) {
 }
 async function checkHealth() {
     try {
-        const response = await fetch(`${API_URL}/api/health`);
+        const response = await fetch(`${API_URL}/health`);
         const data = await response.json();
         return data.success === true || data.status === 'healthy';
     }
