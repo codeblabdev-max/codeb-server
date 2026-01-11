@@ -1,16 +1,16 @@
-# CodeB CLI v6.0 CI/CD Pipeline
-# Publish to GitHub Package Registry using Self-hosted Runner
+# CodeB CLI v7.0 CI/CD Pipeline
+# Publish to npm using Self-hosted Runner
 
-name: CodeB CLI v6.0 CI
+name: CodeB CLI v7.0 CI
 
 on:
   push:
     branches: [main]
     paths:
-      - 'v6.0/cli/**'
-      - 'v6.0/VERSION'
+      - 'cli/**'
+      - 'v7.0/VERSION'
     tags:
-      - 'v6.*'
+      - 'v7.*'
   workflow_dispatch:
 
 env:
@@ -33,12 +33,12 @@ jobs:
       - name: Read version from VERSION file
         id: version
         run: |
-          VERSION=$(cat v6.0/VERSION | tr -d '\n')
+          VERSION=$(cat v7.0/VERSION | tr -d '\n')
           echo "version=$VERSION" >> $GITHUB_OUTPUT
           echo "📦 Building version: $VERSION"
 
       - name: Sync version to package.json
-        working-directory: ./v6.0/cli
+        working-directory: ./cli
         run: |
           VERSION="${{ steps.version.outputs.version }}"
           # Update version in package.json
@@ -47,23 +47,19 @@ jobs:
           echo "✅ package.json version synced to $VERSION"
 
       - name: Install dependencies
-        working-directory: ./v6.0/cli
+        working-directory: ./cli
         run: npm ci
 
-      - name: Build
-        working-directory: ./v6.0/cli
-        run: npm run build
-
       - name: Verify CLI
-        working-directory: ./v6.0/cli
+        working-directory: ./cli
         run: |
           echo "✅ Build successful"
           echo "📦 Package info:"
           cat package.json | grep -E '"name"|"version"'
 
-  # GitHub Package Registry 발행 (Self-hosted Runner)
+  # npm 발행 (Self-hosted Runner)
   publish:
-    name: Publish to GitHub Packages
+    name: Publish to npm
     runs-on: self-hosted
     needs: build-verify
     permissions:
@@ -77,32 +73,27 @@ jobs:
         uses: actions/setup-node@v4
         with:
           node-version: ${{ env.NODE_VERSION }}
-          registry-url: 'https://npm.pkg.github.com'
-          scope: '@codeblabdev-max'
+          registry-url: 'https://registry.npmjs.org'
 
       - name: Read version from VERSION file
         id: version
         run: |
-          VERSION=$(cat v6.0/VERSION | tr -d '\n')
+          VERSION=$(cat v7.0/VERSION | tr -d '\n')
           echo "version=$VERSION" >> $GITHUB_OUTPUT
 
       - name: Sync version to package.json
-        working-directory: ./v6.0/cli
+        working-directory: ./cli
         run: |
           VERSION="${{ steps.version.outputs.version }}"
           jq --arg v "$VERSION" '.version = $v' package.json > package.tmp.json
           mv package.tmp.json package.json
 
       - name: Install dependencies
-        working-directory: ./v6.0/cli
+        working-directory: ./cli
         run: npm ci
 
-      - name: Build
-        working-directory: ./v6.0/cli
-        run: npm run build
-
       - name: Publish package
-        working-directory: ./v6.0/cli
-        run: npm publish
+        working-directory: ./cli
+        run: npm publish --access public
         env:
-          NODE_AUTH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          NODE_AUTH_TOKEN: ${{ secrets.NPM_TOKEN }}
