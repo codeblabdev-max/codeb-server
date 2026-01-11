@@ -124,11 +124,11 @@ jobs:
           # Load DB credentials
           source /opt/codeb/mcp-server/.env 2>/dev/null || true
 
-          # Run container
+          # Run container with host network (avoids Podman bridge network issues)
           sudo podman run -d \
             --name codeb-mcp-api \
             --restart always \
-            -p 9101:9101 \
+            --network host \
             -e NODE_ENV=production \
             -e PORT=9101 \
             -e LOG_DIR=/app/logs \
