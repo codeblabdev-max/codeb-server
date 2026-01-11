@@ -343,39 +343,27 @@ export async function init(options) {
   console.log(chalk.gray(`  Project: ${projectName}`));
   console.log(chalk.gray(`  Path:    ${projectPath}\n`));
 
-  // 1. CLAUDE.md 설치 (rules/CLAUDE.md에서 복사)
+  // 1. CLAUDE.md 설치 (rules/CLAUDE.md에서 복사) - 항상 백업 후 새로 생성
   const spinner1 = ora('CLAUDE.md 설치 중...').start();
   const claudeMdPath = path.join(projectPath, 'CLAUDE.md');
   const claudeMdSrc = path.join(RULES_SOURCE, 'CLAUDE.md');
 
-  if (existsSync(claudeMdPath) && !options.force) {
-    // 내용 비교
-    if (existsSync(claudeMdSrc)) {
-      const srcContent = await fs.readFile(claudeMdSrc, 'utf-8');
-      const destContent = await fs.readFile(claudeMdPath, 'utf-8');
-      if (srcContent !== destContent) {
-        // 백업 후 업데이트
-        const backupPath = `${claudeMdPath}.backup.${Date.now()}`;
-        await fs.copyFile(claudeMdPath, backupPath);
-        await fs.copyFile(claudeMdSrc, claudeMdPath);
-        spinner1.succeed('CLAUDE.md 업데이트 완료 (기존 파일 백업됨)');
-      } else {
-        spinner1.info('CLAUDE.md가 최신 버전입니다');
-      }
-    } else {
-      spinner1.info('CLAUDE.md가 이미 존재합니다. --force로 덮어쓰기');
-    }
+  // 기존 파일이 있으면 무조건 백업
+  if (existsSync(claudeMdPath)) {
+    const backupPath = `${claudeMdPath}.backup.${Date.now()}`;
+    await fs.copyFile(claudeMdPath, backupPath);
+    spinner1.text = `기존 CLAUDE.md 백업 완료: ${path.basename(backupPath)}`;
+  }
+
+  // 항상 최신 버전으로 덮어쓰기
+  if (existsSync(claudeMdSrc)) {
+    await fs.copyFile(claudeMdSrc, claudeMdPath);
+    spinner1.succeed('CLAUDE.md v7.0 설치 완료 (기존 파일 백업됨)');
   } else {
-    // 새로 설치 또는 force 옵션
-    if (existsSync(claudeMdSrc)) {
-      await fs.copyFile(claudeMdSrc, claudeMdPath);
-      spinner1.succeed('CLAUDE.md 설치 완료 (rules/CLAUDE.md에서 복사)');
-    } else {
-      // 소스 없으면 동적 생성
-      const content = generateClaudeMd(projectName);
-      await fs.writeFile(claudeMdPath, content);
-      spinner1.succeed('CLAUDE.md 생성 완료 (템플릿)');
-    }
+    // 소스 없으면 동적 생성
+    const content = generateClaudeMd(projectName);
+    await fs.writeFile(claudeMdPath, content);
+    spinner1.succeed('CLAUDE.md 생성 완료 (템플릿)');
   }
 
   // 2. Slash Commands 설치
