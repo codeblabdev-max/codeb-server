@@ -1,4 +1,4 @@
-# CodeB v6.0 HTTP API Server Deployment
+# CodeB v7.0 HTTP API Server Deployment
 # Deploys to api.codeb.kr (158.247.203.55)
 
 name: Deploy API Server
@@ -7,8 +7,8 @@ on:
   push:
     branches: [main]
     paths:
-      - 'v6.0/mcp-server/**'
-      - 'v6.0/VERSION'
+      - 'v7.0/mcp-server/**'
+      - 'v7.0/VERSION'
       - '.github/workflows/deploy-api.yml'
   workflow_dispatch:
     inputs:
@@ -44,7 +44,7 @@ jobs:
       - name: Read version from VERSION file
         id: version
         run: |
-          VERSION=$(cat v6.0/VERSION | tr -d '\n')
+          VERSION=$(cat v7.0/VERSION | tr -d '\n')
           echo "version=$VERSION" >> $GITHUB_OUTPUT
           echo "tag=${{ env.REGISTRY }}/${{ env.IMAGE_NAME }}:$VERSION" >> $GITHUB_OUTPUT
           echo "📦 Building version: $VERSION"
@@ -58,8 +58,8 @@ jobs:
           sudo podman build --no-cache \
             -t ${{ env.REGISTRY }}/${{ env.IMAGE_NAME }}:${{ steps.version.outputs.version }} \
             -t ${{ env.REGISTRY }}/${{ env.IMAGE_NAME }}:latest \
-            -f ./v6.0/mcp-server/Dockerfile \
-            ./v6.0/mcp-server
+            -f ./v7.0/mcp-server/Dockerfile \
+            ./v7.0/mcp-server
 
       - name: Push image
         run: |
@@ -79,7 +79,7 @@ jobs:
       - name: Read version
         id: version
         run: |
-          VERSION=$(cat v6.0/VERSION | tr -d '\n')
+          VERSION=$(cat v7.0/VERSION | tr -d '\n')
           echo "version=$VERSION" >> $GITHUB_OUTPUT
 
       - name: Stop legacy node service (migration to container)
@@ -133,6 +133,7 @@ jobs:
             -e CODEB_DB_PASSWORD="${CODEB_DB_PASSWORD}" \
             -v /opt/codeb/logs:/app/logs \
             -v /opt/codeb/registry:/opt/codeb/registry \
+            -v /home/codeb/.ssh:/root/.ssh:ro \
             ${{ env.REGISTRY }}/${{ env.IMAGE_NAME }}:$VERSION
 
           # Health check
