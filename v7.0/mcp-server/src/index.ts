@@ -122,7 +122,7 @@ import {
 // ============================================================================
 
 const PORT = process.env.PORT || 9101;
-const VERSION = '7.0.11';
+const VERSION = '7.0.12';
 const NODE_ENV = process.env.NODE_ENV || 'development';
 
 // ============================================================================
@@ -623,9 +623,18 @@ process.on('SIGINT', () => shutdown('SIGINT'));
 
 async function start() {
   try {
-    // Run database migrations
+    // Run database migrations (optional - server starts even if DB is unavailable)
     logger.info('Running database migrations...');
-    await runMigrations();
+    try {
+      await runMigrations();
+      logger.info('Database migrations completed');
+    } catch (dbError) {
+      logger.warn('Database connection failed - running in degraded mode', {
+        error: String(dbError),
+        note: 'Team/token features disabled until DB is available'
+      });
+      // Server continues without DB - deploy/slot features still work via SSH
+    }
 
     // Start HTTP server
     app.listen(PORT, () => {
