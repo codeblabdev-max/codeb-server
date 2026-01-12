@@ -1,4 +1,4 @@
-# CLAUDE.md v7.0.28 - CodeB Unified Deployment System
+# CLAUDE.md v7.0.30 - CodeB Unified Deployment System
 
 > **Claude Code 2.1 100% Integration + Blue-Green Deployment + Skills System + Advanced Hooks**
 
@@ -388,11 +388,11 @@ VERSION              # 루트의 VERSION 파일이 기준 (현재: 7.0.24)
 
 ## Version
 
-- **CLAUDE.md**: v7.0.28
+- **CLAUDE.md**: v7.0.30
 - **Claude Code**: 2.1.x (Skills + Advanced Hooks)
-- **CLI**: @codeblabdev-max/we-cli@7.0.28
-- **MCP Server**: @codeblabdev-max/mcp-server@7.0.28
-- **MCP Proxy**: @codeblabdev-max/mcp-proxy@7.0.28
+- **CLI**: @codeblabdev-max/we-cli@7.0.30
+- **MCP Server**: @codeblabdev-max/mcp-server@7.0.30
+- **MCP Proxy**: @codeblabdev-max/mcp-proxy@7.0.30
 - **API Endpoint**: https://api.codeb.kr/api (30 tools)
 - **Container Runtime**: Docker
 

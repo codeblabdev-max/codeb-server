@@ -2,9 +2,9 @@
  * CodeB v7.0 - Blue-Green Deploy Tool
  * Unified HTTP API + Team-based Authentication
  *
- * Quadlet + systemd (System-wide) 배포
- * - Quadlet 경로: /etc/containers/systemd/
- * - systemctl (root, --user 없음)
+ * Docker 기반 배포 (v7.0.30+)
+ * - docker run / docker stop / docker rm
+ * - 포트 범위: SSOT와 동기화 (production: 4100-4499)
  */
 
 import { z } from 'zod';
@@ -38,14 +38,14 @@ export const deployInputSchema = z.object({
 // ============================================================================
 
 /**
- * Execute Blue-Green Deploy with Quadlet + systemd (System-wide)
+ * Execute Blue-Green Deploy with Docker
  *
  * Flow:
  * 1. Get current slot status
  * 2. Select inactive slot (blue or green)
- * 3. Generate Quadlet container file (/etc/containers/systemd/)
- * 4. systemctl daemon-reload
- * 5. systemctl start {container}
+ * 3. Pull Docker image
+ * 4. Stop and remove existing container (if any)
+ * 5. Run new container with docker run
  * 6. Health check
  * 7. Return preview URL (NOT switch traffic yet)
  */
@@ -124,39 +124,24 @@ export async function executeDeploy(
         output: `Target slot: ${targetSlot} (port ${targetPort})`,
       });
 
-      // Step 3: Generate Quadlet container file (System-wide)
+      // Step 3: Pull Docker image
       const step3Start = Date.now();
       const containerName = `${projectName}-${environment}-${targetSlot}`;
-      const imageUrl = input.image || `ghcr.io/codeb-dev-run/${projectName}:${version}`;
-      const quadletDir = `/etc/containers/systemd`;
-      const quadletPath = `${quadletDir}/${containerName}.container`;
+      const imageUrl = input.image || `ghcr.io/codeblabdev-max/${projectName}:${version}`;
       const envFile = `/opt/codeb/projects/${projectName}/.env.${environment}`;
 
-      const quadletContent = generateQuadletFile({
-        containerName,
-        image: imageUrl,
-        port: targetPort,
-        envFile,
-        projectName,
-        environment,
-        slot: targetSlot,
-        version,
-        teamId: auth.teamId,
-      });
-
       try {
-        await ssh.mkdir(quadletDir);
-        await ssh.writeFile(quadletPath, quadletContent);
+        await ssh.exec(`docker pull ${imageUrl}`, { timeout: 180000 });
 
         steps.push({
-          name: 'generate_quadlet',
+          name: 'pull_image',
           status: 'success',
           duration: Date.now() - step3Start,
-          output: `Generated ${quadletPath}`,
+          output: `Pulled ${imageUrl}`,
         });
       } catch (error) {
         steps.push({
-          name: 'generate_quadlet',
+          name: 'pull_image',
           status: 'failed',
           duration: Date.now() - step3Start,
           error: error instanceof Error ? error.message : String(error),
@@ -164,20 +149,21 @@ export async function executeDeploy(
         return buildResult(false, steps, startTime, targetSlot, targetPort, projectName, environment);
       }
 
-      // Step 4: systemctl daemon-reload (System-wide)
+      // Step 4: Stop and remove existing container
       const step4Start = Date.now();
       try {
-        await ssh.exec(`systemctl daemon-reload`, { timeout: 30000 });
+        await ssh.exec(`docker stop ${containerName} 2>/dev/null || true`);
+        await ssh.exec(`docker rm ${containerName} 2>/dev/null || true`);
 
         steps.push({
-          name: 'daemon_reload',
+          name: 'cleanup_container',
           status: 'success',
           duration: Date.now() - step4Start,
-          output: 'systemd daemon reloaded',
+          output: 'Previous container cleaned up',
         });
       } catch (error) {
         steps.push({
-          name: 'daemon_reload',
+          name: 'cleanup_container',
           status: 'failed',
           duration: Date.now() - step4Start,
           error: error instanceof Error ? error.message : String(error),
@@ -185,20 +171,40 @@ export async function executeDeploy(
         return buildResult(false, steps, startTime, targetSlot, targetPort, projectName, environment);
       }
 
-      // Step 5: Start container via systemd (System-wide)
+      // Step 5: Run new container with Docker
       const step5Start = Date.now();
-      const serviceName = containerName;
+      const dockerLabels = [
+        `codeb.project=${projectName}`,
+        `codeb.environment=${environment}`,
+        `codeb.slot=${targetSlot}`,
+        `codeb.version=${version}`,
+        `codeb.team=${auth.teamId}`,
+        `codeb.deployed_at=${new Date().toISOString()}`,
+      ].map(l => `-l ${l}`).join(' ');
 
       try {
-        // Stop if running, then start fresh
-        await ssh.exec(`systemctl stop ${serviceName} 2>/dev/null || true`);
-        await ssh.exec(`systemctl start ${serviceName}`, { timeout: 120000 });
+        const dockerCmd = `docker run -d \\
+          --name ${containerName} \\
+          --restart always \\
+          --env-file ${envFile} \\
+          -p ${targetPort}:3000 \\
+          --health-cmd="curl -sf http://localhost:3000/health || curl -sf http://localhost:3000/api/health || exit 1" \\
+          --health-interval=10s \\
+          --health-timeout=5s \\
+          --health-retries=3 \\
+          --health-start-period=30s \\
+          --memory=512m \\
+          --cpus=1 \\
+          ${dockerLabels} \\
+          ${imageUrl}`;
+
+        await ssh.exec(dockerCmd, { timeout: 60000 });
 
         steps.push({
           name: 'start_container',
           status: 'success',
           duration: Date.now() - step5Start,
-          output: `Started ${serviceName} on port ${targetPort}`,
+          output: `Started ${containerName} on port ${targetPort}`,
         });
       } catch (error) {
         steps.push({
@@ -224,7 +230,8 @@ export async function executeDeploy(
           });
         } catch (error) {
           // Rollback: stop failed container
-          await ssh.exec(`systemctl stop ${serviceName} 2>/dev/null || true`);
+          await ssh.exec(`docker stop ${containerName} 2>/dev/null || true`);
+          await ssh.exec(`docker rm ${containerName} 2>/dev/null || true`);
 
           steps.push({
             name: 'health_check',
@@ -296,68 +303,7 @@ export async function executeDeploy(
 // ============================================================================
 
 /**
- * Generate Quadlet container file
- */
-function generateQuadletFile(config: {
-  containerName: string;
-  image: string;
-  port: number;
-  envFile: string;
-  projectName: string;
-  environment: string;
-  slot: string;
-  version: string;
-  teamId: string;
-}): string {
-  const timestamp = new Date().toISOString();
-
-  return `# CodeB v7.0 - Quadlet Container (System-wide)
-# Path: /etc/containers/systemd/${config.containerName}.container
-# Generated: ${timestamp}
-# Team: ${config.teamId}
-
-[Unit]
-Description=CodeB ${config.projectName} ${config.environment} ${config.slot}
-After=network-online.target
-Wants=network-online.target
-
-[Container]
-Image=${config.image}
-ContainerName=${config.containerName}
-PublishPort=${config.port}:3000
-EnvironmentFile=${config.envFile}
-AutoUpdate=registry
-
-# Labels for management
-Label=codeb.project=${config.projectName}
-Label=codeb.environment=${config.environment}
-Label=codeb.slot=${config.slot}
-Label=codeb.version=${config.version}
-Label=codeb.team=${config.teamId}
-Label=codeb.deployed_at=${timestamp}
-
-# Health check (/health 또는 /api/health)
-HealthCmd=sh -c 'curl -sf http://localhost:3000/health || curl -sf http://localhost:3000/api/health || exit 1'
-HealthInterval=10s
-HealthTimeout=5s
-HealthRetries=3
-HealthStartPeriod=30s
-
-# Resource limits
-PodmanArgs=--memory=512m --cpus=1
-
-[Service]
-Restart=always
-RestartSec=5
-TimeoutStartSec=300
-
-[Install]
-WantedBy=multi-user.target
-`;
-}
-
-/**
- * Wait for container to become healthy
+ * Wait for container to become healthy (Docker)
  */
 async function waitForHealthy(
   ssh: ReturnType<typeof getSSHClient>,
@@ -371,10 +317,10 @@ async function waitForHealthy(
   await new Promise(resolve => setTimeout(resolve, 3000));
 
   for (let i = 0; i < maxAttempts; i++) {
-    // 1차: podman healthcheck 상태 확인 (가장 신뢰성 있음)
+    // 1차: Docker healthcheck 상태 확인 (가장 신뢰성 있음)
     if (containerName) {
       const healthResult = await ssh.exec(
-        `podman inspect ${containerName} --format '{{.State.Health.Status}}' 2>/dev/null || echo "unknown"`
+        `docker inspect ${containerName} --format '{{.State.Health.Status}}' 2>/dev/null || echo "unknown"`
       );
       const healthStatus = healthResult.stdout.trim();
       if (healthStatus === 'healthy') {
@@ -383,18 +329,16 @@ async function waitForHealthy(
     }
 
     // 2차: 컨테이너 내부에서 직접 curl (네트워크 문제 우회)
-    // /health 또는 /api/health 엔드포인트 체크
     if (containerName) {
       const execResult = await ssh.exec(
-        `podman exec ${containerName} sh -c 'curl -sf http://localhost:3000/health 2>/dev/null || curl -sf http://localhost:3000/api/health 2>/dev/null' && echo "OK" || echo "FAIL"`
+        `docker exec ${containerName} sh -c 'curl -sf http://localhost:3000/health 2>/dev/null || curl -sf http://localhost:3000/api/health 2>/dev/null' && echo "OK" || echo "FAIL"`
       );
       if (execResult.stdout.includes('OK')) {
         return; // Container responds to health check
       }
     }
 
-    // 3차: 호스트에서 직접 curl (기존 방식 - fallback)
-    // /health 또는 /api/health 체크
+    // 3차: 호스트에서 직접 curl (fallback)
     const result = await ssh.exec(
       `curl -sf -o /dev/null -w '%{http_code}' http://localhost:${port}/health 2>/dev/null || curl -sf -o /dev/null -w '%{http_code}' http://localhost:${port}/api/health 2>/dev/null || echo "000"`
     );
@@ -412,16 +356,18 @@ async function waitForHealthy(
 /**
  * Allocate base port for new project
  * Checks both SSOT registry AND actual running containers
+ * Port ranges synchronized with server SSOT (v7.0.30+)
  */
 async function allocateBasePort(
   ssh: ReturnType<typeof getSSHClient>,
   environment: Environment,
   _projectName: string
 ): Promise<number> {
+  // Port ranges synchronized with server SSOT
   const ranges: Record<Environment, { start: number; end: number }> = {
-    staging: { start: 3000, end: 3499 },
-    production: { start: 4000, end: 4499 },
-    preview: { start: 5000, end: 5999 },
+    staging: { start: 4500, end: 4999 },
+    production: { start: 4100, end: 4499 },
+    preview: { start: 5000, end: 5499 },
   };
 
   const range = ranges[environment];
@@ -430,7 +376,7 @@ async function allocateBasePort(
   const ssotPath = '/opt/codeb/registry/ssot.json';
   const ssotResult = await ssh.exec(`cat ${ssotPath} 2>/dev/null || echo "{}"`);
 
-  let ssot: { ports?: { used: number[] } } = {};
+  let ssot: { ports?: { used: number[]; allocated?: Record<string, unknown> } } = {};
   try {
     ssot = JSON.parse(ssotResult.stdout);
   } catch {
@@ -439,9 +385,14 @@ async function allocateBasePort(
 
   const registeredPorts = new Set(ssot.ports?.used || []);
 
-  // Get actual ports in use by running containers (podman)
+  // Also add ports from allocated map if exists
+  if (ssot.ports?.allocated) {
+    Object.keys(ssot.ports.allocated).forEach(p => registeredPorts.add(parseInt(p, 10)));
+  }
+
+  // Get actual ports in use by running containers (Docker)
   const portsResult = await ssh.exec(
-    `podman ps --format '{{.Ports}}' 2>/dev/null | grep -oE '[0-9]+->3000' | cut -d'-' -f1 | sort -u || true`
+    `docker ps --format '{{.Ports}}' 2>/dev/null | grep -oE '[0-9]+->3000' | cut -d'-' -f1 | sort -u || true`
   );
   const runningPorts = new Set(
     portsResult.stdout
@@ -518,7 +469,7 @@ function buildResult(
 
 export const deployTool = {
   name: 'deploy',
-  description: 'Deploy to inactive Blue-Green slot using Quadlet + systemd. Returns preview URL for testing.',
+  description: 'Deploy to inactive Blue-Green slot using Docker. Returns preview URL for testing.',
   inputSchema: deployInputSchema,
 
   async execute(params: DeployInput, auth: AuthContext): Promise<DeployResult> {

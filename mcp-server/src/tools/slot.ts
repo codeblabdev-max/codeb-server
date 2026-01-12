@@ -2,9 +2,8 @@
  * CodeB v7.0 - Slot Registry Management
  * Blue-Green slot state management with Team-based access
  *
- * Quadlet + systemd (System-wide) 배포
- * - Quadlet 경로: /etc/containers/systemd/
- * - systemctl (root, --user 없음)
+ * Docker 기반 배포 (v7.0.30+)
+ * - docker stop / docker rm
  */
 
 import { z } from 'zod';
@@ -223,14 +222,10 @@ export async function executeSlotCleanup(
         }
       }
 
-      // Stop container via systemd (System-wide)
-      const serviceName = `${projectName}-${environment}-${graceSlot}`;
-      await ssh.exec(`systemctl stop ${serviceName} 2>/dev/null || true`);
-
-      // Remove Quadlet file (System-wide path)
-      const quadletPath = `/etc/containers/systemd/${serviceName}.container`;
-      await ssh.exec(`rm -f ${quadletPath}`);
-      await ssh.exec(`systemctl daemon-reload`);
+      // Stop and remove container via Docker
+      const containerName = `${projectName}-${environment}-${graceSlot}`;
+      await ssh.exec(`docker stop ${containerName} 2>/dev/null || true`);
+      await ssh.exec(`docker rm ${containerName} 2>/dev/null || true`);
 
       // Update slot state
       slots[graceSlot] = {
