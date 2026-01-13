@@ -29,10 +29,10 @@ describe('Log Streaming', () => {
 
     it('should include metadata', () => {
       const entry = createLogEntry('debug', 'ssh', 'Command executed', {
-        metadata: { command: 'podman ps', duration: 150 },
+        metadata: { command: 'docker ps', duration: 150 },
       });
 
-      expect(entry.metadata).toEqual({ command: 'podman ps', duration: 150 });
+      expect(entry.metadata).toEqual({ command: 'docker ps', duration: 150 });
     });
 
     it('should set correct timestamp format', () => {

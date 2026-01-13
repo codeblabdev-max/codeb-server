@@ -1,5 +1,5 @@
 /**
- * CodeB v6.0 - Real-time Deploy Streaming
+ * CodeB v7.0 - Real-time Deploy Streaming (Docker)
  *
  * SSE 기반 실시간 배포 진행률 스트리밍
  * CLI에서 실제 진행 상황을 실시간으로 수신
@@ -71,8 +71,8 @@ class DeployStreamManager extends EventEmitter {
       steps: [
         { name: 'get_slot_status', status: 'pending' },
         { name: 'select_slot', status: 'pending' },
-        { name: 'generate_quadlet', status: 'pending' },
-        { name: 'daemon_reload', status: 'pending' },
+        { name: 'pull_image', status: 'pending' },
+        { name: 'cleanup_container', status: 'pending' },
         { name: 'start_container', status: 'pending' },
         { name: 'health_check', status: 'pending' },
         { name: 'update_registry', status: 'pending' },

@@ -18,17 +18,17 @@ export const SERVERS: Record<string, ServerConfig> = {
     ip: '158.247.203.55',
     domain: 'app.codeb.kr',
     role: 'app',
-    services: ['nextjs', 'mcp-api', 'caddy', 'podman', 'runner'],
+    services: ['nextjs', 'mcp-api', 'caddy', 'docker', 'runner'],
     ports: {
       http: 80,
       https: 443,
       mcpApi: 9101,
-      stagingStart: 3000,
-      stagingEnd: 3499,
-      productionStart: 4000,
+      stagingStart: 4500,
+      stagingEnd: 4999,
+      productionStart: 4100,
       productionEnd: 4499,
       previewStart: 5000,
-      previewEnd: 5999,
+      previewEnd: 5499,
     },
   },
   streaming: {
@@ -67,20 +67,20 @@ export const SERVERS: Record<string, ServerConfig> = {
   },
 };
 
-// Port ranges for Blue-Green slots
+// Port ranges for Blue-Green slots (synchronized with deploy.ts)
 export const PORT_RANGES = {
   staging: {
-    app: { start: 3000, end: 3499 },
+    app: { start: 4500, end: 4999 },
     db: { start: 5432, end: 5449 },
     redis: { start: 6379, end: 6399 },
   },
   production: {
-    app: { start: 4000, end: 4499 },
+    app: { start: 4100, end: 4499 },
     db: { start: 5450, end: 5469 },
     redis: { start: 6400, end: 6419 },
   },
   preview: {
-    app: { start: 5000, end: 5999 },
+    app: { start: 5000, end: 5499 },
   },
 };
 

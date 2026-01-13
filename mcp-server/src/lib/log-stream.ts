@@ -1,5 +1,5 @@
 /**
- * CodeB v6.0 - Real-time Log Streaming
+ * CodeB v7.0 - Real-time Log Streaming (Docker)
  *
  * Features:
  * - Server-Sent Events (SSE) for real-time logs
@@ -208,7 +208,7 @@ export async function tailContainerLogs(
   const containerName = `${projectName}-${environment}-${slot}`;
 
   const followFlag = follow ? '-f' : '';
-  const command = `podman logs ${followFlag} --tail ${lines} ${containerName} 2>&1`;
+  const command = `docker logs ${followFlag} --tail ${lines} ${containerName} 2>&1`;
 
   try {
     // For non-follow mode, execute and return
@@ -228,7 +228,7 @@ export async function tailContainerLogs(
       }
 
       try {
-        const result = await execCommand('app', `podman logs --tail 10 ${containerName} 2>&1`);
+        const result = await execCommand('app', `docker logs --tail 10 ${containerName} 2>&1`);
         const logs = parseContainerLogs(result.stdout, projectName, environment, slot);
         logs.forEach(callback);
       } catch (error) {
