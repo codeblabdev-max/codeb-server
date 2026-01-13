@@ -71,6 +71,9 @@ import {
   projectScanTool,
 } from './tools/project.js';
 
+// Tools - Environment Variables
+import { envSyncTool, envGetTool } from './tools/env.js';
+
 // ============================================================================
 // Configuration
 // ============================================================================
@@ -260,6 +263,10 @@ const TOOLS: Record<string, {
   // Project (Initialization & Scan) - /we:quick에서 내부적으로 호출
   workflow_init: { handler: (p, a) => projectInitTool.execute(p, a), permission: 'deploy.create' },
   workflow_scan: { handler: (p, a) => projectScanTool.execute(p, a), permission: 'project.view' },
+
+  // Environment Variables - Vercel 스타일 환경변수 관리
+  env_sync: { handler: (p, a) => envSyncTool.execute(p, a), permission: 'deploy.create' },
+  env_get: { handler: (p, a) => envGetTool.execute(p, a), permission: 'project.view' },
 };
 
 // ============================================================================
