@@ -85,12 +85,12 @@ export async function executePromote(
         };
       }
 
-      // Step 2: Final health check on new slot
+      // Step 2: Final health check on new slot (root path, not /health)
       const healthResult = await ssh.exec(
-        `curl -sf -o /dev/null -w '%{http_code}' http://localhost:${newSlot.port}/health 2>/dev/null || echo "000"`
+        `curl -sf -o /dev/null -w '%{http_code}' http://localhost:${newSlot.port}/ --connect-timeout 5 2>/dev/null || echo "000"`
       );
 
-      if (!healthResult.stdout.trim().startsWith('2')) {
+      if (!healthResult.stdout.trim().startsWith('2') && !healthResult.stdout.trim().startsWith('3')) {
         return {
           success: false,
           fromSlot: currentActive,
@@ -98,19 +98,20 @@ export async function executePromote(
           productionUrl: '',
           newVersion: newSlot.version || '',
           duration: Date.now() - startTime,
-          error: `Health check failed on ${newActive} slot (port ${newSlot.port})`,
+          error: `Health check failed on ${newActive} slot (port ${newSlot.port}): HTTP ${healthResult.stdout.trim()}`,
         };
       }
 
-      // Step 3: Generate Caddy config
+      // Step 3: Generate Caddy config (Blue-Green)
       const domain = getDomain(projectName, environment);
       const caddyConfig = generateCaddyConfig({
         domain,
-        port: newSlot.port,
+        activePort: newSlot.port,      // 새 활성 슬롯 (먼저)
+        standbyPort: oldSlot.port,     // 이전 슬롯 (대기)
         projectName,
         environment,
         version: newSlot.version || 'unknown',
-        slot: newActive,
+        activeSlot: newActive,
         teamId: auth.teamId,
       });
 
@@ -185,55 +186,44 @@ function getDomain(projectName: string, environment: string): string {
 }
 
 /**
- * Generate Caddy configuration
+ * Generate Caddy configuration for Blue-Green deployment
+ * Active slot comes first in reverse_proxy list (lb_policy first)
  */
 function generateCaddyConfig(config: {
   domain: string;
-  port: number;
+  activePort: number;
+  standbyPort: number;
   projectName: string;
   environment: string;
   version: string;
-  slot: string;
+  activeSlot: string;
   teamId: string;
 }): string {
   const timestamp = new Date().toISOString();
 
-  return `# CodeB v6.0 - Auto-generated Caddy Config
+  return `# CodeB v7.0 - Blue-Green Caddy Config
 # Project: ${config.projectName}
 # Environment: ${config.environment}
 # Version: ${config.version}
-# Slot: ${config.slot}
+# Active Slot: ${config.activeSlot} (port ${config.activePort})
 # Team: ${config.teamId}
 # Generated: ${timestamp}
 
 ${config.domain} {
-    reverse_proxy localhost:${config.port} {
-        health_uri /health
-        health_interval 10s
-        health_timeout 5s
-        health_status 2xx
-    }
-
-    encode gzip zstd
-
-    header {
-        X-CodeB-Project ${config.projectName}
-        X-CodeB-Environment ${config.environment}
-        X-CodeB-Version ${config.version}
-        -Server
-        Strict-Transport-Security "max-age=31536000; includeSubDomains"
-        X-Content-Type-Options "nosniff"
-        X-Frame-Options "DENY"
-    }
-
-    log {
-        output file /var/log/caddy/${config.projectName}-${config.environment}.log {
-            roll_size 10mb
-            roll_keep 5
-            roll_keep_for 720h
-        }
-        format json
-    }
+  reverse_proxy localhost:${config.activePort} localhost:${config.standbyPort} {
+    lb_policy first
+    fail_duration 10s
+  }
+  encode gzip
+  header {
+    X-CodeB-Project ${config.projectName}
+    X-CodeB-Version ${config.version}
+    X-CodeB-Slot ${config.activeSlot}
+    -Server
+  }
+  log {
+    output file /var/log/caddy/${config.projectName}.log
+  }
 }
 `;
 }
