@@ -42,6 +42,9 @@ COPY --from=builder --chown=codeb:nodejs /app/dist ./dist
 COPY --from=builder --chown=codeb:nodejs /app/node_modules ./node_modules
 COPY --from=builder --chown=codeb:nodejs /app/package.json ./
 
+# Copy VERSION file (copied from parent dir before build)
+COPY --chown=codeb:nodejs VERSION ./VERSION
+
 # Create logs directory
 RUN mkdir -p /app/logs && chown codeb:nodejs /app/logs
 
