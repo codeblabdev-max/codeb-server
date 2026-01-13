@@ -73,12 +73,42 @@ description: "팀원용 통합 명령어 - 스캔 → 설정 → 배포 자동�
 │  ├─ PostgreSQL: CREATE USER {project}_user WITH PASSWORD       │
 │  └─ Redis: DB 번호 할당 (SSOT에서 관리)                         │
 │                                                                 │
+│  GitHub Repository (자동 감지)                                   │
+│  ├─ GHCR_PAT: gh auth token으로 자동 설정                       │
+│  └─ CODEB_API_KEY: 팀원 API Key 자동 설정                       │
+│                                                                 │
 │  결과 → ENV 파일에 자동 반영:                                    │
 │  DATABASE_URL=postgres://{user}:{pass}@db.codeb.kr:5432/{db}   │
 │  REDIS_URL=redis://db.codeb.kr:6379/{db_num}                   │
 │                                                                 │
 └─────────────────────────────────────────────────────────────────┘
 ```
+
+## 2-1단계: GitHub Secrets 자동 설정
+
+**신규 프로젝트 초기화 후 반드시 실행:**
+
+```bash
+# 1. GitHub repo 감지
+REPO=$(git remote get-url origin 2>/dev/null | sed 's/.*github.com[:/]\(.*\)\.git/\1/' | sed 's/.*github.com[:/]\(.*\)/\1/')
+
+# 2. GHCR_PAT 설정 (현재 gh 토큰 사용)
+gh secret set GHCR_PAT --repo "$REPO" --body "$(gh auth token)"
+
+# 3. CODEB_API_KEY 설정 (~/.codeb/config.json에서 읽기)
+API_KEY=$(cat ~/.codeb/config.json 2>/dev/null | jq -r '.apiKey // empty')
+if [ -n "$API_KEY" ]; then
+  gh secret set CODEB_API_KEY --repo "$REPO" --body "$API_KEY"
+fi
+
+# 4. 확인
+gh secret list --repo "$REPO"
+```
+
+**실행 조건:**
+- `git remote` 가 github.com을 가리킬 때만 실행
+- `gh auth status`로 로그인 확인 후 실행
+- 이미 설정된 시크릿은 덮어쓰기 (최신 토큰으로 갱신)
 
 ## 2단계: 기존 프로젝트 → 상태 출력
 
