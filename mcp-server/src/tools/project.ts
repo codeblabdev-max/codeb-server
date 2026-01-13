@@ -251,6 +251,13 @@ ${domain} {
       await appSSH.exec(`echo '${caddySnippet}' | sudo tee ${caddyPath}`);
       await appSSH.exec(`sudo systemctl reload caddy || true`);
       files.push(caddyPath);
+
+      // PowerDNS A 레코드 추가 (codeb.kr 서브도메인인 경우만)
+      if (domain.endsWith('.codeb.kr')) {
+        const subdomain = domain.replace('.codeb.kr', '');
+        await appSSH.exec(`pdnsutil add-record codeb.kr ${subdomain} A 300 ${SERVERS.app.ip} 2>/dev/null || true`);
+        await appSSH.exec(`pdnsutil rectify-zone codeb.kr 2>/dev/null || true`);
+      }
     });
 
     // ============================================================
