@@ -19,7 +19,7 @@ import { randomBytes } from 'crypto';
 // ============================================================================
 
 const LOG_LEVEL = process.env.LOG_LEVEL || 'info';
-const LOG_DIR = process.env.LOG_DIR || '/var/log/codeb';
+const LOG_DIR = process.env.LOG_DIR || '/app/logs';
 const NODE_ENV = process.env.NODE_ENV || 'development';
 
 // ============================================================================

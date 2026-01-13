@@ -611,7 +611,8 @@ jobs:
 
       - name: Build and push Docker image
         run: |
-          docker build -t \${{ env.REGISTRY }}/\${{ env.IMAGE_NAME }}:\${{ github.sha }} .
+          docker build --build-arg NPM_TOKEN=\${{ secrets.GHCR_PAT }} \
+            -t \${{ env.REGISTRY }}/\${{ env.IMAGE_NAME }}:\${{ github.sha }} .
           docker push \${{ env.REGISTRY }}/\${{ env.IMAGE_NAME }}:\${{ github.sha }}
           docker tag \${{ env.REGISTRY }}/\${{ env.IMAGE_NAME }}:\${{ github.sha }} \${{ env.REGISTRY }}/\${{ env.IMAGE_NAME }}:latest
           docker push \${{ env.REGISTRY }}/\${{ env.IMAGE_NAME }}:latest

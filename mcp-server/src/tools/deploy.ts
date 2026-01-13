@@ -27,7 +27,7 @@ import { getSlotRegistry, updateSlotRegistry } from './slot.js';
 
 export const deployInputSchema = z.object({
   projectName: z.string().min(1).max(50).describe('Project name'),
-  environment: z.enum(['staging', 'production', 'preview']).describe('Environment'),
+  environment: z.enum(['staging', 'production', 'preview']).default('production').describe('Environment (default: production)'),
   version: z.string().optional().describe('Version/commit SHA (default: latest)'),
   image: z.string().optional().describe('Container image (default: ghcr.io/{org}/{project}:{version})'),
   skipHealthcheck: z.boolean().optional().describe('Skip health check'),
