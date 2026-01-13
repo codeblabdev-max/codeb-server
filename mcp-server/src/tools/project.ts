@@ -128,7 +128,7 @@ async function executeWorkflowInit(
       const registryDir = '/opt/codeb/registry/slots';
       await appSSH.exec(`mkdir -p ${registryDir}`);
 
-      const basePort = await allocatePort(appSSH, 'production');
+      const basePort = await allocatePort(appSSH, projectName);
       ports = getSlotPorts(basePort);
 
       const registry = {
@@ -479,9 +479,9 @@ NEXT_PUBLIC_WS_URL=wss://${SERVERS.streaming.domain}/connection/websocket
   return content;
 }
 
-async function allocatePort(ssh: any, _environment: string): Promise<number> {
+async function allocatePort(ssh: any, projectName: string): Promise<number> {
   const ssotPath = '/opt/codeb/registry/ssot.json';
-  let ssot: any = { version: '7.0', projects: {}, ports: { used: [], reserved: [] } };
+  let ssot: any = { version: '7.0', projects: {}, ports: { allocated: {}, reserved: [] } };
 
   try {
     const content = await ssh.readFile(ssotPath);
@@ -490,18 +490,23 @@ async function allocatePort(ssh: any, _environment: string): Promise<number> {
     // 파일 없으면 새로 생성
   }
 
+  // SSOT 구조 보장
+  if (!ssot.ports) ssot.ports = { allocated: {}, reserved: [] };
+  if (!ssot.ports.allocated) ssot.ports.allocated = {};
+
   // 포트 범위 (Production Only): 4100-4998 (짝수=blue, 홀수=green)
   const baseRange = 4100;
   const maxRange = 4998;
 
-  const usedPorts = new Set(ssot.ports?.used || []);
+  // allocated 객체에서 사용 중인 포트 추출
+  const usedPorts = new Set(Object.keys(ssot.ports.allocated).map(Number));
 
   // 사용 가능한 첫 번째 짝수 포트 찾기 (blue용, green은 +1)
   for (let port = baseRange; port < maxRange; port += 2) {
     if (!usedPorts.has(port) && !usedPorts.has(port + 1)) {
-      // 포트 예약
-      if (!ssot.ports) ssot.ports = { used: [], reserved: [] };
-      ssot.ports.used.push(port, port + 1);
+      // 포트 예약 (allocated 객체 형식)
+      ssot.ports.allocated[port] = { project: projectName, slot: 'blue' };
+      ssot.ports.allocated[port + 1] = { project: projectName, slot: 'green' };
       await ssh.writeFile(ssotPath, JSON.stringify(ssot, null, 2));
       return port;
     }
