@@ -41,11 +41,11 @@ export function generateGitHubActionsWorkflow(config) {
   const selfHostedJob = `  # ============================================
   # Build & Deploy Job (Self-hosted runner)
   # App Server에서 직접 빌드 및 배포
-  # 요구사항: runner 사용자가 docker 그룹에 포함되어야 함
+  # 요구사항: runner에 'docker' 라벨이 있어야 함 (Docker 권한 보장)
   # ============================================
   build-and-deploy:
     name: Build & Deploy
-    runs-on: self-hosted  # App 서버의 Self-hosted runner 사용
+    runs-on: [self-hosted, docker]  # Docker 권한이 있는 러너에서만 실행
 
     steps:
       - name: Checkout repository

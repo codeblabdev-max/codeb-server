@@ -580,7 +580,7 @@ env:
 
 jobs:
   build-and-deploy:
-    runs-on: self-hosted
+    runs-on: [self-hosted, docker]  # Docker 권한이 있는 러너에서만 실행
     if: github.event_name == 'push' || github.event.inputs.action == 'deploy'
     permissions:
       contents: read
@@ -637,7 +637,7 @@ jobs:
           echo "Run 'we promote ${projectName}' to switch traffic" >> \$GITHUB_STEP_SUMMARY
 
   promote:
-    runs-on: self-hosted
+    runs-on: [self-hosted, docker]
     if: github.event.inputs.action == 'promote'
 
     steps:
@@ -650,7 +650,7 @@ jobs:
           echo "## 🎉 Traffic switched!" >> \$GITHUB_STEP_SUMMARY
 
   rollback:
-    runs-on: self-hosted
+    runs-on: [self-hosted, docker]
     if: github.event.inputs.action == 'rollback'
 
     steps:
