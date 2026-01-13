@@ -56,55 +56,6 @@ import { promoteTool } from './tools/promote.js';
 import { rollbackTool } from './tools/rollback.js';
 import { slotStatusTool, slotCleanupTool, slotListTool } from './tools/slot.js';
 
-// Tools - Edge Functions
-import {
-  edgeDeployTool,
-  edgeListTool,
-  edgeLogsTool,
-  edgeDeleteTool,
-  edgeInvokeTool,
-  edgeMetricsTool,
-} from './tools/edge.js';
-
-// Tools - Analytics
-import {
-  analyticsOverviewTool,
-  analyticsWebVitalsTool,
-  analyticsDeploymentsTool,
-  analyticsRealtimeTool,
-  analyticsSpeedInsightsTool,
-} from './tools/analytics.js';
-
-// Tools - Analytics Ingest (SDK data collection)
-import {
-  analyticsIngestTool,
-  edgeIngestTool,
-  getAnalyticsMetrics,
-} from './tools/analytics-ingest.js';
-
-// Tools - Migration
-import {
-  migrateDetectTool,
-  migratePlanTool,
-  migrateExecuteTool,
-  migrateRollbackTool,
-} from './tools/migrate.js';
-
-// Tools - ENV Management
-import {
-  envMigrateTool,
-  envScanTool,
-  envRestoreTool,
-  envBackupListTool,
-} from './tools/env-migrate.js';
-
-// Tools - Safe Migration
-import {
-  safeMigrateTool,
-  safeMigrateRollbackTool,
-  generateWorkflowTool,
-} from './tools/migrate-safe.js';
-
 // Tools - Domain Management
 import {
   domainSetupTool,
@@ -299,38 +250,6 @@ const TOOLS: Record<string, {
   slot_cleanup: { handler: (p, a) => slotCleanupTool.execute(p, a), permission: 'slot.cleanup' },
   slot_list: { handler: (p, a) => slotListTool.execute(p, a), permission: 'slot.view' },
 
-  // Edge Functions
-  edge_deploy: { handler: (p, a) => edgeDeployTool.execute(p, a), permission: 'deploy.create' },
-  edge_list: { handler: (p, a) => edgeListTool.execute(p, a), permission: 'project.view' },
-  edge_logs: { handler: (p, a) => edgeLogsTool.execute(p, a), permission: 'logs.view' },
-  edge_delete: { handler: (p, a) => edgeDeleteTool.execute(p, a), permission: 'deploy.create' },
-  edge_invoke: { handler: (p, a) => edgeInvokeTool.execute(p, a), permission: 'deploy.create' },
-  edge_metrics: { handler: (p, a) => edgeMetricsTool.execute(p, a), permission: 'metrics.view' },
-
-  // Analytics
-  analytics_overview: { handler: (p, a) => analyticsOverviewTool.execute(p, a), permission: 'metrics.view' },
-  analytics_webvitals: { handler: (p, a) => analyticsWebVitalsTool.execute(p, a), permission: 'metrics.view' },
-  analytics_deployments: { handler: (p, a) => analyticsDeploymentsTool.execute(p, a), permission: 'metrics.view' },
-  analytics_realtime: { handler: (p, a) => analyticsRealtimeTool.execute(p, a), permission: 'metrics.view' },
-  analytics_speed_insights: { handler: (p, a) => analyticsSpeedInsightsTool.execute(p, a), permission: 'metrics.view' },
-
-  // Migration
-  migrate_detect: { handler: (_p, a) => migrateDetectTool.execute(_p, a), permission: 'deploy.create' },
-  migrate_plan: { handler: (p, a) => migratePlanTool.execute(p, a), permission: 'deploy.create' },
-  migrate_execute: { handler: (p, a) => migrateExecuteTool.execute(p, a), permission: 'deploy.create' },
-  migrate_rollback: { handler: (p, a) => migrateRollbackTool.execute(p, a), permission: 'deploy.create' },
-
-  // ENV Management
-  env_migrate: { handler: (p, a) => envMigrateTool.execute(p, a), permission: 'deploy.create' },
-  env_scan: { handler: (_p, a) => envScanTool.execute(a), permission: 'project.view' },
-  env_restore: { handler: (p, a) => envRestoreTool.execute(p, a), permission: 'deploy.create' },
-  env_backup_list: { handler: (p, a) => envBackupListTool.execute(p.projectName, p.environment, a), permission: 'project.view' },
-
-  // Safe Migration
-  migrate_safe: { handler: (p, a) => safeMigrateTool.execute(p, a), permission: 'deploy.create' },
-  migrate_safe_rollback: { handler: (p, a) => safeMigrateRollbackTool.execute(p, a), permission: 'deploy.create' },
-  migrate_generate_workflow: { handler: (p, _a) => generateWorkflowTool.execute(p), permission: 'project.view' },
-
   // Domain Management
   domain_setup: { handler: (p, a) => domainSetupTool.execute(p, a), permission: 'domain.manage' },
   domain_verify: { handler: (p, a) => domainVerifyTool.execute(p, a), permission: 'domain.view' },
@@ -379,60 +298,9 @@ app.get('/metrics', async (_req, res) => {
   try {
     res.set('Content-Type', metricsRegistry.contentType);
     const coreMetrics = await metricsRegistry.metrics();
-    const analyticsMetrics = await getAnalyticsMetrics();
-    res.end(coreMetrics + '\n' + analyticsMetrics);
+    res.end(coreMetrics);
   } catch (error) {
     res.status(500).end();
-  }
-});
-
-// ============================================================================
-// Public Analytics Ingest Endpoints (No Auth - for SDK)
-// ============================================================================
-
-// Analytics SDK data ingest (Web Vitals, page views, events)
-app.post('/api/analytics/ingest', async (req, res) => {
-  try {
-    const result = await analyticsIngestTool.execute(req.body);
-
-    if (result.success) {
-      res.json(result);
-    } else {
-      res.status(400).json(result);
-    }
-  } catch (error) {
-    res.status(500).json({
-      success: false,
-      error: error instanceof Error ? error.message : 'Internal error',
-    });
-  }
-});
-
-// Edge analytics ingest (simplified page view from middleware)
-app.post('/api/analytics/edge', async (req, res) => {
-  try {
-    const result = await edgeIngestTool.execute(req.body);
-    res.json(result);
-  } catch (error) {
-    res.status(500).json({
-      success: false,
-      error: error instanceof Error ? error.message : 'Internal error',
-    });
-  }
-});
-
-// Beacon endpoint for sendBeacon API (accepts both POST and GET)
-app.all('/api/analytics/beacon', async (req, res) => {
-  try {
-    const data = req.method === 'GET' ? req.query : req.body;
-
-    // Parse beacon data
-    const payload = typeof data.data === 'string' ? JSON.parse(data.data) : data;
-
-    const result = await analyticsIngestTool.execute(payload);
-    res.status(204).end(); // No content response for beacon
-  } catch (error) {
-    res.status(204).end(); // Still return 204 to not break beacon
   }
 });
 
