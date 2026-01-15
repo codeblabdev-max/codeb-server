@@ -217,6 +217,31 @@ function authMiddleware(req: AuthenticatedRequest, res: Response, next: NextFunc
 }
 
 // ============================================================================
+// Helper Functions
+// ============================================================================
+
+/**
+ * Normalize project name: convert underscores to hyphens
+ * Ensures consistency between different naming conventions
+ */
+function normalizeProjectName(name: string): string {
+  return name.replace(/_/g, '-').toLowerCase();
+}
+
+/**
+ * Normalize params that may contain projectName
+ */
+function normalizeParams(params: Record<string, any>): Record<string, any> {
+  if (params.projectName) {
+    return {
+      ...params,
+      projectName: normalizeProjectName(params.projectName),
+    };
+  }
+  return params;
+}
+
+// ============================================================================
 // Tool Registry
 // ============================================================================
 
@@ -413,9 +438,12 @@ app.post('/api/tool', authMiddleware, async (req: AuthenticatedRequest, res) => 
   }
 
   try {
-    log.info(`Executing tool: ${tool}`, { params: Object.keys(params) });
+    // Normalize project name (convert underscores to hyphens)
+    const normalizedParams = normalizeParams(params);
 
-    const result = await toolDef.handler(params, authContext);
+    log.info(`Executing tool: ${tool}`, { params: Object.keys(normalizedParams) });
+
+    const result = await toolDef.handler(normalizedParams, authContext);
     const duration = Date.now() - startTime;
 
     // Record metrics
