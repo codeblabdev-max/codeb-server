@@ -351,7 +351,7 @@ server.setRequestHandler(CallToolRequestSchema, async (request) => {
       workflow_init: 'workflow_init',
       workflow_scan: 'workflow_scan',
       scan: 'workflow_scan',
-      health_check: 'slot_list',
+      health_check: 'health_check',
     };
 
     const apiTool = apiToolMap[name] || name;
