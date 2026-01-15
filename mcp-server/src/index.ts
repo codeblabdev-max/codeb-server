@@ -54,7 +54,7 @@ import {
 import { deployTool } from './tools/deploy.js';
 import { promoteTool } from './tools/promote.js';
 import { rollbackTool } from './tools/rollback.js';
-import { slotStatusTool, slotCleanupTool, slotListTool } from './tools/slot.js';
+import { slotStatusTool, slotCleanupTool, slotListTool, getSlotRegistry } from './tools/slot.js';
 
 // Tools - Domain Management
 import {
@@ -73,6 +73,10 @@ import {
 
 // Tools - Environment Variables
 import { envSyncTool, envGetTool } from './tools/env.js';
+
+// SSH for infrastructure status
+import { withSSH } from './lib/ssh.js';
+import { SERVERS } from './lib/servers.js';
 
 // ============================================================================
 // Configuration
@@ -294,9 +298,144 @@ const TOOLS: Record<string, {
   env_get: { handler: (p, a) => envGetTool.execute(p, a), permission: 'project.view' },
 
   // Aliases for Commands compatibility
-  health_check: { handler: async () => ({ status: 'healthy', version: VERSION, timestamp: new Date().toISOString() }), permission: 'project.view' },
+  health_check: { handler: executeInfraStatus, permission: 'project.view' },
   scan: { handler: (p, a) => projectScanTool.execute(p, a), permission: 'project.view' },
 };
+
+// ============================================================================
+// Infrastructure Status (health_check 대체)
+// ============================================================================
+
+interface ContainerInfo {
+  name: string;
+  image: string;
+  status: string;
+  ports: string;
+}
+
+interface SlotInfo {
+  project: string;
+  activeSlot: string;
+  blue: { state: string; port: number; version: string };
+  green: { state: string; port: number; version: string };
+}
+
+interface InfraStatusResult {
+  success: boolean;
+  data: {
+    api: {
+      status: string;
+      version: string;
+      uptime: number;
+    };
+    containers: ContainerInfo[];
+    slots: SlotInfo[];
+    images: { repository: string; tag: string; size: string; created: string }[];
+    ports: { port: string; process: string }[];
+  };
+  timestamp: string;
+}
+
+async function executeInfraStatus(): Promise<InfraStatusResult> {
+  try {
+    const result = await withSSH(SERVERS.app.ip, async (ssh) => {
+      // 1. Docker 컨테이너 목록
+      const containersResult = await ssh.exec(
+        `docker ps --format '{{.Names}}|{{.Image}}|{{.Status}}|{{.Ports}}' 2>/dev/null | head -30`
+      );
+      const containers: ContainerInfo[] = containersResult.stdout
+        .split('\n')
+        .filter(Boolean)
+        .map((line) => {
+          const [name, image, status, ports] = line.split('|');
+          return { name, image: image?.split(':')[0] || image, status: status?.split(' ')[0] || status, ports: ports || '' };
+        });
+
+      // 2. SSOT Slot Registry
+      const slotsResult = await ssh.exec(`
+        for f in /opt/codeb/registry/slots/*.json; do
+          if [ -f "$f" ]; then
+            PROJECT=$(basename $f .json)
+            ACTIVE=$(jq -r '.activeSlot' $f 2>/dev/null)
+            BLUE_STATE=$(jq -r '.blue.state' $f 2>/dev/null)
+            BLUE_PORT=$(jq -r '.blue.port' $f 2>/dev/null)
+            BLUE_VER=$(jq -r '.blue.version // "N/A"' $f 2>/dev/null)
+            GREEN_STATE=$(jq -r '.green.state' $f 2>/dev/null)
+            GREEN_PORT=$(jq -r '.green.port' $f 2>/dev/null)
+            GREEN_VER=$(jq -r '.green.version // "N/A"' $f 2>/dev/null)
+            echo "$PROJECT|$ACTIVE|$BLUE_STATE|$BLUE_PORT|$BLUE_VER|$GREEN_STATE|$GREEN_PORT|$GREEN_VER"
+          fi
+        done
+      `);
+      const slots: SlotInfo[] = slotsResult.stdout
+        .split('\n')
+        .filter(Boolean)
+        .map((line) => {
+          const [project, activeSlot, blueState, bluePort, blueVer, greenState, greenPort, greenVer] = line.split('|');
+          return {
+            project,
+            activeSlot,
+            blue: { state: blueState, port: parseInt(bluePort) || 0, version: blueVer },
+            green: { state: greenState, port: parseInt(greenPort) || 0, version: greenVer },
+          };
+        });
+
+      // 3. Docker Images (프로젝트 관련)
+      const imagesResult = await ssh.exec(
+        `docker images --format '{{.Repository}}|{{.Tag}}|{{.Size}}|{{.CreatedSince}}' | grep -E '(codeb|project|ghcr)' | head -15`
+      );
+      const images = imagesResult.stdout
+        .split('\n')
+        .filter(Boolean)
+        .map((line) => {
+          const [repository, tag, size, created] = line.split('|');
+          return { repository: repository?.split('/').pop() || repository, tag, size, created };
+        });
+
+      // 4. 포트 사용 현황 (4000-4200, 9101)
+      const portsResult = await ssh.exec(
+        `ss -tlnp 2>/dev/null | grep -E ':(4[0-1][0-9]{2}|9101) ' | awk '{print $4 "|" $6}' | head -20`
+      );
+      const ports = portsResult.stdout
+        .split('\n')
+        .filter(Boolean)
+        .map((line) => {
+          const [port, proc] = line.split('|');
+          return { port: port?.replace('0.0.0.0:', '').replace('[::]:', '') || port, process: proc?.match(/\("([^"]+)"/)?.[1] || 'unknown' };
+        });
+
+      return { containers, slots, images, ports };
+    });
+
+    return {
+      success: true,
+      data: {
+        api: {
+          status: 'healthy',
+          version: VERSION,
+          uptime: process.uptime(),
+        },
+        containers: result.containers,
+        slots: result.slots,
+        images: result.images,
+        ports: result.ports,
+      },
+      timestamp: new Date().toISOString(),
+    };
+  } catch (error) {
+    return {
+      success: false,
+      data: {
+        api: { status: 'healthy', version: VERSION, uptime: process.uptime() },
+        containers: [],
+        slots: [],
+        images: [],
+        ports: [],
+      },
+      timestamp: new Date().toISOString(),
+    };
+  }
+}
 
 // ============================================================================
 // Routes

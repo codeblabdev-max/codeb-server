@@ -96,11 +96,6 @@ ssh $API_SERVER "
   cd /tmp/mcp-deploy
   npm ci --omit=dev 2>&1 | tail -3
 
-  docker stop codeb-mcp-api 2>/dev/null || true
-  docker rm codeb-mcp-api 2>/dev/null || true
-  fuser -k 9101/tcp 2>/dev/null || true
-  sleep 1
-
   cat > Dockerfile.prod <<'DOCKERFILE'
 FROM node:20-alpine
 RUN addgroup -g 1001 -S nodejs && adduser -S codeb -u 1001 -G nodejs
@@ -118,19 +113,8 @@ DOCKERFILE
 
   docker build -t codeb-mcp-api:latest -f Dockerfile.prod . 2>&1 | tail -5
 
-  docker run -d \
-    --name codeb-mcp-api \
-    --restart always \
-    --network host \
-    -e NODE_ENV=production \
-    -e PORT=9101 \
-    -e LOG_DIR=/app/logs \
-    -e SSH_PRIVATE_KEY_PATH=/app/ssh/id_rsa \
-    --env-file /opt/codeb/env/codeb-api/.env \
-    -v /opt/codeb/logs:/app/logs \
-    -v /opt/codeb/registry:/opt/codeb/registry \
-    -v /opt/codeb/ssh:/app/ssh:ro \
-    codeb-mcp-api:latest
+  # systemd 서비스로 재시작 (자동 재시작 보장)
+  systemctl restart codeb-mcp-api
 
   rm -rf /tmp/mcp-deploy /tmp/mcp-server-deploy.tar.gz
   sleep 3
