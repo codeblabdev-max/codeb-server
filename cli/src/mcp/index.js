@@ -30,7 +30,7 @@ import { fileURLToPath } from 'url';
 // Get version from package.json
 const __filename = fileURLToPath(import.meta.url);
 const __dirname = dirname(__filename);
-let VERSION = '7.0.33';
+let VERSION = '7.0.42';
 try {
   const pkg = JSON.parse(readFileSync(join(__dirname, '../../package.json'), 'utf-8'));
   VERSION = pkg.version;
@@ -223,7 +223,7 @@ const TOOLS = [
       type: 'object',
       properties: {
         projectName: { type: 'string', description: 'Project name' },
-        domain: { type: 'string', description: 'Domain name (e.g., myapp.codeb.dev)' },
+        domain: { type: 'string', description: 'Domain name (e.g., myapp.codeb.kr)' },
         environment: { type: 'string', enum: ['staging', 'production'], default: 'production' },
       },
       required: ['projectName', 'domain'],

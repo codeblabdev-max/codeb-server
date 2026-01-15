@@ -8,10 +8,11 @@
 import axios from 'axios';
 
 // PowerDNS 설정
+// API Key는 프로젝트 .env 또는 환경변수에서 설정
 const PDNS_API_URL = process.env.PDNS_API_URL || 'http://158.247.203.55:8081/api/v1';
-const PDNS_API_KEY = process.env.PDNS_API_KEY || '20a89ca50a07cc62fa383091ac551e057ab1044dd247480002b5c4a40092eed5';
+const PDNS_API_KEY = process.env.PDNS_API_KEY || '';
 const DEFAULT_TTL = 300;
-const APP_SERVER_IP = '158.247.203.55';
+const APP_SERVER_IP = process.env.APP_SERVER_IP || '158.247.203.55';
 
 /**
  * PowerDNS API 클라이언트
@@ -29,9 +30,30 @@ class DNSApi {
   }
 
   /**
+   * API Key 설정 여부 확인
+   */
+  isConfigured() {
+    return !!PDNS_API_KEY;
+  }
+
+  /**
+   * API Key 검증
+   * @throws {Error} API Key가 설정되지 않은 경우
+   */
+  validateApiKey() {
+    if (!PDNS_API_KEY) {
+      throw new Error(
+        'PDNS_API_KEY is not configured. ' +
+        'Please set PDNS_API_KEY in your project .env file or environment variables.'
+      );
+    }
+  }
+
+  /**
    * 존 목록 조회
    */
   async listZones() {
+    this.validateApiKey();
     try {
       const response = await this.client.get('/servers/localhost/zones');
       return response.data;
@@ -44,6 +66,7 @@ class DNSApi {
    * 특정 존의 레코드 조회
    */
   async getZone(zoneName) {
+    this.validateApiKey();
     try {
       // 존 이름 정규화 (마지막에 . 추가)
       const normalizedZone = zoneName.endsWith('.') ? zoneName : `${zoneName}.`;
@@ -63,6 +86,7 @@ class DNSApi {
    * @param {string} ip - IP 주소 (기본값: APP_SERVER_IP)
    */
   async addARecord(domain, ip = APP_SERVER_IP) {
+    this.validateApiKey();
     try {
       // 도메인에서 존과 호스트 추출
       const parts = domain.split('.');
@@ -103,6 +127,7 @@ class DNSApi {
    * CNAME 레코드 추가
    */
   async addCNAME(domain, target) {
+    this.validateApiKey();
     try {
       const parts = domain.split('.');
       const zoneName = parts.slice(-2).join('.') + '.';
@@ -137,6 +162,7 @@ class DNSApi {
    * 레코드 삭제
    */
   async deleteRecord(domain, type = 'A') {
+    this.validateApiKey();
     try {
       const parts = domain.split('.');
       const zoneName = parts.slice(-2).join('.') + '.';
@@ -196,6 +222,7 @@ class DNSApi {
    * 도메인 설정 (A레코드 + 선택적 www CNAME)
    */
   async setupDomain(domain, options = {}) {
+    this.validateApiKey();
     const { ip = APP_SERVER_IP, www = false } = options;
     const results = [];
 

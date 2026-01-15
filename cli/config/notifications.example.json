@@ -12,7 +12,7 @@
       "enabled": true,
       "webhookUrl": "https://discord.com/api/webhooks/YOUR/WEBHOOK/URL",
       "username": "CodeB Notifier",
-      "avatarUrl": "https://codeb.dev/logo.png"
+      "avatarUrl": "https://codeb.kr/logo.png"
     },
     "email": {
       "enabled": true,
@@ -25,7 +25,7 @@
           "pass": "your-app-password"
         }
       },
-      "from": "noreply@codeb.dev",
+      "from": "noreply@codeb.kr",
       "to": [
         "admin@example.com",
         "devops@example.com"

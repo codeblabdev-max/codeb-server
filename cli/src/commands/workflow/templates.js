@@ -77,7 +77,7 @@ we workflow scan ${projectName}
 we deploy ${projectName} --environment staging
 
 # 도메인 설정
-we domain setup ${projectName}.codeb.dev --ssl
+we domain setup ${projectName}.codeb.kr --ssl
 \`\`\`
 
 ## Permission Model

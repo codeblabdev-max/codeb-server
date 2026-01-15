@@ -38,7 +38,7 @@ const DEFAULT_CONFIG = {
       enabled: false,
       webhookUrl: '',
       username: 'CodeB Notifier',
-      avatarUrl: 'https://codeb.dev/logo.png'
+      avatarUrl: 'https://codeb.kr/logo.png'
     },
     email: {
       enabled: false,
@@ -51,7 +51,7 @@ const DEFAULT_CONFIG = {
           pass: ''
         }
       },
-      from: 'noreply@codeb.dev',
+      from: 'noreply@codeb.kr',
       to: []
     }
   },

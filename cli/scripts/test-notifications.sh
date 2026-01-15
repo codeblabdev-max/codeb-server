@@ -92,7 +92,7 @@ echo -e "${BLUE}Test 8: Deployment hook - success${NC}"
 node "$CLI_DIR/src/deployment-hooks.js" success test-app production \
   version "1.0.0" \
   duration "30s" \
-  url "https://test-app.codeb.dev"
+  url "https://test-app.codeb.kr"
 test_result
 
 # Test 9: Deployment hooks - failed

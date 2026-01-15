@@ -123,7 +123,7 @@ See full API spec: `docs/API_NOTIFICATION_SPEC.yaml`
 node /opt/codeb/cli/src/deployment-hooks.js success myapp production \
   version "1.2.3" \
   duration "45s" \
-  url "https://myapp.codeb.dev"
+  url "https://myapp.codeb.kr"
 ```
 
 ### Send Server Down Alert
@@ -203,7 +203,7 @@ curl http://localhost:7778/api/v1/health/notifications
       "enabled": true,
       "webhookUrl": "https://discord.com/api/webhooks/YOUR/WEBHOOK",
       "username": "CodeB Notifier",
-      "avatarUrl": "https://codeb.dev/logo.png"
+      "avatarUrl": "https://codeb.kr/logo.png"
     }
   }
 }
@@ -228,7 +228,7 @@ curl http://localhost:7778/api/v1/health/notifications
           "pass": "your-app-password"
         }
       },
-      "from": "noreply@codeb.dev",
+      "from": "noreply@codeb.kr",
       "to": ["admin@example.com"]
     }
   }
@@ -311,4 +311,4 @@ MIT
 
 For issues and support:
 - GitHub: https://github.com/codeblabdev-max/codeb-server
-- Email: support@codeb.dev
+- Email: support@codeb.kr

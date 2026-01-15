@@ -46,7 +46,7 @@ description: "서버 레지스트리 관리 - 프로젝트/포트/도메인 중�
   "version": "1.0.0",
   "server": {
     "host": "141.164.60.51",
-    "domains": ["codeb.dev", "one-q.xyz"]
+    "domains": ["codeb.kr", "one-q.xyz"]
   },
   "ports": {
     "reserved": { "22": "SSH", "80": "Caddy", ... },
@@ -70,7 +70,7 @@ description: "서버 레지스트리 관리 - 프로젝트/포트/도메인 중�
 ```
 1. PR 생성 → GitHub Actions 트리거
 2. we registry preview myapp --pr 123 --build 456
-3. 자동 도메인: pr-123.myapp.codeb.dev
+3. 자동 도메인: pr-123.myapp.codeb.kr
 4. 테스트 완료 후 승격
 5. we registry promote myapp --pr 123 --environment production
 6. TTL 만료 시 자동 정리
@@ -85,7 +85,7 @@ we registry list
 we registry show myapp
 
 # 새 프로젝트 등록
-we registry add myapp --port 3000 --domain myapp.codeb.dev
+we registry add myapp --port 3000 --domain myapp.codeb.kr
 
 # 프로젝트 업데이트
 we registry update myapp --port 3001

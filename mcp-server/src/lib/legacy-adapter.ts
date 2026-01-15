@@ -261,7 +261,7 @@ export function parseCaddyConfig(content: string, filePath: string): LegacyCaddy
   let inferredProject: string | undefined;
   let inferredEnvironment: 'staging' | 'production' | 'preview' | undefined;
 
-  // 도메인에서 추론: myapp.codeb.dev, myapp-staging.codeb.dev
+  // 도메인에서 추론: myapp.codeb.kr, myapp-staging.codeb.kr
   const subdomainMatch = domain.match(/^([^.]+)(?:-(staging|production))?\.codeb\./);
   if (subdomainMatch) {
     inferredProject = subdomainMatch[1];

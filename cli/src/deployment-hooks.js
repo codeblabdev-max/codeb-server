@@ -46,7 +46,7 @@ class DeploymentHooks {
         version: data.version || '1.0.0',
         duration: data.duration || 'unknown',
         deployer: data.deployer || process.env.USER || 'system',
-        url: data.url || `https://${project}.codeb.dev`,
+        url: data.url || `https://${project}.codeb.kr`,
         ...data
       }
     });

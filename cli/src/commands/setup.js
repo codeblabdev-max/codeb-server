@@ -438,7 +438,7 @@ we workflow scan myapp
 we deploy myapp --environment staging
 
 # 도메인 설정
-we domain setup myapp.codeb.dev --ssl
+we domain setup myapp.codeb.kr --ssl
 \`\`\`
 
 ## Permission Model

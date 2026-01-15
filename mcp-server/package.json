@@ -1,21 +1,24 @@
 {
-  "name": "@codeblabdev-max/mcp-server",
-  "version": "7.0.39",
+  "name": "codeb-mcp",
+  "version": "7.0.42",
   "description": "CodeB v7.0 - Unified HTTP API Server with Blue-Green Deployment + Claude Code 2.1 Integration",
   "type": "module",
   "main": "dist/index.js",
   "types": "dist/index.d.ts",
+  "bin": {
+    "codeb-mcp": "dist/index.js"
+  },
   "repository": {
     "type": "git",
-    "url": "git+https://github.com/codeblabdev-max/codeb-server.git",
+    "url": "git+https://github.com/codeb-dev-run/codeb-server.git",
     "directory": "mcp-server"
   },
-  "homepage": "https://github.com/codeblabdev-max/codeb-server#readme",
+  "homepage": "https://github.com/codeb-dev-run/codeb-server#readme",
   "bugs": {
-    "url": "https://github.com/codeblabdev-max/codeb-server/issues"
+    "url": "https://github.com/codeb-dev-run/codeb-server/issues"
   },
   "publishConfig": {
-    "registry": "https://npm.pkg.github.com",
+    "registry": "https://registry.npmjs.org",
     "access": "public"
   },
   "scripts": {

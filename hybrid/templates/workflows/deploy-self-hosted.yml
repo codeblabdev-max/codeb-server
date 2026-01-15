@@ -1,0 +1,448 @@
+# CodeB Hybrid Deployment - Type 1: Self-hosted Runner
+# 관리자용 - 서버에서 직접 실행
+#
+# 필요한 GitHub Secrets:
+#   - GHCR_TOKEN: GitHub Container Registry 토큰
+#
+# 사용법:
+#   1. 이 파일을 .github/workflows/deploy.yml로 복사
+#   2. {{PROJECT_NAME}}을 실제 프로젝트명으로 교체
+#   3. GitHub Secrets 설정
+
+name: Deploy {{PROJECT_NAME}} (Self-hosted)
+
+on:
+  push:
+    branches: [main]
+    paths:
+      - 'src/**'
+      - 'package.json'
+      - 'Dockerfile'
+  workflow_dispatch:
+    inputs:
+      action:
+        description: 'Deployment action'
+        required: true
+        default: 'deploy'
+        type: choice
+        options:
+          - deploy
+          - promote
+          - rollback
+
+env:
+  PROJECT_NAME: {{PROJECT_NAME}}
+  NODE_VERSION: '20.x'
+  REGISTRY: ghcr.io
+  IMAGE_NAME: ${{ github.repository }}
+
+jobs:
+  # ===========================================
+  # Build & Push Docker Image
+  # ===========================================
+  build:
+    name: Build Docker Image
+    runs-on: [self-hosted, docker]
+    permissions:
+      contents: read
+      packages: write
+    outputs:
+      version: ${{ steps.version.outputs.version }}
+      image: ${{ steps.build.outputs.image }}
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Generate version
+        id: version
+        run: |
+          VERSION=$(date +%Y%m%d)-${GITHUB_SHA::7}
+          echo "version=$VERSION" >> $GITHUB_OUTPUT
+          echo "Building version: $VERSION"
+
+      - name: Setup Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: ${{ env.NODE_VERSION }}
+
+      - name: Install dependencies
+        run: npm ci
+
+      - name: Build application
+        run: npm run build
+
+      - name: Login to GHCR
+        run: |
+          echo "${{ secrets.GITHUB_TOKEN }}" | docker login ghcr.io -u ${{ github.actor }} --password-stdin
+
+      - name: Build and push Docker image
+        id: build
+        run: |
+          VERSION="${{ steps.version.outputs.version }}"
+          IMAGE="${{ env.REGISTRY }}/${{ env.IMAGE_NAME }}:$VERSION"
+
+          docker build -t $IMAGE -t ${{ env.REGISTRY }}/${{ env.IMAGE_NAME }}:latest .
+          docker push $IMAGE
+          docker push ${{ env.REGISTRY }}/${{ env.IMAGE_NAME }}:latest
+
+          echo "image=$IMAGE" >> $GITHUB_OUTPUT
+          echo "Pushed: $IMAGE"
+
+  # ===========================================
+  # Deploy to Inactive Slot (Blue-Green)
+  # ===========================================
+  deploy:
+    name: Deploy to Inactive Slot
+    runs-on: [self-hosted, docker]
+    needs: build
+    if: github.event.inputs.action != 'promote' && github.event.inputs.action != 'rollback'
+
+    steps:
+      - name: Read SSOT and determine slot
+        id: slot
+        run: |
+          SSOT_FILE="/opt/codeb/registry/ssot.json"
+          SLOT_FILE="/opt/codeb/registry/slots/${{ env.PROJECT_NAME }}-production.json"
+
+          # Get port from SSOT
+          if [ -f "$SSOT_FILE" ]; then
+            BLUE_PORT=$(jq -r ".projects[\"${{ env.PROJECT_NAME }}\"].ports.blue // 4100" $SSOT_FILE)
+            GREEN_PORT=$(jq -r ".projects[\"${{ env.PROJECT_NAME }}\"].ports.green // 4101" $SSOT_FILE)
+          else
+            BLUE_PORT=4100
+            GREEN_PORT=4101
+          fi
+
+          # Determine inactive slot
+          if [ -f "$SLOT_FILE" ]; then
+            ACTIVE=$(jq -r '.activeSlot // "blue"' $SLOT_FILE)
+            if [ "$ACTIVE" = "blue" ]; then
+              SLOT="green"
+              PORT=$GREEN_PORT
+            else
+              SLOT="blue"
+              PORT=$BLUE_PORT
+            fi
+          else
+            SLOT="blue"
+            PORT=$BLUE_PORT
+          fi
+
+          echo "slot=$SLOT" >> $GITHUB_OUTPUT
+          echo "port=$PORT" >> $GITHUB_OUTPUT
+          echo "Deploying to slot: $SLOT (port: $PORT)"
+
+      - name: Pull Docker image
+        run: |
+          docker pull ${{ needs.build.outputs.image }}
+
+      - name: Stop existing container
+        run: |
+          CONTAINER="${{ env.PROJECT_NAME }}-${{ steps.slot.outputs.slot }}"
+          docker stop $CONTAINER 2>/dev/null || true
+          docker rm $CONTAINER 2>/dev/null || true
+
+      - name: Start new container
+        run: |
+          CONTAINER="${{ env.PROJECT_NAME }}-${{ steps.slot.outputs.slot }}"
+          PORT="${{ steps.slot.outputs.port }}"
+          ENV_FILE="/opt/codeb/projects/${{ env.PROJECT_NAME }}/.env.production"
+
+          docker run -d \
+            --name $CONTAINER \
+            --restart unless-stopped \
+            --env-file $ENV_FILE \
+            -e PORT=3000 \
+            -p ${PORT}:3000 \
+            --health-cmd="curl -sf http://localhost:3000/health || exit 1" \
+            --health-interval=30s \
+            --health-timeout=3s \
+            --health-retries=3 \
+            ${{ needs.build.outputs.image }}
+
+      - name: Health check
+        run: |
+          PORT="${{ steps.slot.outputs.port }}"
+          echo "Waiting for health check on port $PORT..."
+
+          for i in $(seq 1 30); do
+            if curl -sf http://localhost:$PORT/health > /dev/null 2>&1; then
+              echo "Health check passed!"
+              exit 0
+            fi
+            echo "Retry $i/30..."
+            sleep 2
+          done
+
+          echo "Health check failed!"
+          exit 1
+
+      - name: Update slot registry
+        run: |
+          SLOT_FILE="/opt/codeb/registry/slots/${{ env.PROJECT_NAME }}-production.json"
+          SLOT="${{ steps.slot.outputs.slot }}"
+          PORT="${{ steps.slot.outputs.port }}"
+          VERSION="${{ needs.build.outputs.version }}"
+          IMAGE="${{ needs.build.outputs.image }}"
+
+          mkdir -p /opt/codeb/registry/slots
+
+          if [ -f "$SLOT_FILE" ]; then
+            # Update existing slot
+            jq --arg slot "$SLOT" \
+               --arg state "deployed" \
+               --arg port "$PORT" \
+               --arg version "$VERSION" \
+               --arg image "$IMAGE" \
+               --arg time "$(date -Iseconds)" \
+               '.[$slot].state = $state | .[$slot].port = ($port|tonumber) | .[$slot].version = $version | .[$slot].image = $image | .[$slot].deployedAt = $time | .lastUpdated = $time' \
+               "$SLOT_FILE" > "${SLOT_FILE}.tmp"
+            mv "${SLOT_FILE}.tmp" "$SLOT_FILE"
+          else
+            # Create new registry
+            cat > "$SLOT_FILE" << EOF
+          {
+            "projectName": "${{ env.PROJECT_NAME }}",
+            "environment": "production",
+            "activeSlot": "none",
+            "$SLOT": {
+              "state": "deployed",
+              "port": $PORT,
+              "version": "$VERSION",
+              "image": "$IMAGE",
+              "deployedAt": "$(date -Iseconds)"
+            },
+            "lastUpdated": "$(date -Iseconds)"
+          }
+          EOF
+          fi
+
+      - name: Print preview URL
+        run: |
+          SLOT="${{ steps.slot.outputs.slot }}"
+          PORT="${{ steps.slot.outputs.port }}"
+          echo ""
+          echo "==========================================="
+          echo "Deployment successful!"
+          echo "==========================================="
+          echo "Slot: $SLOT"
+          echo "Port: $PORT"
+          echo "Preview URL: https://${{ env.PROJECT_NAME }}-${SLOT}.preview.codeb.kr"
+          echo ""
+          echo "To promote to production, run:"
+          echo "  gh workflow run deploy.yml -f action=promote"
+          echo "==========================================="
+
+  # ===========================================
+  # Promote (Traffic Switch)
+  # ===========================================
+  promote:
+    name: Promote to Production
+    runs-on: [self-hosted, docker]
+    if: github.event.inputs.action == 'promote'
+
+    steps:
+      - name: Get deployed slot
+        id: slot
+        run: |
+          SLOT_FILE="/opt/codeb/registry/slots/${{ env.PROJECT_NAME }}-production.json"
+
+          if [ ! -f "$SLOT_FILE" ]; then
+            echo "No slot registry found!"
+            exit 1
+          fi
+
+          # Find deployed slot
+          BLUE_STATE=$(jq -r '.blue.state // "empty"' $SLOT_FILE)
+          GREEN_STATE=$(jq -r '.green.state // "empty"' $SLOT_FILE)
+
+          if [ "$BLUE_STATE" = "deployed" ]; then
+            NEW_ACTIVE="blue"
+            NEW_ACTIVE_PORT=$(jq -r '.blue.port' $SLOT_FILE)
+            OLD_ACTIVE="green"
+            OLD_ACTIVE_PORT=$(jq -r '.green.port // 4101' $SLOT_FILE)
+          elif [ "$GREEN_STATE" = "deployed" ]; then
+            NEW_ACTIVE="green"
+            NEW_ACTIVE_PORT=$(jq -r '.green.port' $SLOT_FILE)
+            OLD_ACTIVE="blue"
+            OLD_ACTIVE_PORT=$(jq -r '.blue.port // 4100' $SLOT_FILE)
+          else
+            echo "No deployed slot found to promote!"
+            exit 1
+          fi
+
+          echo "new_active=$NEW_ACTIVE" >> $GITHUB_OUTPUT
+          echo "new_port=$NEW_ACTIVE_PORT" >> $GITHUB_OUTPUT
+          echo "old_active=$OLD_ACTIVE" >> $GITHUB_OUTPUT
+          echo "old_port=$OLD_ACTIVE_PORT" >> $GITHUB_OUTPUT
+
+      - name: Health check before promote
+        run: |
+          PORT="${{ steps.slot.outputs.new_port }}"
+          if ! curl -sf http://localhost:$PORT/health > /dev/null 2>&1; then
+            echo "Health check failed! Cannot promote unhealthy slot."
+            exit 1
+          fi
+          echo "Health check passed!"
+
+      - name: Update Caddy config
+        run: |
+          NEW_PORT="${{ steps.slot.outputs.new_port }}"
+          OLD_PORT="${{ steps.slot.outputs.old_port }}"
+          DOMAIN="${{ env.PROJECT_NAME }}.codeb.kr"
+
+          sudo tee /etc/caddy/sites/${{ env.PROJECT_NAME }}-production.caddy << EOF
+          # Blue-Green Caddy Config
+          # Project: ${{ env.PROJECT_NAME }}
+          # Active Slot: ${{ steps.slot.outputs.new_active }} (port $NEW_PORT)
+          # Generated: $(date -Iseconds)
+
+          $DOMAIN {
+            reverse_proxy localhost:$NEW_PORT localhost:$OLD_PORT {
+              lb_policy first
+              fail_duration 10s
+            }
+            encode gzip
+            header {
+              X-CodeB-Project ${{ env.PROJECT_NAME }}
+              X-CodeB-Slot ${{ steps.slot.outputs.new_active }}
+              -Server
+            }
+          }
+          EOF
+
+      - name: Reload Caddy
+        run: |
+          sudo systemctl reload caddy
+          echo "Caddy reloaded successfully!"
+
+      - name: Update slot registry
+        run: |
+          SLOT_FILE="/opt/codeb/registry/slots/${{ env.PROJECT_NAME }}-production.json"
+          NEW_ACTIVE="${{ steps.slot.outputs.new_active }}"
+          OLD_ACTIVE="${{ steps.slot.outputs.old_active }}"
+          GRACE_EXPIRES=$(date -d "+48 hours" -Iseconds 2>/dev/null || date -v+48H -Iseconds)
+
+          jq --arg new "$NEW_ACTIVE" \
+             --arg old "$OLD_ACTIVE" \
+             --arg time "$(date -Iseconds)" \
+             --arg grace "$GRACE_EXPIRES" \
+             '.activeSlot = $new | .[$new].state = "active" | .[$new].promotedAt = $time | .[$old].state = "grace" | .[$old].graceExpiresAt = $grace | .lastUpdated = $time' \
+             "$SLOT_FILE" > "${SLOT_FILE}.tmp"
+          mv "${SLOT_FILE}.tmp" "$SLOT_FILE"
+
+      - name: Print promotion result
+        run: |
+          echo ""
+          echo "==========================================="
+          echo "Promotion successful!"
+          echo "==========================================="
+          echo "Active slot: ${{ steps.slot.outputs.new_active }}"
+          echo "Production URL: https://${{ env.PROJECT_NAME }}.codeb.kr"
+          echo "Previous slot (${{ steps.slot.outputs.old_active }}) is now in grace state (48h)"
+          echo ""
+          echo "To rollback, run:"
+          echo "  gh workflow run deploy.yml -f action=rollback"
+          echo "==========================================="
+
+  # ===========================================
+  # Rollback (Restore Previous Version)
+  # ===========================================
+  rollback:
+    name: Rollback to Previous Version
+    runs-on: [self-hosted, docker]
+    if: github.event.inputs.action == 'rollback'
+
+    steps:
+      - name: Get grace slot
+        id: slot
+        run: |
+          SLOT_FILE="/opt/codeb/registry/slots/${{ env.PROJECT_NAME }}-production.json"
+
+          if [ ! -f "$SLOT_FILE" ]; then
+            echo "No slot registry found!"
+            exit 1
+          fi
+
+          # Find grace slot
+          BLUE_STATE=$(jq -r '.blue.state // "empty"' $SLOT_FILE)
+          GREEN_STATE=$(jq -r '.green.state // "empty"' $SLOT_FILE)
+
+          if [ "$BLUE_STATE" = "grace" ]; then
+            GRACE_SLOT="blue"
+            GRACE_PORT=$(jq -r '.blue.port' $SLOT_FILE)
+            CURRENT_SLOT="green"
+          elif [ "$GREEN_STATE" = "grace" ]; then
+            GRACE_SLOT="green"
+            GRACE_PORT=$(jq -r '.green.port' $SLOT_FILE)
+            CURRENT_SLOT="blue"
+          else
+            echo "No grace slot found to rollback to!"
+            exit 1
+          fi
+
+          echo "grace_slot=$GRACE_SLOT" >> $GITHUB_OUTPUT
+          echo "grace_port=$GRACE_PORT" >> $GITHUB_OUTPUT
+          echo "current_slot=$CURRENT_SLOT" >> $GITHUB_OUTPUT
+
+      - name: Health check grace slot
+        run: |
+          PORT="${{ steps.slot.outputs.grace_port }}"
+          if ! curl -sf http://localhost:$PORT/health > /dev/null 2>&1; then
+            echo "Grace slot health check failed! Cannot rollback."
+            exit 1
+          fi
+          echo "Grace slot health check passed!"
+
+      - name: Update Caddy config for rollback
+        run: |
+          GRACE_PORT="${{ steps.slot.outputs.grace_port }}"
+          DOMAIN="${{ env.PROJECT_NAME }}.codeb.kr"
+
+          sudo tee /etc/caddy/sites/${{ env.PROJECT_NAME }}-production.caddy << EOF
+          # Blue-Green Caddy Config (ROLLBACK)
+          # Project: ${{ env.PROJECT_NAME }}
+          # Rolled back to: ${{ steps.slot.outputs.grace_slot }} (port $GRACE_PORT)
+          # Generated: $(date -Iseconds)
+
+          $DOMAIN {
+            reverse_proxy localhost:$GRACE_PORT {
+              fail_duration 10s
+            }
+            encode gzip
+            header {
+              X-CodeB-Project ${{ env.PROJECT_NAME }}
+              X-CodeB-Slot ${{ steps.slot.outputs.grace_slot }}
+              X-CodeB-Rollback true
+              -Server
+            }
+          }
+          EOF
+
+      - name: Reload Caddy
+        run: |
+          sudo systemctl reload caddy
+          echo "Caddy reloaded for rollback!"
+
+      - name: Update slot registry
+        run: |
+          SLOT_FILE="/opt/codeb/registry/slots/${{ env.PROJECT_NAME }}-production.json"
+          GRACE="${{ steps.slot.outputs.grace_slot }}"
+          CURRENT="${{ steps.slot.outputs.current_slot }}"
+
+          jq --arg grace "$GRACE" \
+             --arg current "$CURRENT" \
+             --arg time "$(date -Iseconds)" \
+             '.activeSlot = $grace | .[$grace].state = "active" | .[$current].state = "deployed" | .lastUpdated = $time' \
+             "$SLOT_FILE" > "${SLOT_FILE}.tmp"
+          mv "${SLOT_FILE}.tmp" "$SLOT_FILE"
+
+      - name: Print rollback result
+        run: |
+          echo ""
+          echo "==========================================="
+          echo "Rollback successful!"
+          echo "==========================================="
+          echo "Restored slot: ${{ steps.slot.outputs.grace_slot }}"
+          echo "Production URL: https://${{ env.PROJECT_NAME }}.codeb.kr"
+          echo "==========================================="

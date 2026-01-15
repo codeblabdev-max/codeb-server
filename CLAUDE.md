@@ -1,4 +1,4 @@
-# CLAUDE.md v7.0.31 - CodeB Unified Deployment System
+# CLAUDE.md v7.0.42 - CodeB Unified Deployment System
 
 > **Claude Code 2.1 100% Integration + Blue-Green Deployment + Skills System + Advanced Hooks**
 
@@ -374,26 +374,26 @@ rm -rf /var/lib/docker/*       # Docker 데이터 삭제
 ### 단일 버전 소스 (Single Source of Truth)
 
 ```
-VERSION              # 루트의 VERSION 파일이 기준 (현재: 7.0.31)
+VERSION              # 루트의 VERSION 파일이 기준 (현재: 7.0.42)
 ```
 
 ### 패키지 버전
 
 | 패키지 | 버전 | 경로 |
 |--------|------|------|
-| @codeblabdev-max/mcp-server | 7.0.31 | mcp-server |
-| @codeblabdev-max/we-cli | 7.0.31 | cli |
-| @codeblabdev-max/mcp-proxy | 7.0.31 | cli/mcp-proxy |
+| @codeblabdev-max/mcp-server | 7.0.42 | mcp-server |
+| @codeblabdev-max/we-cli | 7.0.42 | cli |
+| @codeblabdev-max/mcp-proxy | 7.0.42 | cli/mcp-proxy |
 
 ---
 
 ## Version
 
-- **CLAUDE.md**: v7.0.31
+- **CLAUDE.md**: v7.0.42
 - **Claude Code**: 2.1.x (Skills + Advanced Hooks)
-- **CLI**: @codeblabdev-max/we-cli@7.0.31
-- **MCP Server**: @codeblabdev-max/mcp-server@7.0.31
-- **MCP Proxy**: @codeblabdev-max/mcp-proxy@7.0.31
+- **CLI**: @codeblabdev-max/we-cli@7.0.42
+- **MCP Server**: @codeblabdev-max/mcp-server@7.0.42
+- **MCP Proxy**: @codeblabdev-max/mcp-proxy@7.0.42
 - **API Endpoint**: https://api.codeb.kr/api (22 tools)
 - **Container Runtime**: Docker
 
@@ -401,7 +401,7 @@ VERSION              # 루트의 VERSION 파일이 기준 (현재: 7.0.31)
 
 ```
 codeb-server/
-├── VERSION                    # 7.0.31 (SSOT)
+├── VERSION                    # 7.0.42 (SSOT)
 ├── mcp-server/                # TypeScript MCP API Server
 ├── cli/                       # we CLI
 │   └── mcp-proxy/             # MCP Proxy for Claude Code

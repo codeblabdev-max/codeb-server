@@ -125,7 +125,7 @@ else
       "enabled": false,
       "webhookUrl": "",
       "username": "CodeB Notifier",
-      "avatarUrl": "https://codeb.dev/logo.png"
+      "avatarUrl": "https://codeb.kr/logo.png"
     },
     "email": {
       "enabled": false,
@@ -138,7 +138,7 @@ else
           "pass": ""
         }
       },
-      "from": "noreply@codeb.dev",
+      "from": "noreply@codeb.kr",
       "to": []
     }
   },

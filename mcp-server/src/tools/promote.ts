@@ -180,9 +180,9 @@ export async function executePromote(
  */
 function getDomain(projectName: string, environment: string): string {
   if (environment === 'production') {
-    return `${projectName}.codeb.dev`;
+    return `${projectName}.codeb.kr`;
   }
-  return `${projectName}-${environment}.codeb.dev`;
+  return `${projectName}-${environment}.codeb.kr`;
 }
 
 /**

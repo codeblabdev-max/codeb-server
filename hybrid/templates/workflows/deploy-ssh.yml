@@ -1,0 +1,407 @@
+# CodeB Hybrid Deployment - Type 2: GitHub-hosted + SSH
+# admin 권한 전용 - SSH로 서버 직접 제어
+#
+# 필요한 GitHub Secrets:
+#   - GHCR_TOKEN: GitHub Container Registry 토큰
+#   - SERVER_HOST: 서버 IP (158.247.203.55)
+#   - SERVER_USER: SSH 사용자 (deploy 또는 root)
+#   - SSH_PRIVATE_KEY: SSH 개인키 (Ed25519 권장)
+#
+# 사용법:
+#   1. 이 파일을 .github/workflows/deploy.yml로 복사
+#   2. {{PROJECT_NAME}}을 실제 프로젝트명으로 교체
+#   3. GitHub Secrets 설정 (admin만 접근 가능하도록)
+
+name: Deploy {{PROJECT_NAME}} (SSH)
+
+on:
+  push:
+    branches: [main]
+    paths:
+      - 'src/**'
+      - 'package.json'
+      - 'Dockerfile'
+  workflow_dispatch:
+    inputs:
+      action:
+        description: 'Deployment action'
+        required: true
+        default: 'deploy'
+        type: choice
+        options:
+          - deploy
+          - promote
+          - rollback
+
+env:
+  PROJECT_NAME: {{PROJECT_NAME}}
+  NODE_VERSION: '20.x'
+  REGISTRY: ghcr.io
+  IMAGE_NAME: ${{ github.repository }}
+
+jobs:
+  # ===========================================
+  # Build & Push Docker Image (GitHub-hosted)
+  # ===========================================
+  build:
+    name: Build Docker Image
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+      packages: write
+    outputs:
+      version: ${{ steps.version.outputs.version }}
+      image: ${{ steps.build.outputs.image }}
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Generate version
+        id: version
+        run: |
+          VERSION=$(date +%Y%m%d)-${GITHUB_SHA::7}
+          echo "version=$VERSION" >> $GITHUB_OUTPUT
+          echo "Building version: $VERSION"
+
+      - name: Setup Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: ${{ env.NODE_VERSION }}
+
+      - name: Install dependencies
+        run: npm ci
+
+      - name: Build application
+        run: npm run build
+
+      - name: Login to GHCR
+        uses: docker/login-action@v3
+        with:
+          registry: ghcr.io
+          username: ${{ github.actor }}
+          password: ${{ secrets.GITHUB_TOKEN }}
+
+      - name: Build and push Docker image
+        id: build
+        uses: docker/build-push-action@v5
+        with:
+          context: .
+          push: true
+          tags: |
+            ${{ env.REGISTRY }}/${{ env.IMAGE_NAME }}:${{ steps.version.outputs.version }}
+            ${{ env.REGISTRY }}/${{ env.IMAGE_NAME }}:latest
+
+      - name: Set image output
+        run: |
+          echo "image=${{ env.REGISTRY }}/${{ env.IMAGE_NAME }}:${{ steps.version.outputs.version }}" >> $GITHUB_OUTPUT
+
+  # ===========================================
+  # Deploy via SSH (GitHub-hosted → Server)
+  # ===========================================
+  deploy:
+    name: Deploy via SSH
+    runs-on: ubuntu-latest
+    needs: build
+    if: github.event.inputs.action != 'promote' && github.event.inputs.action != 'rollback'
+
+    steps:
+      - name: Deploy to inactive slot via SSH
+        uses: appleboy/ssh-action@v1.0.3
+        with:
+          host: ${{ secrets.SERVER_HOST }}
+          username: ${{ secrets.SERVER_USER }}
+          key: ${{ secrets.SSH_PRIVATE_KEY }}
+          port: 22
+          script_stop: true
+          script: |
+            set -e
+            PROJECT="${{ env.PROJECT_NAME }}"
+            IMAGE="${{ env.REGISTRY }}/${{ env.IMAGE_NAME }}:${{ needs.build.outputs.version }}"
+            VERSION="${{ needs.build.outputs.version }}"
+
+            echo "Deploying $PROJECT version $VERSION..."
+
+            # Login to GHCR
+            echo "${{ secrets.GITHUB_TOKEN }}" | docker login ghcr.io -u ${{ github.actor }} --password-stdin
+
+            # Read SSOT and determine slot
+            SSOT_FILE="/opt/codeb/registry/ssot.json"
+            SLOT_FILE="/opt/codeb/registry/slots/${PROJECT}-production.json"
+
+            if [ -f "$SSOT_FILE" ]; then
+              BLUE_PORT=$(jq -r ".projects[\"${PROJECT}\"].ports.blue // 4100" $SSOT_FILE)
+              GREEN_PORT=$(jq -r ".projects[\"${PROJECT}\"].ports.green // 4101" $SSOT_FILE)
+            else
+              BLUE_PORT=4100
+              GREEN_PORT=4101
+            fi
+
+            if [ -f "$SLOT_FILE" ]; then
+              ACTIVE=$(jq -r '.activeSlot // "blue"' $SLOT_FILE)
+              if [ "$ACTIVE" = "blue" ]; then
+                SLOT="green"
+                PORT=$GREEN_PORT
+              else
+                SLOT="blue"
+                PORT=$BLUE_PORT
+              fi
+            else
+              SLOT="blue"
+              PORT=$BLUE_PORT
+            fi
+
+            echo "Deploying to slot: $SLOT (port: $PORT)"
+
+            # Pull image
+            docker pull $IMAGE
+
+            # Stop and remove existing container
+            CONTAINER="${PROJECT}-${SLOT}"
+            docker stop $CONTAINER 2>/dev/null || true
+            docker rm $CONTAINER 2>/dev/null || true
+
+            # Start new container
+            ENV_FILE="/opt/codeb/projects/${PROJECT}/.env.production"
+            docker run -d \
+              --name $CONTAINER \
+              --restart unless-stopped \
+              --env-file $ENV_FILE \
+              -e PORT=3000 \
+              -p ${PORT}:3000 \
+              --health-cmd="curl -sf http://localhost:3000/health || exit 1" \
+              --health-interval=30s \
+              --health-timeout=3s \
+              --health-retries=3 \
+              $IMAGE
+
+            # Health check
+            echo "Waiting for health check..."
+            for i in $(seq 1 30); do
+              if curl -sf http://localhost:$PORT/health > /dev/null 2>&1; then
+                echo "Health check passed!"
+                break
+              fi
+              echo "Retry $i/30..."
+              sleep 2
+            done
+
+            # Update slot registry
+            mkdir -p /opt/codeb/registry/slots
+            if [ -f "$SLOT_FILE" ]; then
+              jq --arg slot "$SLOT" \
+                 --arg state "deployed" \
+                 --arg port "$PORT" \
+                 --arg version "$VERSION" \
+                 --arg image "$IMAGE" \
+                 --arg time "$(date -Iseconds)" \
+                 '.[$slot].state = $state | .[$slot].port = ($port|tonumber) | .[$slot].version = $version | .[$slot].image = $image | .[$slot].deployedAt = $time | .lastUpdated = $time' \
+                 "$SLOT_FILE" > "${SLOT_FILE}.tmp"
+              mv "${SLOT_FILE}.tmp" "$SLOT_FILE"
+            else
+              cat > "$SLOT_FILE" << EOJSON
+            {
+              "projectName": "${PROJECT}",
+              "environment": "production",
+              "activeSlot": "none",
+              "${SLOT}": {
+                "state": "deployed",
+                "port": $PORT,
+                "version": "$VERSION",
+                "image": "$IMAGE",
+                "deployedAt": "$(date -Iseconds)"
+              },
+              "lastUpdated": "$(date -Iseconds)"
+            }
+            EOJSON
+            fi
+
+            echo ""
+            echo "==========================================="
+            echo "Deployment successful!"
+            echo "==========================================="
+            echo "Slot: $SLOT"
+            echo "Port: $PORT"
+            echo "Preview URL: https://${PROJECT}-${SLOT}.preview.codeb.kr"
+            echo "==========================================="
+
+  # ===========================================
+  # Promote via SSH
+  # ===========================================
+  promote:
+    name: Promote via SSH
+    runs-on: ubuntu-latest
+    if: github.event.inputs.action == 'promote'
+
+    steps:
+      - name: Promote to production via SSH
+        uses: appleboy/ssh-action@v1.0.3
+        with:
+          host: ${{ secrets.SERVER_HOST }}
+          username: ${{ secrets.SERVER_USER }}
+          key: ${{ secrets.SSH_PRIVATE_KEY }}
+          port: 22
+          script_stop: true
+          script: |
+            set -e
+            PROJECT="${{ env.PROJECT_NAME }}"
+            SLOT_FILE="/opt/codeb/registry/slots/${PROJECT}-production.json"
+
+            if [ ! -f "$SLOT_FILE" ]; then
+              echo "No slot registry found!"
+              exit 1
+            fi
+
+            # Find deployed slot
+            BLUE_STATE=$(jq -r '.blue.state // "empty"' $SLOT_FILE)
+            GREEN_STATE=$(jq -r '.green.state // "empty"' $SLOT_FILE)
+
+            if [ "$BLUE_STATE" = "deployed" ]; then
+              NEW_ACTIVE="blue"
+              NEW_PORT=$(jq -r '.blue.port' $SLOT_FILE)
+              OLD_ACTIVE="green"
+              OLD_PORT=$(jq -r '.green.port // 4101' $SLOT_FILE)
+            elif [ "$GREEN_STATE" = "deployed" ]; then
+              NEW_ACTIVE="green"
+              NEW_PORT=$(jq -r '.green.port' $SLOT_FILE)
+              OLD_ACTIVE="blue"
+              OLD_PORT=$(jq -r '.blue.port // 4100' $SLOT_FILE)
+            else
+              echo "No deployed slot found!"
+              exit 1
+            fi
+
+            # Health check
+            if ! curl -sf http://localhost:$NEW_PORT/health > /dev/null 2>&1; then
+              echo "Health check failed!"
+              exit 1
+            fi
+
+            # Update Caddy config
+            DOMAIN="${PROJECT}.codeb.kr"
+            sudo tee /etc/caddy/sites/${PROJECT}-production.caddy << EOCADDY
+            # Blue-Green Caddy Config
+            # Active: $NEW_ACTIVE (port $NEW_PORT)
+            # Generated: $(date -Iseconds)
+
+            $DOMAIN {
+              reverse_proxy localhost:$NEW_PORT localhost:$OLD_PORT {
+                lb_policy first
+                fail_duration 10s
+              }
+              encode gzip
+              header {
+                X-CodeB-Project $PROJECT
+                X-CodeB-Slot $NEW_ACTIVE
+                -Server
+              }
+            }
+            EOCADDY
+
+            sudo systemctl reload caddy
+
+            # Update registry
+            GRACE_EXPIRES=$(date -d "+48 hours" -Iseconds 2>/dev/null || date -v+48H -Iseconds)
+            jq --arg new "$NEW_ACTIVE" \
+               --arg old "$OLD_ACTIVE" \
+               --arg time "$(date -Iseconds)" \
+               --arg grace "$GRACE_EXPIRES" \
+               '.activeSlot = $new | .[$new].state = "active" | .[$new].promotedAt = $time | .[$old].state = "grace" | .[$old].graceExpiresAt = $grace | .lastUpdated = $time' \
+               "$SLOT_FILE" > "${SLOT_FILE}.tmp"
+            mv "${SLOT_FILE}.tmp" "$SLOT_FILE"
+
+            echo ""
+            echo "==========================================="
+            echo "Promotion successful!"
+            echo "==========================================="
+            echo "Active: $NEW_ACTIVE"
+            echo "URL: https://${PROJECT}.codeb.kr"
+            echo "==========================================="
+
+  # ===========================================
+  # Rollback via SSH
+  # ===========================================
+  rollback:
+    name: Rollback via SSH
+    runs-on: ubuntu-latest
+    if: github.event.inputs.action == 'rollback'
+
+    steps:
+      - name: Rollback via SSH
+        uses: appleboy/ssh-action@v1.0.3
+        with:
+          host: ${{ secrets.SERVER_HOST }}
+          username: ${{ secrets.SERVER_USER }}
+          key: ${{ secrets.SSH_PRIVATE_KEY }}
+          port: 22
+          script_stop: true
+          script: |
+            set -e
+            PROJECT="${{ env.PROJECT_NAME }}"
+            SLOT_FILE="/opt/codeb/registry/slots/${PROJECT}-production.json"
+
+            if [ ! -f "$SLOT_FILE" ]; then
+              echo "No slot registry found!"
+              exit 1
+            fi
+
+            # Find grace slot
+            BLUE_STATE=$(jq -r '.blue.state // "empty"' $SLOT_FILE)
+            GREEN_STATE=$(jq -r '.green.state // "empty"' $SLOT_FILE)
+
+            if [ "$BLUE_STATE" = "grace" ]; then
+              GRACE_SLOT="blue"
+              GRACE_PORT=$(jq -r '.blue.port' $SLOT_FILE)
+              CURRENT_SLOT="green"
+            elif [ "$GREEN_STATE" = "grace" ]; then
+              GRACE_SLOT="green"
+              GRACE_PORT=$(jq -r '.green.port' $SLOT_FILE)
+              CURRENT_SLOT="blue"
+            else
+              echo "No grace slot found!"
+              exit 1
+            fi
+
+            # Health check grace slot
+            if ! curl -sf http://localhost:$GRACE_PORT/health > /dev/null 2>&1; then
+              echo "Grace slot health check failed!"
+              exit 1
+            fi
+
+            # Update Caddy
+            DOMAIN="${PROJECT}.codeb.kr"
+            sudo tee /etc/caddy/sites/${PROJECT}-production.caddy << EOCADDY
+            # Rollback Config
+            # Restored: $GRACE_SLOT (port $GRACE_PORT)
+            # Generated: $(date -Iseconds)
+
+            $DOMAIN {
+              reverse_proxy localhost:$GRACE_PORT {
+                fail_duration 10s
+              }
+              encode gzip
+              header {
+                X-CodeB-Project $PROJECT
+                X-CodeB-Slot $GRACE_SLOT
+                X-CodeB-Rollback true
+                -Server
+              }
+            }
+            EOCADDY
+
+            sudo systemctl reload caddy
+
+            # Update registry
+            jq --arg grace "$GRACE_SLOT" \
+               --arg current "$CURRENT_SLOT" \
+               --arg time "$(date -Iseconds)" \
+               '.activeSlot = $grace | .[$grace].state = "active" | .[$current].state = "deployed" | .lastUpdated = $time' \
+               "$SLOT_FILE" > "${SLOT_FILE}.tmp"
+            mv "${SLOT_FILE}.tmp" "$SLOT_FILE"
+
+            echo ""
+            echo "==========================================="
+            echo "Rollback successful!"
+            echo "==========================================="
+            echo "Restored: $GRACE_SLOT"
+            echo "URL: https://${PROJECT}.codeb.kr"
+            echo "==========================================="

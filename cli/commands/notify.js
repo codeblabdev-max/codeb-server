@@ -315,7 +315,7 @@ program
           enabled: true,
           webhookUrl: discord.webhookUrl,
           username: discord.username,
-          avatarUrl: 'https://codeb.dev/logo.png'
+          avatarUrl: 'https://codeb.kr/logo.png'
         };
       }
 
@@ -348,7 +348,7 @@ program
             type: 'input',
             name: 'from',
             message: 'From address:',
-            default: 'noreply@codeb.dev'
+            default: 'noreply@codeb.kr'
           },
           {
             type: 'input',
