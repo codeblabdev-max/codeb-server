@@ -15,12 +15,12 @@ MCP codeb-deploy 연동을 통해 Blue-Green 배포를 수행합니다. Zero-dow
 
 ## 사용법
 ```
-/we:deploy [프로젝트] [--environment staging|production]
+/we:deploy [프로젝트] [--environment production|staging]
 ```
 
 ## 인자
 - `프로젝트` - 배포할 프로젝트 이름 (선택, 기본값: 현재 디렉토리명)
-- `--environment`, `-e` - 대상 환경: staging, production (기본값: staging)
+- `--environment`, `-e` - 대상 환경: production, staging (기본값: **production**)
 
 ## Blue-Green 배포 플로우
 1. **비활성 슬롯 확인**: blue/green 중 비활성 슬롯 선택
@@ -40,7 +40,7 @@ MCP codeb-deploy 연동을 통해 Blue-Green 배포를 수행합니다. Zero-dow
 mcp__codeb-deploy__deploy_project
 {
   "projectName": "myapp",
-  "environment": "staging"
+  "environment": "production"
 }
 ```
 
