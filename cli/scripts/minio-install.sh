@@ -51,7 +51,30 @@ echo "└───────────────────────�
 # Create directories
 mkdir -p "$CLAUDE_DIR/commands/we"
 mkdir -p "$CLAUDE_DIR/skills"
-mkdir -p "$CODEB_DIR/bin"
+mkdir -p "$CODEB_DIR"
+
+# ============================================
+# Install CLI package (~/.codeb/)
+# ============================================
+echo "📦 Installing CLI package..."
+cp -r /tmp/codeb-release/bin "$CODEB_DIR/"
+cp -r /tmp/codeb-release/src "$CODEB_DIR/"
+cp /tmp/codeb-release/package.json "$CODEB_DIR/"
+cp /tmp/codeb-release/package-lock.json "$CODEB_DIR/" 2>/dev/null || true
+
+# Install dependencies
+if [ -f "$CODEB_DIR/package.json" ]; then
+  cd "$CODEB_DIR"
+  npm install --omit=dev --silent 2>/dev/null || npm install --production --silent 2>/dev/null || true
+  cd - > /dev/null
+fi
+
+# Create symlink for 'we' command
+mkdir -p "$HOME/.local/bin"
+rm -f "$HOME/.local/bin/we" 2>/dev/null || true
+ln -sf "$CODEB_DIR/bin/we.js" "$HOME/.local/bin/we"
+chmod +x "$CODEB_DIR/bin/we.js"
+echo "   ✅ CLI → ~/.codeb/ (we command linked)"
 
 # Copy commands (기존 파일 정리 후 복사)
 echo "📋 Installing Commands..."
@@ -74,11 +97,7 @@ echo "📜 Installing Rules..."
 cp /tmp/codeb-release/rules/CLAUDE.md "$CLAUDE_DIR/CLAUDE.md" 2>/dev/null || true
 echo "   ✅ CLAUDE.md → ~/.claude/CLAUDE.md"
 
-# Copy MCP proxy script
-if [ -d "/tmp/codeb-release/mcp-proxy" ]; then
-  cp -r /tmp/codeb-release/mcp-proxy/* "$CODEB_DIR/bin/" 2>/dev/null || true
-  echo "   ✅ MCP Proxy → ~/.codeb/bin/"
-fi
+# MCP proxy is included in CLI package (src/mcp/)
 
 # ============================================
 # MCP 설정 (기존 설정 유지, codeb-deploy만 추가)
@@ -86,7 +105,7 @@ fi
 echo ""
 echo "🔌 Configuring MCP..."
 
-MCP_SCRIPT="$CODEB_DIR/bin/codeb-mcp.js"
+MCP_SCRIPT="$CODEB_DIR/src/mcp/index.js"
 
 if [ -f "$CLAUDE_JSON" ]; then
   # 기존 파일이 있으면 codeb-deploy만 추가/업데이트
@@ -206,10 +225,10 @@ echo ""
 echo "📦 Version: $VERSION"
 echo ""
 echo "📋 Global Installation:"
+echo "   • CLI:       ~/.codeb/ (we command)"
 echo "   • Commands:  ~/.claude/commands/we/ ($CMD_COUNT files)"
 echo "   • Rules:     ~/.claude/CLAUDE.md"
 echo "   • MCP:       ~/.claude.json (codeb-deploy)"
-echo "   • Config:    ~/.codeb/"
 echo ""
 if [ "$IS_PROJECT" = true ]; then
 echo "📋 Project Updated:"

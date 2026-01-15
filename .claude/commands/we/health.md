@@ -1,65 +1,53 @@
 ---
-allowed-tools: [Read, Bash, TodoWrite, mcp__codeb-deploy__health_check, mcp__codeb-deploy__scan, mcp__codeb-deploy__get_server_info, mcp__codeb-deploy__ssot_status]
+allowed-tools: [Read, Bash, TodoWrite, mcp__codeb-deploy__health_check, mcp__codeb-deploy__slot_status, mcp__codeb-deploy__slot_list]
 description: "MCP codeb-deploy를 통한 시스템 상태 점검"
 ---
 
-# /we:health - 시스템 상태 점검
+# /we:health - 시스템 상태 점검 (v7.0)
 
 ## 🎯 목적
-MCP codeb-deploy를 통해 컨테이너, 서비스, 리소스, 네트워크 연결 상태를 **자동으로** 점검합니다.
+MCP codeb-deploy를 통해 컨테이너, 서비스, Blue-Green 슬롯 상태를 점검합니다.
 
 ## 📌 중요 규칙
 - **모든 응답은 한글로 작성**
-- **자동으로 모든 서버 점검 실행**
 - 문제 발견 시 원인과 해결방안 함께 제시
 - 심각한 문제는 🚨 표시로 강조
 
-## ⚡ 자동 실행 플로우 (반드시 따를 것)
-
-### Step 1: 전체 서버 헬스체크
+## 사용법
 ```
-mcp__codeb-deploy__health_check 호출
-- server: "all"
+/we:health [옵션]
 ```
 
-### Step 2: 서버 정보 조회
-```
-mcp__codeb-deploy__get_server_info 호출
-```
-
-### Step 3: SSOT 상태 확인
-```
-mcp__codeb-deploy__ssot_status 호출
-```
-
-### Step 4: 결과 요약 보고
-서버별 상태를 테이블 형태로 정리하여 보고
+## 점검 항목
+- Blue-Green 슬롯 상태
+- 컨테이너 상태 (Podman/Quadlet)
+- 서비스 상태 (systemd)
+- 데이터베이스 연결 (PostgreSQL, Redis)
+- SSL 인증서 유효성
 
 ## 상태 표시
 ```
-🟢 healthy: 정상
-🟡 warning: 주의 필요
-🔴 unhealthy: 즉시 조치 필요
-⚫ offline: 서버 접속 불가
+✅ 정상: 문제 없음
+⚠️ 경고: 주의 필요
+🔴 오류: 즉시 조치 필요
+🚨 심각: 긴급 대응 필요
 ```
 
-## MCP 도구 (정확한 이름)
-- `mcp__codeb-deploy__health_check` - 헬스체크 실행
-- `mcp__codeb-deploy__get_server_info` - 서버 정보 조회
-- `mcp__codeb-deploy__ssot_status` - SSOT 상태 확인
-- `mcp__codeb-deploy__scan` - 프로젝트 스캔
-
-## 서버 목록
-| 역할 | IP | 도메인 |
-|------|-----|--------|
-| App | 158.247.203.55 | app.codeb.kr |
-| Streaming | 141.164.42.213 | ws.codeb.kr |
-| Storage | 64.176.226.119 | db.codeb.kr |
-| Backup | 141.164.37.63 | backup.codeb.kr |
+## MCP 도구
+- `mcp__codeb-deploy__health_check` - 전체 헬스체크
+- `mcp__codeb-deploy__slot_status` - 특정 프로젝트 슬롯 상태
+- `mcp__codeb-deploy__slot_list` - 전체 슬롯 목록
 
 ## 예제
 ```
-/we:health              # 모든 서버 상태 점검
+mcp__codeb-deploy__health_check
+{}
+
+mcp__codeb-deploy__slot_status
+{
+  "projectName": "myapp",
+  "environment": "production"
+}
 ```
 
 ## 관련 명령어
