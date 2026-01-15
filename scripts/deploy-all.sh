@@ -125,6 +125,8 @@ DOCKERFILE
     -e NODE_ENV=production \
     -e PORT=9101 \
     -e LOG_DIR=/app/logs \
+    -e SSH_PRIVATE_KEY_PATH=/app/ssh/id_rsa \
+    --env-file /opt/codeb/env/codeb-api/.env \
     -v /opt/codeb/logs:/app/logs \
     -v /opt/codeb/registry:/opt/codeb/registry \
     -v /opt/codeb/ssh:/app/ssh:ro \
