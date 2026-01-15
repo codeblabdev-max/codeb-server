@@ -209,10 +209,11 @@ jobs:
           mc cp /tmp/version.json codeb/releases/cli/version.json
           echo "✅ CLI uploaded to Minio"
 
-      - name: Upload install script to Minio
+      - name: Upload install scripts to Minio
         run: |
           mc cp cli/scripts/minio-install.sh codeb/releases/cli/install.sh
-          echo "✅ Install script uploaded"
+          mc cp cli/scripts/project-update.sh codeb/releases/cli/project-update.sh
+          echo "✅ Install scripts uploaded"
 
       - name: Cleanup
         if: always()
