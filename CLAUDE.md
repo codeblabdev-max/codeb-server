@@ -1,4 +1,4 @@
-# CLAUDE.md v7.0.49 - CodeB Unified Deployment System
+# CLAUDE.md v7.0.50 - CodeB Unified Deployment System
 
 > **Claude Code 2.1 100% Integration + Blue-Green Deployment + Skills System + Advanced Hooks**
 
@@ -449,7 +449,7 @@ VERSION              # 루트의 VERSION 파일이 기준
 
 ## Version
 
-- **CLAUDE.md**: v7.0.49
+- **CLAUDE.md**: v7.0.50
 - **Claude Code**: 2.1.x (Skills + Advanced Hooks)
 - **CLI**: @codeblabdev-max/we-cli
 - **MCP Server**: @codeblabdev-max/mcp-server
