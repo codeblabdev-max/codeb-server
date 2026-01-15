@@ -62,10 +62,10 @@ cp -r /tmp/codeb-release/src "$CODEB_DIR/"
 cp /tmp/codeb-release/package.json "$CODEB_DIR/"
 cp /tmp/codeb-release/package-lock.json "$CODEB_DIR/" 2>/dev/null || true
 
-# Install dependencies
+# Install dependencies (--ignore-scripts to prevent postinstall from running old commands)
 if [ -f "$CODEB_DIR/package.json" ]; then
   cd "$CODEB_DIR"
-  npm install --omit=dev --silent 2>/dev/null || npm install --production --silent 2>/dev/null || true
+  npm install --omit=dev --ignore-scripts --silent 2>/dev/null || npm install --production --ignore-scripts --silent 2>/dev/null || true
   cd - > /dev/null
 fi
 
