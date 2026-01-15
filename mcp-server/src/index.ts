@@ -278,12 +278,37 @@ const TOOLS: Record<string, {
 // ============================================================================
 
 // Health check (no auth required)
-app.get('/health', (_req, res) => {
+// 클라이언트 버전 체크 포함 - 낮으면 업데이트 알림
+app.get('/health', (req, res) => {
+  const clientVersion = req.headers['x-client-version'] as string || req.query.v as string;
+
+  let updateRequired = false;
+  let updateMessage = '';
+
+  if (clientVersion && clientVersion !== VERSION) {
+    // 버전 비교 (semver 간단 비교)
+    const [cMajor, cMinor, cPatch] = clientVersion.split('.').map(Number);
+    const [sMajor, sMinor, sPatch] = VERSION.split('.').map(Number);
+
+    if (sMajor > cMajor ||
+        (sMajor === cMajor && sMinor > cMinor) ||
+        (sMajor === cMajor && sMinor === cMinor && sPatch > cPatch)) {
+      updateRequired = true;
+      updateMessage = `CLI 업데이트 필요: ${clientVersion} → ${VERSION}\ncurl -sSL https://releases.codeb.kr/cli/install.sh | bash`;
+    }
+  }
+
   res.json({
     status: 'healthy',
     version: VERSION,
     timestamp: new Date().toISOString(),
     uptime: process.uptime(),
+    ...(updateRequired && {
+      updateRequired,
+      updateMessage,
+      latestVersion: VERSION,
+      downloadUrl: 'https://releases.codeb.kr/cli/install.sh'
+    })
   });
 });
 
@@ -439,11 +464,27 @@ app.post('/api/tool', authMiddleware, async (req: AuthenticatedRequest, res) => 
       )
     );
 
+    // 클라이언트 버전 체크
+    const clientVersion = req.headers['x-client-version'] as string;
+    let versionWarning: string | undefined;
+
+    if (clientVersion && clientVersion !== VERSION) {
+      const [cMajor, cMinor, cPatch] = clientVersion.split('.').map(Number);
+      const [sMajor, sMinor, sPatch] = VERSION.split('.').map(Number);
+
+      if (sMajor > cMajor ||
+          (sMajor === cMajor && sMinor > cMinor) ||
+          (sMajor === cMajor && sMinor === cMinor && sPatch > cPatch)) {
+        versionWarning = `⚠️ CLI 업데이트 필요: ${clientVersion} → ${VERSION}\n   curl -sSL https://releases.codeb.kr/cli/install.sh | bash`;
+      }
+    }
+
     res.json({
       ...result,
       duration,
       timestamp: new Date().toISOString(),
       correlationId,
+      ...(versionWarning && { versionWarning, latestVersion: VERSION })
     });
   } catch (error) {
     const duration = Date.now() - startTime;
