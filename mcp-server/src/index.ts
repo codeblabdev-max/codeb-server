@@ -267,6 +267,10 @@ const TOOLS: Record<string, {
   // Environment Variables - Vercel 스타일 환경변수 관리
   env_sync: { handler: (p, a) => envSyncTool.execute(p, a), permission: 'deploy.create' },
   env_get: { handler: (p, a) => envGetTool.execute(p, a), permission: 'project.view' },
+
+  // Aliases for Commands compatibility
+  health_check: { handler: async () => ({ status: 'healthy', version: VERSION, timestamp: new Date().toISOString() }), permission: 'project.view' },
+  scan: { handler: (p, a) => projectScanTool.execute(p, a), permission: 'project.view' },
 };
 
 // ============================================================================
