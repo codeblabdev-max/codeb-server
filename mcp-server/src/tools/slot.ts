@@ -1,9 +1,11 @@
 /**
- * CodeB v7.0 - Slot Registry Management
+ * CodeB v7.0 - Slot Registry Management (Unified)
  * Blue-Green slot state management with Team-based access
  *
- * Docker 기반 배포 (v7.0.30+)
- * - docker stop / docker rm
+ * Features:
+ * - 파일 기반 slot registry (SSH)
+ * - PostgreSQL DB 자동 동기화
+ * - Docker 기반 배포 (v7.0.30+)
  */
 
 import { z } from 'zod';
@@ -15,6 +17,8 @@ import type {
 } from '../lib/types.js';
 import { withSSH } from '../lib/ssh.js';
 import { SERVERS } from '../lib/servers.js';
+import { SlotRepo } from '../lib/database.js';
+import { logger } from '../lib/logger.js';
 
 // ============================================================================
 // Constants
@@ -62,7 +66,7 @@ export async function getSlotRegistry(
 }
 
 // ============================================================================
-// Update Slot Registry
+// Update Slot Registry (File + DB Sync)
 // ============================================================================
 
 export async function updateSlotRegistry(
@@ -70,7 +74,8 @@ export async function updateSlotRegistry(
   environment: Environment,
   slots: ProjectSlots
 ): Promise<void> {
-  return withSSH(SERVERS.app.ip, async (ssh) => {
+  // 1. Update file-based registry (primary source)
+  await withSSH(SERVERS.app.ip, async (ssh) => {
     const filePath = getSlotFilePath(projectName, environment);
 
     // Ensure directory exists
@@ -79,6 +84,19 @@ export async function updateSlotRegistry(
     // Write slot registry with proper formatting
     await ssh.writeFile(filePath, JSON.stringify(slots, null, 2));
   });
+
+  // 2. Sync to PostgreSQL database (secondary/query source)
+  try {
+    await SlotRepo.upsert(slots);
+    logger.debug('Slot registry synced to database', { projectName, environment });
+  } catch (error) {
+    // Log but don't fail - file is the primary source
+    logger.warn('Failed to sync slot registry to database', {
+      projectName,
+      environment,
+      error: error instanceof Error ? error.message : String(error),
+    });
+  }
 }
 
 // ============================================================================

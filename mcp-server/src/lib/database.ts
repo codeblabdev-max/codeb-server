@@ -518,7 +518,172 @@ export const SlotRepo = {
     const result = await db.query('SELECT * FROM project_slots ORDER BY project_name, environment');
     return result.rows.map(mapProjectSlots);
   },
+
+  async listByTeam(teamId: string): Promise<ProjectSlots[]> {
+    const db = await getPool();
+    const result = await db.query(
+      `SELECT ps.* FROM project_slots ps
+       JOIN projects p ON ps.project_name = p.name
+       WHERE p.team_id = $1
+       ORDER BY ps.project_name, ps.environment`,
+      [teamId]
+    );
+    return result.rows.map(mapProjectSlots);
+  },
+
+  async listByProjects(projectNames: string[]): Promise<ProjectSlots[]> {
+    if (projectNames.length === 0) return [];
+    const db = await getPool();
+    const placeholders = projectNames.map((_, i) => `$${i + 1}`).join(', ');
+    const result = await db.query(
+      `SELECT * FROM project_slots WHERE project_name IN (${placeholders}) ORDER BY project_name, environment`,
+      projectNames
+    );
+    return result.rows.map(mapProjectSlots);
+  },
 };
+
+// ============================================================================
+// Project Repository
+// ============================================================================
+
+export interface ProjectRecord {
+  name: string;
+  teamId: string;
+  type: string;
+  databaseName?: string;
+  databasePort?: number;
+  redisDb?: number;
+  redisPort?: number;
+  createdAt: string;
+  updatedAt: string;
+}
+
+export const ProjectRepo = {
+  async create(project: Omit<ProjectRecord, 'createdAt' | 'updatedAt'>): Promise<ProjectRecord> {
+    const db = await getPool();
+    const result = await db.query(
+      `INSERT INTO projects (name, team_id, type, database_name, database_port, redis_db, redis_port)
+       VALUES ($1, $2, $3, $4, $5, $6, $7)
+       RETURNING *`,
+      [
+        project.name,
+        project.teamId,
+        project.type || 'nextjs',
+        project.databaseName,
+        project.databasePort,
+        project.redisDb,
+        project.redisPort,
+      ]
+    );
+    return mapProject(result.rows[0]);
+  },
+
+  async findByName(name: string): Promise<ProjectRecord | null> {
+    const db = await getPool();
+    const result = await db.query('SELECT * FROM projects WHERE name = $1', [name]);
+    return result.rows[0] ? mapProject(result.rows[0]) : null;
+  },
+
+  async findByTeam(teamId: string): Promise<ProjectRecord[]> {
+    const db = await getPool();
+    const result = await db.query(
+      'SELECT * FROM projects WHERE team_id = $1 ORDER BY created_at DESC',
+      [teamId]
+    );
+    return result.rows.map(mapProject);
+  },
+
+  async update(name: string, updates: Partial<ProjectRecord>): Promise<ProjectRecord | null> {
+    const db = await getPool();
+    const setClauses: string[] = [];
+    const values: unknown[] = [];
+    let idx = 1;
+
+    if (updates.type) {
+      setClauses.push(`type = $${idx++}`);
+      values.push(updates.type);
+    }
+    if (updates.databaseName !== undefined) {
+      setClauses.push(`database_name = $${idx++}`);
+      values.push(updates.databaseName);
+    }
+    if (updates.databasePort !== undefined) {
+      setClauses.push(`database_port = $${idx++}`);
+      values.push(updates.databasePort);
+    }
+    if (updates.redisDb !== undefined) {
+      setClauses.push(`redis_db = $${idx++}`);
+      values.push(updates.redisDb);
+    }
+    if (updates.redisPort !== undefined) {
+      setClauses.push(`redis_port = $${idx++}`);
+      values.push(updates.redisPort);
+    }
+
+    if (setClauses.length === 0) return null;
+
+    setClauses.push(`updated_at = NOW()`);
+    values.push(name);
+
+    const result = await db.query(
+      `UPDATE projects SET ${setClauses.join(', ')} WHERE name = $${idx} RETURNING *`,
+      values
+    );
+    return result.rows[0] ? mapProject(result.rows[0]) : null;
+  },
+
+  async delete(name: string): Promise<boolean> {
+    const db = await getPool();
+    const result = await db.query('DELETE FROM projects WHERE name = $1', [name]);
+    return (result.rowCount ?? 0) > 0;
+  },
+
+  async list(): Promise<ProjectRecord[]> {
+    const db = await getPool();
+    const result = await db.query('SELECT * FROM projects ORDER BY created_at DESC');
+    return result.rows.map(mapProject);
+  },
+
+  async upsert(project: Omit<ProjectRecord, 'createdAt' | 'updatedAt'>): Promise<void> {
+    const db = await getPool();
+    await db.query(
+      `INSERT INTO projects (name, team_id, type, database_name, database_port, redis_db, redis_port)
+       VALUES ($1, $2, $3, $4, $5, $6, $7)
+       ON CONFLICT (name) DO UPDATE SET
+         team_id = EXCLUDED.team_id,
+         type = EXCLUDED.type,
+         database_name = EXCLUDED.database_name,
+         database_port = EXCLUDED.database_port,
+         redis_db = EXCLUDED.redis_db,
+         redis_port = EXCLUDED.redis_port,
+         updated_at = NOW()`,
+      [
+        project.name,
+        project.teamId,
+        project.type || 'nextjs',
+        project.databaseName,
+        project.databasePort,
+        project.redisDb,
+        project.redisPort,
+      ]
+    );
+  },
+};
+
+function mapProject(row: any): ProjectRecord {
+  return {
+    name: row.name,
+    teamId: row.team_id,
+    type: row.type,
+    databaseName: row.database_name,
+    databasePort: row.database_port,
+    redisDb: row.redis_db,
+    redisPort: row.redis_port,
+    createdAt: row.created_at.toISOString(),
+    updatedAt: row.updated_at.toISOString(),
+  };
+}
 
 function mapProjectSlots(row: any): ProjectSlots {
   return {
