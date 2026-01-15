@@ -12,7 +12,7 @@ echo "🚀 CodeB CLI Direct Install"
 echo "═══════════════════════════════════════════════"
 
 # Get latest version
-VERSION=$(curl -sf "$MINIO_URL/releases/cli/version.json" | grep -o '"version"[[:space:]]*:[[:space:]]*"[^"]*"' | cut -d'"' -f4)
+VERSION=$(curl -sf "$MINIO_URL/cli/version.json" | grep -o '"version"[[:space:]]*:[[:space:]]*"[^"]*"' | cut -d'"' -f4)
 echo "📦 Latest version: $VERSION"
 
 # Create directories
@@ -23,7 +23,7 @@ mkdir -p "$CLAUDE_DIR/hooks"
 
 # Download and extract
 echo "📥 Downloading codeb-cli-${VERSION}.tar.gz..."
-curl -sL "$MINIO_URL/releases/cli/codeb-cli-${VERSION}.tar.gz" -o /tmp/codeb-cli.tar.gz
+curl -sL "$MINIO_URL/cli/codeb-cli-${VERSION}.tar.gz" -o /tmp/codeb-cli.tar.gz
 
 echo "📦 Extracting..."
 tar -xzf /tmp/codeb-cli.tar.gz -C /tmp
