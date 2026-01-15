@@ -24,7 +24,8 @@ NC='\033[0m'
 
 # 서버 정보
 API_SERVER="root@158.247.203.55"
-MINIO_BUCKET="codeb/releases"
+STORAGE_SERVER="root@64.176.226.119"
+MINIO_BUCKET="releases"  # Storage 서버 Minio 버킷
 
 echo -e "${BLUE}═══════════════════════════════════════════════${NC}"
 echo -e "${BLUE}       CodeB SSOT Unified Deploy System        ${NC}"
@@ -161,23 +162,35 @@ cp VERSION /tmp/codeb-release/
 
 cd /tmp && tar -czf codeb-cli-${NEW_VERSION}.tar.gz codeb-release
 
-# 서버로 전송 및 Minio 업로드
-scp /tmp/codeb-cli-${NEW_VERSION}.tar.gz $API_SERVER:/tmp/
-scp "$ROOT_DIR/cli/scripts/minio-install.sh" "$ROOT_DIR/cli/scripts/project-update.sh" $API_SERVER:/tmp/
+# Storage 서버로 전송 및 Minio 업로드 (docker exec 사용)
+scp /tmp/codeb-cli-${NEW_VERSION}.tar.gz $STORAGE_SERVER:/tmp/
+scp "$ROOT_DIR/cli/scripts/minio-install.sh" "$ROOT_DIR/cli/scripts/project-update.sh" $STORAGE_SERVER:/tmp/
+echo "{\"version\": \"${NEW_VERSION}\", \"updated\": \"$(date -u +%Y-%m-%dT%H:%M:%SZ)\"}" > /tmp/version.json
+scp /tmp/version.json $STORAGE_SERVER:/tmp/
 
-ssh $API_SERVER "
+ssh $STORAGE_SERVER "
   VERSION=$NEW_VERSION
-  mc cp /tmp/codeb-cli-\${VERSION}.tar.gz $MINIO_BUCKET/cli/codeb-cli-\${VERSION}.tar.gz
-  mc cp /tmp/codeb-cli-\${VERSION}.tar.gz $MINIO_BUCKET/cli/codeb-cli-latest.tar.gz
-  echo '{\"version\": \"'\${VERSION}'\", \"updated\": \"'\$(date -u +%Y-%m-%dT%H:%M:%SZ)'\"}' > /tmp/version.json
-  mc cp /tmp/version.json $MINIO_BUCKET/cli/version.json
-  mc cp /tmp/minio-install.sh $MINIO_BUCKET/cli/install.sh
-  mc cp /tmp/project-update.sh $MINIO_BUCKET/cli/project-update.sh
+  # Minio 컨테이너로 파일 복사
+  docker cp /tmp/codeb-cli-\${VERSION}.tar.gz videopick-minio:/tmp/
+  docker cp /tmp/codeb-cli-\${VERSION}.tar.gz videopick-minio:/tmp/codeb-cli-latest.tar.gz
+  docker cp /tmp/version.json videopick-minio:/tmp/
+  docker cp /tmp/minio-install.sh videopick-minio:/tmp/
+  docker cp /tmp/project-update.sh videopick-minio:/tmp/
+
+  # Minio 내부에서 mc 명령으로 버킷에 업로드
+  docker exec videopick-minio mc cp /tmp/codeb-cli-\${VERSION}.tar.gz local/$MINIO_BUCKET/cli/codeb-cli-\${VERSION}.tar.gz
+  docker exec videopick-minio mc cp /tmp/codeb-cli-latest.tar.gz local/$MINIO_BUCKET/cli/codeb-cli-latest.tar.gz
+  docker exec videopick-minio mc cp /tmp/version.json local/$MINIO_BUCKET/cli/version.json
+  docker exec videopick-minio mc cp /tmp/minio-install.sh local/$MINIO_BUCKET/cli/install.sh
+  docker exec videopick-minio mc cp /tmp/project-update.sh local/$MINIO_BUCKET/cli/project-update.sh
+
+  # 정리
   rm -f /tmp/codeb-cli-*.tar.gz /tmp/version.json /tmp/minio-install.sh /tmp/project-update.sh
+  docker exec videopick-minio rm -f /tmp/codeb-cli-*.tar.gz /tmp/version.json /tmp/minio-install.sh /tmp/project-update.sh
 "
 
-# Minio 버전 확인
-MINIO_VERSION=$(ssh $API_SERVER "mc cat $MINIO_BUCKET/cli/version.json" | jq -r '.version')
+# Minio 버전 확인 (HTTP로 직접 확인)
+MINIO_VERSION=$(curl -sf https://releases.codeb.kr/cli/version.json | jq -r '.version')
 if [ "$MINIO_VERSION" = "$NEW_VERSION" ]; then
   echo -e "   ${GREEN}✅ Minio CLI: $MINIO_VERSION${NC}"
 else
