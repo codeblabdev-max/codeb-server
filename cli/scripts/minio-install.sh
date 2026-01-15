@@ -1,10 +1,10 @@
 #!/bin/bash
 # CodeB CLI Direct Install Script
-# Usage: curl -sSL http://64.176.226.119:9000/releases/cli/install.sh | bash
+# Usage: curl -sSL https://releases.codeb.kr/cli/install.sh | bash
 
 set -e
 
-MINIO_URL="${MINIO_URL:-http://64.176.226.119:9000}"
+MINIO_URL="${MINIO_URL:-https://releases.codeb.kr}"
 INSTALL_DIR="${INSTALL_DIR:-$HOME/.codeb}"
 CLAUDE_DIR="$HOME/.claude"
 
