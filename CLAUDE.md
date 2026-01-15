@@ -1,4 +1,4 @@
-# CLAUDE.md v7.0.44 - CodeB Unified Deployment System
+# CLAUDE.md v7.0.49 - CodeB Unified Deployment System
 
 > **Claude Code 2.1 100% Integration + Blue-Green Deployment + Skills System + Advanced Hooks**
 
@@ -369,32 +369,92 @@ rm -rf /var/lib/docker/*       # Docker 데이터 삭제
 
 ---
 
-## Version Management
+## SSOT 버전 관리 시스템
 
-### 단일 버전 소스 (Single Source of Truth)
+### 아키텍처
 
 ```
-VERSION              # 루트의 VERSION 파일이 기준 (현재: 7.0.44)
+┌─────────────────────────────────────────────────────────────────┐
+│                    CodeB SSOT 배포 시스템                        │
+├─────────────────────────────────────────────────────────────────┤
+│                                                                 │
+│  [관리자 로컬] ────→ [deploy-all.sh] ────→ [자동 배포]          │
+│   (VERSION 수정)      (단일 명령)          (모든 대상)          │
+│                                                                 │
+│  배포 대상 (자동 동기화):                                        │
+│  ┌─────────────┬─────────────┬─────────────┐                    │
+│  │ Git Repo    │ API Server  │ CLI Package │                    │
+│  │ (백업용)    │ (Docker)    │ (Minio)     │                    │
+│  │ GitHub      │ api.codeb.kr│ releases.   │                    │
+│  │             │             │ codeb.kr    │                    │
+│  └─────────────┴─────────────┴─────────────┘                    │
+│                                                                 │
+│  팀원: 읽기 전용 → "업데이트 필요" 알림만 표시                    │
+│                                                                 │
+└─────────────────────────────────────────────────────────────────┘
 ```
 
-### 패키지 버전
+### 배포 명령어 (관리자 전용)
 
-| 패키지 | 버전 | 경로 |
-|--------|------|------|
-| @codeblabdev-max/mcp-server | 7.0.44 | mcp-server |
-| @codeblabdev-max/we-cli | 7.0.44 | cli |
-| @codeblabdev-max/mcp-proxy | 7.0.44 | cli/mcp-proxy |
+```bash
+# 통합 배포 (VERSION 파일 기준)
+./scripts/deploy-all.sh
+
+# 새 버전으로 배포
+./scripts/deploy-all.sh 7.0.50
+
+# 버전만 동기화 (배포 없이)
+./scripts/sync-version.sh
+```
+
+### 버전 확인 방법
+
+```bash
+# 1. 로컬 VERSION 파일
+cat VERSION
+
+# 2. API Server 버전
+curl -sf https://api.codeb.kr/health | jq '.version'
+
+# 3. CLI Package 버전
+curl -sf https://releases.codeb.kr/cli/version.json | jq '.version'
+
+# 4. SSOT Registry
+ssh root@158.247.203.55 "cat /opt/codeb/registry/versions.json"
+```
+
+### 버전 불일치 시 조치
+
+1. **API 버전 불일치**: Docker 컨테이너 재배포
+2. **CLI 버전 불일치**: Minio tarball 재업로드
+3. **Git 버전 불일치**: 커밋 & 푸시
+
+### 단일 버전 소스 (SSOT)
+
+```
+VERSION              # 루트의 VERSION 파일이 기준
+```
+
+### 동기화 대상 파일
+
+| 파일 | 용도 |
+|------|------|
+| VERSION | SSOT 기준 |
+| mcp-server/package.json | API 서버 |
+| cli/package.json | CLI 패키지 |
+| CLAUDE.md | 규칙 문서 |
+| cli/rules/CLAUDE.md | 배포용 규칙 |
 
 ---
 
 ## Version
 
-- **CLAUDE.md**: v7.0.44
+- **CLAUDE.md**: v7.0.49
 - **Claude Code**: 2.1.x (Skills + Advanced Hooks)
-- **CLI**: @codeblabdev-max/we-cli@7.0.44
-- **MCP Server**: @codeblabdev-max/mcp-server@7.0.44
-- **MCP Proxy**: @codeblabdev-max/mcp-proxy@7.0.44
-- **API Endpoint**: https://api.codeb.kr/api (22 tools)
+- **CLI**: @codeblabdev-max/we-cli
+- **MCP Server**: @codeblabdev-max/mcp-server
+- **API Endpoint**: https://api.codeb.kr (22 tools)
+- **CLI Download**: https://releases.codeb.kr/cli/install.sh
 - **Container Runtime**: Docker
 
 ### 프로젝트 구조

@@ -1,6 +1,6 @@
 {
   "name": "codeb-mcp",
-  "version": "7.0.43",
+  "version": "7.0.49",
   "description": "CodeB v7.0 - Unified HTTP API Server with Blue-Green Deployment + Claude Code 2.1 Integration",
   "type": "module",
   "main": "dist/index.js",
