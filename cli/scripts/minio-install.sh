@@ -69,12 +69,27 @@ if [ -f "$CODEB_DIR/package.json" ]; then
   cd - > /dev/null
 fi
 
-# Create symlink for 'we' command
+# Create symlinks for 'we' and 'codeb-mcp' commands
+chmod +x "$CODEB_DIR/bin/we.js"
+chmod +x "$CODEB_DIR/bin/codeb-mcp.js" 2>/dev/null || true
+
+# Primary: ~/.local/bin (for most systems)
 mkdir -p "$HOME/.local/bin"
 rm -f "$HOME/.local/bin/we" 2>/dev/null || true
+rm -f "$HOME/.local/bin/codeb-mcp" 2>/dev/null || true
 ln -sf "$CODEB_DIR/bin/we.js" "$HOME/.local/bin/we"
-chmod +x "$CODEB_DIR/bin/we.js"
-echo "   ✅ CLI → ~/.codeb/ (we command linked)"
+ln -sf "$CODEB_DIR/bin/codeb-mcp.js" "$HOME/.local/bin/codeb-mcp" 2>/dev/null || true
+
+# Secondary: /opt/homebrew/bin (for macOS with Homebrew, higher PATH priority)
+if [ -d "/opt/homebrew/bin" ] && [ -w "/opt/homebrew/bin" ]; then
+  rm -f "/opt/homebrew/bin/we" 2>/dev/null || true
+  rm -f "/opt/homebrew/bin/codeb-mcp" 2>/dev/null || true
+  ln -sf "$CODEB_DIR/bin/we.js" "/opt/homebrew/bin/we"
+  ln -sf "$CODEB_DIR/bin/codeb-mcp.js" "/opt/homebrew/bin/codeb-mcp" 2>/dev/null || true
+  echo "   ✅ CLI → ~/.codeb/ (linked to ~/.local/bin + /opt/homebrew/bin)"
+else
+  echo "   ✅ CLI → ~/.codeb/ (linked to ~/.local/bin)"
+fi
 
 # Copy commands (기존 파일 정리 후 복사)
 echo "📋 Installing Commands..."

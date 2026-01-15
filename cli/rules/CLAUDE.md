@@ -1,4 +1,4 @@
-# CLAUDE.md - CodeB Unified Deployment System
+# CLAUDE.md v7.0.57 - CodeB Project Rules
 
 > 버전은 VERSION 파일에서 관리됩니다 (SSOT)
 
