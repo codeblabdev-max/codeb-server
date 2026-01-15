@@ -1,5 +1,6 @@
 # CodeB v7.0 HTTP API Server Deployment
 # Deploys to api.codeb.kr (158.247.203.55)
+# WITH Minio Cache (Storage Server: 64.176.226.119)
 
 name: Deploy API Server
 
@@ -25,11 +26,12 @@ env:
   NODE_VERSION: '20.x'
   REGISTRY: ghcr.io
   IMAGE_NAME: ${{ github.repository }}/codeb-api
+  MINIO_BUCKET: build-cache
 
 jobs:
-  # Build: Self-hosted runner on App server
+  # Build: Self-hosted runner on App server with Minio Cache
   build:
-    name: Build & Deploy (Direct)
+    name: Build & Deploy (with Minio Cache)
     runs-on: self-hosted
     permissions:
       contents: read
@@ -45,19 +47,108 @@ jobs:
           echo "version=$VERSION" >> $GITHUB_OUTPUT
           echo "📦 Building version: $VERSION"
 
+      - name: Generate cache hash
+        id: cache
+        run: |
+          NPM_HASH=$(md5sum mcp-server/package-lock.json | cut -d' ' -f1 | head -c8)
+          echo "npm_hash=$NPM_HASH" >> $GITHUB_OUTPUT
+          echo "📋 Cache hash: $NPM_HASH"
+
+      # ============================================
+      # Minio Cache Setup & Restore
+      # ============================================
+      - name: Setup Minio CLI
+        run: |
+          if ! command -v mc &> /dev/null; then
+            echo "📥 Installing Minio Client..."
+            curl -sO https://dl.min.io/client/mc/release/linux-amd64/mc
+            chmod +x mc && sudo mv mc /usr/local/bin/
+          fi
+          mc alias set codeb ${{ secrets.MINIO_ENDPOINT }} \
+            ${{ secrets.MINIO_ACCESS_KEY }} ${{ secrets.MINIO_SECRET_KEY }} --api S3v4 2>/dev/null || true
+          echo "✅ Minio CLI ready"
+
+      - name: Restore npm cache from Minio
+        run: |
+          CACHE_KEY="codeb-api/npm-${{ steps.cache.outputs.npm_hash }}.tar.gz"
+          if mc stat codeb/${{ env.MINIO_BUCKET }}/$CACHE_KEY > /dev/null 2>&1; then
+            echo "🔄 Restoring npm cache..."
+            mc cp codeb/${{ env.MINIO_BUCKET }}/$CACHE_KEY /tmp/npm-cache.tar.gz
+            mkdir -p ~/.npm
+            tar -xzf /tmp/npm-cache.tar.gz -C ~/.npm 2>/dev/null || true
+            rm -f /tmp/npm-cache.tar.gz
+            echo "✅ npm cache restored"
+          else
+            echo "⚠️ No npm cache found, will create new"
+          fi
+
+      - name: Restore node_modules from Minio
+        run: |
+          CACHE_KEY="codeb-api/node-modules-${{ steps.cache.outputs.npm_hash }}.tar.gz"
+          if mc stat codeb/${{ env.MINIO_BUCKET }}/$CACHE_KEY > /dev/null 2>&1; then
+            echo "🔄 Restoring node_modules cache..."
+            mc cp codeb/${{ env.MINIO_BUCKET }}/$CACHE_KEY /tmp/node-modules.tar.gz
+            cd mcp-server
+            tar -xzf /tmp/node-modules.tar.gz 2>/dev/null || true
+            rm -f /tmp/node-modules.tar.gz
+            echo "✅ node_modules restored"
+          else
+            echo "⚠️ No node_modules cache found"
+          fi
+
+      # ============================================
+      # Build (with cache optimization)
+      # ============================================
       - name: Setup Node.js
         uses: actions/setup-node@v4
         with:
           node-version: ${{ env.NODE_VERSION }}
 
-      - name: Build TypeScript (Host-based)
+      - name: Build TypeScript (with cache)
         run: |
           cd mcp-server
-          npm ci
+          # Use cached node_modules if available
+          if [ -d "node_modules" ] && [ -f "node_modules/.package-lock.json" ]; then
+            echo "✅ Using cached node_modules"
+            npm ci --prefer-offline || npm ci
+          else
+            npm ci
+          fi
           npm run build
           echo "✅ TypeScript build complete"
           ls -la dist/
 
+      # ============================================
+      # Save Cache to Minio
+      # ============================================
+      - name: Save npm cache to Minio
+        if: always()
+        run: |
+          CACHE_KEY="codeb-api/npm-${{ steps.cache.outputs.npm_hash }}.tar.gz"
+          if [ -d ~/.npm ]; then
+            echo "💾 Saving npm cache..."
+            tar -czf /tmp/npm-cache.tar.gz -C ~ .npm
+            mc cp /tmp/npm-cache.tar.gz codeb/${{ env.MINIO_BUCKET }}/$CACHE_KEY 2>/dev/null || true
+            rm -f /tmp/npm-cache.tar.gz
+            echo "✅ npm cache saved"
+          fi
+
+      - name: Save node_modules to Minio
+        if: always()
+        run: |
+          cd mcp-server
+          CACHE_KEY="codeb-api/node-modules-${{ steps.cache.outputs.npm_hash }}.tar.gz"
+          if [ -d "node_modules" ]; then
+            echo "💾 Saving node_modules cache..."
+            tar -czf /tmp/node-modules.tar.gz node_modules
+            mc cp /tmp/node-modules.tar.gz codeb/${{ env.MINIO_BUCKET }}/$CACHE_KEY 2>/dev/null || true
+            rm -f /tmp/node-modules.tar.gz
+            echo "✅ node_modules saved"
+          fi
+
+      # ============================================
+      # Deploy Container
+      # ============================================
       - name: Stop legacy node service (if any)
         run: |
           if sudo systemctl is-active codeb-mcp-api.service 2>/dev/null; then
