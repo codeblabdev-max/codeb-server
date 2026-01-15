@@ -1,7 +1,8 @@
 #!/usr/bin/env node
 
 /**
- * /we: Claude Code 자동 설치 스크립트 v7.0.32
+ * /we: Claude Code 자동 설치 스크립트
+ * 버전은 VERSION 파일에서 관리됩니다 (SSOT)
  *
  * npm install -g @codeblabdev-max/we-cli 시 자동으로 실행됩니다.
  *
@@ -399,8 +400,24 @@ async function setupApiKeyDir() {
 // Main Installation
 // ================================================================
 async function install() {
+  // VERSION 파일에서 버전 읽기 (SSOT)
+  let version = 'latest';
+  try {
+    const versionPaths = [
+      path.join(__dirname, '..', 'VERSION'),
+      path.join(__dirname, '..', '..', 'VERSION'),
+    ];
+    for (const p of versionPaths) {
+      if (existsSync(p)) {
+        const { readFileSync } = await import('fs');
+        version = readFileSync(p, 'utf-8').trim();
+        break;
+      }
+    }
+  } catch {}
+
   console.log('\n' + '═'.repeat(60));
-  console.log('🚀 @codeblabdev-max/we-cli 설치 (v7.0.35)');
+  console.log(`🚀 @codeblabdev-max/we-cli 설치 (v${version})`);
   console.log('═'.repeat(60));
 
   const results = {

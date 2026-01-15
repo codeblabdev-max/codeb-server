@@ -1,12 +1,12 @@
 # CodeB Server Documentation
 
-> **v7.0.31** | Docker Blue-Green Deployment | 2026-01-13
+> **버전: VERSION 파일 참조** | Docker Blue-Green Deployment
 
 ## Project Structure
 
 ```
 codeb-server/
-├── VERSION                    # 7.0.31 (SSOT)
+├── VERSION                    # SSOT (Single Source of Truth)
 ├── mcp-server/                # MCP API Server (TypeScript + Express)
 ├── cli/                       # we-cli (npm 배포용)
 │   └── mcp-proxy/             # MCP Proxy (팀원용)
@@ -205,9 +205,16 @@ we workflow init myapp --type nextjs
 
 ## Version
 
-- **Server**: 7.0.31
-- **MCP Server**: @codeblabdev-max/mcp-server@7.0.31
-- **CLI**: @codeblabdev-max/we-cli@7.0.31
+버전은 `VERSION` 파일에서 관리됩니다 (SSOT).
+
+```bash
+# 버전 확인
+cat VERSION
+curl -s https://api.codeb.kr/health | jq '.version'
+```
+
+- **MCP Server**: @codeblabdev-max/mcp-server
+- **CLI**: @codeblabdev-max/we-cli
 - **API Endpoint**: https://api.codeb.kr/api (22 tools)
 - **Container Runtime**: Docker
 

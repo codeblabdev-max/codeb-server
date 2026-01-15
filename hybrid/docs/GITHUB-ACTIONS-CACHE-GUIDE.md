@@ -350,4 +350,4 @@ mc ls codeb/build-cache/
 
 ---
 
-> **문서 끝** | CodeB GitHub Actions Cache Guide v7.0.40
+> **문서 끝** | 버전: VERSION 파일 참조

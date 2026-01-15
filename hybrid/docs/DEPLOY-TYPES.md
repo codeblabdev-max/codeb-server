@@ -478,4 +478,4 @@ promote:
 
 ---
 
-> **문서 끝** | CodeB Hybrid Deployment v7.0.40
+> **문서 끝** | 버전: VERSION 파일 참조

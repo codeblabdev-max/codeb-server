@@ -1,4 +1,6 @@
-# CLAUDE.md v7.0.50 - CodeB Unified Deployment System
+# CLAUDE.md - CodeB Unified Deployment System
+
+> 버전은 VERSION 파일에서 관리됩니다 (SSOT)
 
 > **Claude Code 2.1 100% Integration + Blue-Green Deployment + Skills System + Advanced Hooks**
 
@@ -401,7 +403,7 @@ rm -rf /var/lib/docker/*       # Docker 데이터 삭제
 ./scripts/deploy-all.sh
 
 # 새 버전으로 배포
-./scripts/deploy-all.sh 7.0.50
+./scripts/deploy-all.sh <NEW_VERSION>
 
 # 버전만 동기화 (배포 없이)
 ./scripts/sync-version.sh
@@ -449,7 +451,14 @@ VERSION              # 루트의 VERSION 파일이 기준
 
 ## Version
 
-- **CLAUDE.md**: v7.0.50
+버전은 `VERSION` 파일에서 관리됩니다 (SSOT).
+
+```bash
+# 버전 확인
+cat VERSION
+curl -s https://api.codeb.kr/health | jq '.version'
+```
+
 - **Claude Code**: 2.1.x (Skills + Advanced Hooks)
 - **CLI**: @codeblabdev-max/we-cli
 - **MCP Server**: @codeblabdev-max/mcp-server
@@ -461,7 +470,7 @@ VERSION              # 루트의 VERSION 파일이 기준
 
 ```
 codeb-server/
-├── VERSION                    # 7.0.44 (SSOT)
+├── VERSION                    # SSOT (Single Source of Truth)
 ├── mcp-server/                # TypeScript MCP API Server
 ├── cli/                       # we CLI
 │   └── mcp-proxy/             # MCP Proxy for Claude Code

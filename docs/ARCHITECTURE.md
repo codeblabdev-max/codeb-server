@@ -1,6 +1,6 @@
 # System Architecture
 
-> **버전: 7.0.24** | 업데이트: 2026-01-12
+> **버전: VERSION 파일 참조** | SSOT 기반 버전 관리
 
 ## Overview
 
@@ -318,9 +318,8 @@ REDIS_PREFIX=myapp:
 
 ```
 codeb-server/
-├── v7.0/                       # v7.0 Infrastructure (Claude Code 2.1)
-│   ├── VERSION                 # Single source of truth (7.0.0)
-│   ├── mcp-server/             # TypeScript MCP API Server
+├── VERSION                     # Single source of truth (SSOT)
+├── mcp-server/                 # TypeScript MCP API Server
 │   │   ├── src/
 │   │   │   ├── index.ts        # Express HTTP API
 │   │   │   ├── lib/
@@ -346,17 +345,10 @@ codeb-server/
 │       ├── session-summary.py  # Stop (once: true): 세션 요약
 │       └── agent-audit.py      # Agent: 감사 로깅
 │
-├── api/                        # API package (7.0.0)
-│   ├── package.json
-│   └── Dockerfile
-│
-├── cli/                        # we CLI Tool (7.0.0)
+├── cli/                        # we CLI Tool
 │   ├── package.json
 │   ├── bin/we.js               # Entry point
-│   └── src/                    # Ink React TUI
-│
-├── web-ui/                     # Dashboard (Next.js 7.0.0)
-│   └── package.json
+│   └── src/                    # CLI source
 │
 ├── docs/                       # Documentation
 │

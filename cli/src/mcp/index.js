@@ -30,10 +30,25 @@ import { fileURLToPath } from 'url';
 // Get version from package.json
 const __filename = fileURLToPath(import.meta.url);
 const __dirname = dirname(__filename);
-let VERSION = '7.0.43';
+let VERSION = '0.0.0';
 try {
-  const pkg = JSON.parse(readFileSync(join(__dirname, '../../package.json'), 'utf-8'));
-  VERSION = pkg.version;
+  // VERSION 파일에서 읽기 (SSOT)
+  const versionPaths = [
+    join(__dirname, '../../VERSION'),
+    join(__dirname, '../../../VERSION'),
+    join(process.cwd(), 'VERSION'),
+  ];
+  for (const p of versionPaths) {
+    if (existsSync(p)) {
+      VERSION = readFileSync(p, 'utf-8').trim();
+      break;
+    }
+  }
+  // VERSION 파일이 없으면 package.json에서 읽기
+  if (VERSION === '0.0.0') {
+    const pkg = JSON.parse(readFileSync(join(__dirname, '../../package.json'), 'utf-8'));
+    VERSION = pkg.version;
+  }
 } catch {
   // Use default version
 }

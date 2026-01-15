@@ -761,4 +761,4 @@ echo "🌐 Minio Console: http://$(hostname -I | awk '{print $1}'):9001"
 
 ---
 
-> **문서 끝** | CodeB Build Cache Optimization v7.0.40
+> **문서 끝** | 버전: VERSION 파일 참조

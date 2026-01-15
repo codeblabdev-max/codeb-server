@@ -76,4 +76,8 @@ gh workflow run deploy.yml
 
 ## 버전
 
-- v7.0.40 (2026-01-14)
+버전은 `VERSION` 파일에서 관리됩니다 (SSOT).
+
+```bash
+cat VERSION
+```

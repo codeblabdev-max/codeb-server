@@ -1,6 +1,6 @@
 # MCP HTTP API Reference
 
-> **버전: 7.0.0** | 업데이트: 2026-01-11
+> **버전: VERSION 파일 참조** | SSOT 기반 버전 관리
 
 ## Overview
 
