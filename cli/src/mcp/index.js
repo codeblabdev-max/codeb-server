@@ -30,7 +30,7 @@ import { fileURLToPath } from 'url';
 // Get version from package.json
 const __filename = fileURLToPath(import.meta.url);
 const __dirname = dirname(__filename);
-let VERSION = '7.0.42';
+let VERSION = '7.0.43';
 try {
   const pkg = JSON.parse(readFileSync(join(__dirname, '../../package.json'), 'utf-8'));
   VERSION = pkg.version;

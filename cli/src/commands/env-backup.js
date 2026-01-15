@@ -20,14 +20,14 @@ import { parseEnvFile } from './env-sync.js';
 // 상수 정의
 // ============================================================================
 
-const BACKUP_SERVER = {
+export const BACKUP_SERVER = {
   host: '141.164.37.63',  // backup.codeb.kr
   user: 'root',
   envPath: '/opt/codeb/env-backup'
 };
 
 // 올바른 서버 도메인 정보
-const SERVER_CONFIG = {
+export const SERVER_CONFIG = {
   storage: {
     host: 'db.codeb.kr',
     ip: '64.176.226.119',
@@ -46,7 +46,7 @@ const SERVER_CONFIG = {
 };
 
 // 잘못된 호스트 패턴 (수정 대상)
-const INVALID_HOSTS = [
+export const INVALID_HOSTS = [
   'localhost',
   '127.0.0.1',
   'codeb-postgres',
