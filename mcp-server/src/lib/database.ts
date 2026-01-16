@@ -75,7 +75,7 @@ export async function closePool(): Promise<void> {
 // Schema Migration
 // ============================================================================
 
-const SCHEMA_VERSION = 1;
+const SCHEMA_VERSION = 2;
 
 const MIGRATIONS: Record<number, string[]> = {
   1: [
@@ -212,6 +212,46 @@ const MIGRATIONS: Record<number, string[]> = {
     `CREATE INDEX IF NOT EXISTS idx_deployments_project ON deployments(project_name, created_at DESC)`,
     `CREATE INDEX IF NOT EXISTS idx_api_keys_team ON api_keys(team_id)`,
     `CREATE INDEX IF NOT EXISTS idx_api_keys_prefix ON api_keys(key_prefix)`,
+  ],
+
+  // Migration v2: Add domains table
+  2: [
+    // Domains table (SSOT for domain configuration)
+    `CREATE TABLE IF NOT EXISTS domains (
+      id SERIAL PRIMARY KEY,
+      domain VARCHAR(255) UNIQUE NOT NULL,
+      project_name VARCHAR(100) REFERENCES projects(name) ON DELETE CASCADE,
+      environment VARCHAR(20) NOT NULL DEFAULT 'production',
+      type VARCHAR(20) NOT NULL DEFAULT 'subdomain',
+      ssl_enabled BOOLEAN DEFAULT true,
+      ssl_issuer VARCHAR(100) DEFAULT 'letsencrypt',
+      dns_configured BOOLEAN DEFAULT false,
+      dns_verified_at TIMESTAMPTZ,
+      caddy_configured BOOLEAN DEFAULT false,
+      status VARCHAR(20) DEFAULT 'pending',
+      created_by VARCHAR(255),
+      created_at TIMESTAMPTZ DEFAULT NOW(),
+      updated_at TIMESTAMPTZ DEFAULT NOW()
+    )`,
+
+    // Environment variables table (SSOT for env)
+    `CREATE TABLE IF NOT EXISTS project_envs (
+      id SERIAL PRIMARY KEY,
+      project_name VARCHAR(100) REFERENCES projects(name) ON DELETE CASCADE,
+      environment VARCHAR(20) NOT NULL DEFAULT 'production',
+      env_data JSONB NOT NULL DEFAULT '{}',
+      encrypted BOOLEAN DEFAULT false,
+      version INTEGER DEFAULT 1,
+      created_by VARCHAR(255),
+      created_at TIMESTAMPTZ DEFAULT NOW(),
+      updated_at TIMESTAMPTZ DEFAULT NOW(),
+      UNIQUE(project_name, environment)
+    )`,
+
+    // Indexes for new tables
+    `CREATE INDEX IF NOT EXISTS idx_domains_project ON domains(project_name)`,
+    `CREATE INDEX IF NOT EXISTS idx_domains_domain ON domains(domain)`,
+    `CREATE INDEX IF NOT EXISTS idx_project_envs_project ON project_envs(project_name, environment)`,
   ],
 };
 
@@ -949,3 +989,238 @@ export async function withTransaction<T>(
     client.release();
   }
 }
+
+// ============================================================================
+// Domain Repository (SSOT for domain configuration)
+// ============================================================================
+
+export interface Domain {
+  id: number;
+  domain: string;
+  project_name: string | null;
+  environment: string;
+  type: 'subdomain' | 'custom';
+  ssl_enabled: boolean;
+  ssl_issuer: string;
+  dns_configured: boolean;
+  dns_verified_at: Date | null;
+  caddy_configured: boolean;
+  status: 'pending' | 'active' | 'error' | 'deleted';
+  created_by: string | null;
+  created_at: Date;
+  updated_at: Date;
+}
+
+export const DomainRepo = {
+  async create(data: {
+    domain: string;
+    projectName?: string;
+    environment?: string;
+    type?: 'subdomain' | 'custom';
+    sslEnabled?: boolean;
+    createdBy?: string;
+  }): Promise<Domain> {
+    const db = await getPool();
+    const result = await db.query(
+      `INSERT INTO domains (domain, project_name, environment, type, ssl_enabled, created_by)
+       VALUES ($1, $2, $3, $4, $5, $6)
+       RETURNING *`,
+      [
+        data.domain,
+        data.projectName || null,
+        data.environment || 'production',
+        data.type || 'subdomain',
+        data.sslEnabled !== false,
+        data.createdBy || null,
+      ]
+    );
+    return result.rows[0];
+  },
+
+  async findByDomain(domain: string): Promise<Domain | null> {
+    const db = await getPool();
+    const result = await db.query(
+      'SELECT * FROM domains WHERE domain = $1',
+      [domain]
+    );
+    return result.rows[0] || null;
+  },
+
+  async findByProject(projectName: string, environment?: string): Promise<Domain[]> {
+    const db = await getPool();
+    let query = 'SELECT * FROM domains WHERE project_name = $1';
+    const values: unknown[] = [projectName];
+
+    if (environment) {
+      query += ' AND environment = $2';
+      values.push(environment);
+    }
+
+    query += ' ORDER BY created_at DESC';
+    const result = await db.query(query, values);
+    return result.rows;
+  },
+
+  async listAll(): Promise<Domain[]> {
+    const db = await getPool();
+    const result = await db.query(
+      'SELECT * FROM domains ORDER BY created_at DESC'
+    );
+    return result.rows;
+  },
+
+  async update(domain: string, data: Partial<{
+    projectName: string;
+    environment: string;
+    sslEnabled: boolean;
+    dnsConfigured: boolean;
+    dnsVerifiedAt: Date;
+    caddyConfigured: boolean;
+    status: 'pending' | 'active' | 'error' | 'deleted';
+  }>): Promise<Domain | null> {
+    const db = await getPool();
+    const updates: string[] = ['updated_at = NOW()'];
+    const values: unknown[] = [];
+    let idx = 1;
+
+    if (data.projectName !== undefined) {
+      updates.push(`project_name = $${idx++}`);
+      values.push(data.projectName);
+    }
+    if (data.environment !== undefined) {
+      updates.push(`environment = $${idx++}`);
+      values.push(data.environment);
+    }
+    if (data.sslEnabled !== undefined) {
+      updates.push(`ssl_enabled = $${idx++}`);
+      values.push(data.sslEnabled);
+    }
+    if (data.dnsConfigured !== undefined) {
+      updates.push(`dns_configured = $${idx++}`);
+      values.push(data.dnsConfigured);
+    }
+    if (data.dnsVerifiedAt !== undefined) {
+      updates.push(`dns_verified_at = $${idx++}`);
+      values.push(data.dnsVerifiedAt);
+    }
+    if (data.caddyConfigured !== undefined) {
+      updates.push(`caddy_configured = $${idx++}`);
+      values.push(data.caddyConfigured);
+    }
+    if (data.status !== undefined) {
+      updates.push(`status = $${idx++}`);
+      values.push(data.status);
+    }
+
+    values.push(domain);
+    const result = await db.query(
+      `UPDATE domains SET ${updates.join(', ')} WHERE domain = $${idx} RETURNING *`,
+      values
+    );
+    return result.rows[0] || null;
+  },
+
+  async delete(domain: string): Promise<boolean> {
+    const db = await getPool();
+    const result = await db.query(
+      'DELETE FROM domains WHERE domain = $1',
+      [domain]
+    );
+    return (result.rowCount ?? 0) > 0;
+  },
+
+  async markActive(domain: string): Promise<Domain | null> {
+    return this.update(domain, {
+      status: 'active',
+      dnsConfigured: true,
+      dnsVerifiedAt: new Date(),
+      caddyConfigured: true,
+    });
+  },
+};
+
+// ============================================================================
+// Project Environment Repository (SSOT for environment variables)
+// ============================================================================
+
+export interface ProjectEnv {
+  id: number;
+  project_name: string;
+  environment: string;
+  env_data: Record<string, string>;
+  encrypted: boolean;
+  version: number;
+  created_by: string | null;
+  created_at: Date;
+  updated_at: Date;
+}
+
+export const ProjectEnvRepo = {
+  async upsert(data: {
+    projectName: string;
+    environment?: string;
+    envData: Record<string, string>;
+    createdBy?: string;
+  }): Promise<ProjectEnv> {
+    const db = await getPool();
+    const environment = data.environment || 'production';
+
+    const result = await db.query(
+      `INSERT INTO project_envs (project_name, environment, env_data, created_by)
+       VALUES ($1, $2, $3, $4)
+       ON CONFLICT (project_name, environment) DO UPDATE SET
+         env_data = $3,
+         version = project_envs.version + 1,
+         updated_at = NOW()
+       RETURNING *`,
+      [data.projectName, environment, JSON.stringify(data.envData), data.createdBy || null]
+    );
+    return result.rows[0];
+  },
+
+  async findByProject(projectName: string, environment?: string): Promise<ProjectEnv | null> {
+    const db = await getPool();
+    const env = environment || 'production';
+    const result = await db.query(
+      'SELECT * FROM project_envs WHERE project_name = $1 AND environment = $2',
+      [projectName, env]
+    );
+    return result.rows[0] || null;
+  },
+
+  async listByProject(projectName: string): Promise<ProjectEnv[]> {
+    const db = await getPool();
+    const result = await db.query(
+      'SELECT * FROM project_envs WHERE project_name = $1 ORDER BY environment',
+      [projectName]
+    );
+    return result.rows;
+  },
+
+  async delete(projectName: string, environment?: string): Promise<boolean> {
+    const db = await getPool();
+    let query = 'DELETE FROM project_envs WHERE project_name = $1';
+    const values: unknown[] = [projectName];
+
+    if (environment) {
+      query += ' AND environment = $2';
+      values.push(environment);
+    }
+
+    const result = await db.query(query, values);
+    return (result.rowCount ?? 0) > 0;
+  },
+
+  async getEnvValue(projectName: string, key: string, environment?: string): Promise<string | null> {
+    const envRecord = await this.findByProject(projectName, environment);
+    if (!envRecord) return null;
+    return envRecord.env_data[key] || null;
+  },
+
+  async setEnvValue(projectName: string, key: string, value: string, environment?: string): Promise<ProjectEnv> {
+    const existing = await this.findByProject(projectName, environment);
+    const envData = existing?.env_data || {};
+    envData[key] = value;
+    return this.upsert({ projectName, environment, envData });
+  },
+};

@@ -27,6 +27,7 @@ import {
   type DomainInfo,
 } from '../lib/caddy.js';
 import { getSlotRegistry } from './slot.js';
+import { DomainRepo } from '../lib/database.js';
 
 // ============================================================================
 // Types
@@ -295,6 +296,27 @@ export const domainSetupTool = {
         verifiedAt: domainIsSubdomain ? new Date().toISOString() : undefined,
       };
 
+      // Save to DB SSOT
+      try {
+        const dbDomain = await DomainRepo.create({
+          domain,
+          projectName,
+          environment,
+          type: domainType,
+          sslEnabled: true,
+          createdBy: auth.teamId,
+        });
+
+        if (domainIsSubdomain) {
+          await DomainRepo.markActive(domain);
+        }
+
+        logger.info('Domain saved to DB', { domain, id: dbDomain.id });
+      } catch (dbError) {
+        // DB save failed but Caddy config succeeded - log warning but don't fail
+        logger.warn('Failed to save domain to DB', { domain, error: String(dbError) });
+      }
+
       logger.info('Domain setup completed', { domain, status: config.status });
 
       return {
@@ -375,15 +397,49 @@ export const domainVerifyTool = {
 
 export const domainListTool = {
   name: 'domain_list',
-  description: 'List all configured domains (from Caddy files)',
+  description: 'List all configured domains (from DB SSOT + Caddy files)',
 
   async execute(
     input: { projectName?: string },
     _auth: AuthContext
   ): Promise<{ success: boolean; domains: DomainConfig[]; error?: string }> {
     try {
-      const allDomains = await listAllDomains();
       const domains: DomainConfig[] = [];
+
+      // First try DB SSOT
+      try {
+        let dbDomains;
+        if (input.projectName) {
+          dbDomains = await DomainRepo.findByProject(input.projectName);
+        } else {
+          dbDomains = await DomainRepo.listAll();
+        }
+
+        for (const d of dbDomains) {
+          domains.push({
+            domain: d.domain,
+            type: d.type === 'custom' ? 'custom' : 'subdomain',
+            target: {
+              projectName: d.project_name || '',
+              environment: (d.environment as Environment) || 'production',
+            },
+            ssl: d.ssl_enabled,
+            records: [],
+            status: d.status as DomainConfig['status'],
+            createdAt: d.created_at.toISOString(),
+            verifiedAt: d.dns_verified_at?.toISOString(),
+          });
+        }
+
+        if (domains.length > 0) {
+          return { success: true, domains };
+        }
+      } catch (dbError) {
+        logger.warn('Failed to fetch domains from DB, falling back to Caddy files', { error: String(dbError) });
+      }
+
+      // Fallback to Caddy files
+      const allDomains = await listAllDomains();
 
       for (const info of allDomains) {
         // Filter by project if specified
@@ -465,6 +521,14 @@ export const domainDeleteTool = {
           logger.warn('Failed to remove DNS record', { domain, error: String(error) });
           // Continue even if DNS removal fails
         }
+      }
+
+      // Delete from DB SSOT
+      try {
+        await DomainRepo.delete(domain);
+        logger.info('Domain deleted from DB', { domain });
+      } catch (dbError) {
+        logger.warn('Failed to delete domain from DB', { domain, error: String(dbError) });
       }
 
       logger.info('Domain deleted', { domain, projectName });

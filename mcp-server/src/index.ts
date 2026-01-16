@@ -245,9 +245,9 @@ const TOOLS: Record<string, {
   slot_list: { handler: (p, a) => slotListTool.execute(p, a), permission: 'slot.view' },
 
   // Domain Management
-  domain_setup: { handler: (p, a) => domainSetupTool.execute(p, a), permission: 'domain.manage' },
+  domain_setup: { handler: (p, a) => domainSetupTool.execute(p, a), permission: 'domain.setup' },
   domain_list: { handler: (p, a) => domainListTool.execute(p, a), permission: 'domain.view' },
-  domain_delete: { handler: (p, a) => domainDeleteTool.execute(p, a), permission: 'domain.manage' },
+  domain_delete: { handler: (p, a) => domainDeleteTool.execute(p, a), permission: 'domain.delete' },
 
   // Project (Initialization & Scan) - /we:quick에서 호출
   workflow_init: { handler: (p, a) => projectInitTool.execute(p, a), permission: 'deploy.create' },
