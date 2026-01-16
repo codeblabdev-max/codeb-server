@@ -294,19 +294,32 @@ if [ "$IS_PROJECT" = true ]; then
   echo "📁 Project detected: $CURRENT_DIR"
   echo ""
 
-  # 프로젝트 CLAUDE.md 업데이트
-  if [ -f "$CURRENT_DIR/CLAUDE.md" ]; then
-    echo "📜 Updating project CLAUDE.md..."
-    cp /tmp/codeb-release/rules/CLAUDE.md "$CURRENT_DIR/CLAUDE.md"
-    echo "   ✅ CLAUDE.md updated"
-  fi
+  # 프로젝트 CLAUDE.md 업데이트 (없어도 복사)
+  echo "📜 Installing project CLAUDE.md..."
+  cp /tmp/codeb-release/rules/CLAUDE.md "$CURRENT_DIR/CLAUDE.md"
+  echo "   ✅ CLAUDE.md → $CURRENT_DIR/CLAUDE.md"
 
-  # 프로젝트 .claude/commands 업데이트
-  if [ -d "$CURRENT_DIR/.claude/commands/we" ]; then
-    echo "📋 Updating project commands..."
-    rm -f "$CURRENT_DIR/.claude/commands/we/"*.md 2>/dev/null || true
-    cp -r /tmp/codeb-release/commands/we/* "$CURRENT_DIR/.claude/commands/we/"
-    echo "   ✅ Commands updated"
+  # 프로젝트 .claude 디렉토리 생성
+  mkdir -p "$CURRENT_DIR/.claude/commands/we"
+  mkdir -p "$CURRENT_DIR/.claude/skills/we"
+
+  # 프로젝트 commands 업데이트
+  echo "📋 Installing project commands..."
+  rm -f "$CURRENT_DIR/.claude/commands/we/"*.md 2>/dev/null || true
+  cp -r /tmp/codeb-release/commands/we/* "$CURRENT_DIR/.claude/commands/we/" 2>/dev/null || true
+  CMD_PROJECT_COUNT=$(ls -1 "$CURRENT_DIR/.claude/commands/we/"*.md 2>/dev/null | wc -l | tr -d ' ')
+  echo "   ✅ $CMD_PROJECT_COUNT commands → .claude/commands/we/"
+
+  # 프로젝트 skills 업데이트
+  echo "🎯 Installing project skills..."
+  rm -rf "$CURRENT_DIR/.claude/skills/we" 2>/dev/null || true
+  mkdir -p "$CURRENT_DIR/.claude/skills/we"
+  if [ -d "/tmp/codeb-release/skills/we" ]; then
+    cp -r /tmp/codeb-release/skills/we/* "$CURRENT_DIR/.claude/skills/we/" 2>/dev/null || true
+    SKILL_PROJECT_COUNT=$(ls -1 "$CURRENT_DIR/.claude/skills/we/"*.md 2>/dev/null | wc -l | tr -d ' ')
+    echo "   ✅ $SKILL_PROJECT_COUNT skills → .claude/skills/we/"
+  else
+    echo "   ℹ️  No skills to install"
   fi
 
   # .env에 CodeB 설정 추가 (기존 유지)
@@ -325,6 +338,10 @@ if [ "$IS_PROJECT" = true ]; then
 else
   echo "📁 Current directory: $CURRENT_DIR"
   echo "   ℹ️  Not a CodeB project (no CLAUDE.md or .claude folder)"
+  echo ""
+  echo "   💡 프로젝트 루트에서 다시 실행하면 CLAUDE.md와 skills가 설치됩니다:"
+  echo "      cd your-project && curl -fsSL https://releases.codeb.kr/cli/install.sh | bash"
+  echo ""
   echo "   ℹ️  Global installation completed only"
 fi
 
@@ -346,13 +363,16 @@ echo ""
 echo "📋 Global Installation:"
 echo "   • CLI:       ~/.codeb/ (we command)"
 echo "   • Commands:  ~/.claude/commands/we/ ($CMD_COUNT files)"
+echo "   • Skills:    ~/.claude/skills/"
 echo "   • Rules:     ~/.claude/CLAUDE.md"
 echo "   • MCP:       ~/.claude.json (codeb-deploy)"
 echo ""
 if [ "$IS_PROJECT" = true ]; then
-echo "📋 Project Updated:"
+echo "📋 Project Installation:"
 echo "   • Path:      $CURRENT_DIR"
-echo "   • CLAUDE.md: Updated to v$VERSION"
+echo "   • CLAUDE.md: $CURRENT_DIR/CLAUDE.md (v$VERSION)"
+echo "   • Commands:  .claude/commands/we/ ($CMD_PROJECT_COUNT files)"
+echo "   • Skills:    .claude/skills/we/ ($SKILL_PROJECT_COUNT files)"
 echo ""
 fi
 if [ -n "$API_KEY" ]; then

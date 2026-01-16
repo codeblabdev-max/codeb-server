@@ -53,6 +53,14 @@ import {
   projectScanTool,
 } from './tools/project.js';
 
+// Tools - Environment Variables (v7.0.62)
+import {
+  envSyncTool,
+  envGetTool,
+  envScanTool,
+  envRestoreTool,
+} from './tools/env.js';
+
 // SSH for infrastructure status
 import { withSSH } from './lib/ssh.js';
 import { SERVERS } from './lib/servers.js';
@@ -252,6 +260,12 @@ const TOOLS: Record<string, {
   // Project (Initialization & Scan) - /we:quick에서 호출
   workflow_init: { handler: (p, a) => projectInitTool.execute(p, a), permission: 'deploy.create' },
   workflow_scan: { handler: (p, a) => projectScanTool.execute(p, a), permission: 'project.view' },
+
+  // Environment Variables (v7.0.62) - 로컬 vs 서버 ENV 관리
+  env_sync: { handler: (p, a) => envSyncTool.execute(p, a), permission: 'env.write' },
+  env_get: { handler: (p, a) => envGetTool.execute(p, a), permission: 'env.read' },
+  env_scan: { handler: (p, a) => envScanTool.execute(p, a), permission: 'env.read' },
+  env_restore: { handler: (p, a) => envRestoreTool.execute(p, a), permission: 'env.write' },
 
   // Utility
   health_check: { handler: executeInfraStatus, permission: 'project.view' },

@@ -106,6 +106,9 @@ interface WorkflowScanResult {
     greenState: string;
   };
   issues: string[];
+  // v7.0.62: 팀 프로젝트 목록 및 추천
+  teamProjects?: string[];
+  suggestedProject?: string;
 }
 
 // ============================================================================
@@ -397,13 +400,15 @@ ${domain} {
 
 async function executeWorkflowScan(
   input: z.infer<typeof projectScanInputSchema>,
-  _auth: AuthContext
+  auth: AuthContext
 ): Promise<WorkflowScanResult> {
   const { projectName } = input;
 
   const issues: string[] = [];
   let ports: WorkflowScanResult['ports'] = { blue: 0, green: 0 };
   let slotStatus: WorkflowScanResult['slotStatus'];
+  let teamProjects: string[] = [];
+  let suggestedProject: string | undefined;
 
   try {
     // ============================================================
@@ -412,8 +417,30 @@ async function executeWorkflowScan(
     const project = await ProjectRepo.findByName(projectName);
     const registered = !!project;
 
+    // ============================================================
+    // Step 1.5: 팀 프로젝트 목록 조회 및 유사 프로젝트 추천 (v7.0.62)
+    // ============================================================
+    try {
+      const allTeamProjects = await ProjectRepo.findByTeam(auth.teamId);
+      teamProjects = allTeamProjects.map(p => p.name);
+
+      if (!registered && teamProjects.length > 0) {
+        // 유사 프로젝트 찾기 (Levenshtein distance 기반)
+        const similar = findSimilarProject(projectName, teamProjects);
+        if (similar) {
+          suggestedProject = similar;
+          issues.push(`프로젝트 '${projectName}'가 없습니다. '${similar}'를 의미하셨나요?`);
+        }
+      }
+    } catch (teamError) {
+      logger.warn('Failed to fetch team projects', { teamId: auth.teamId, error: String(teamError) });
+    }
+
     if (!registered) {
       issues.push('프로젝트가 DB에 등록되지 않음. /we:quick 실행 필요');
+      if (teamProjects.length > 0) {
+        issues.push(`팀의 등록된 프로젝트: ${teamProjects.join(', ')}`);
+      }
     }
 
     // ============================================================
@@ -487,6 +514,9 @@ async function executeWorkflowScan(
       ports,
       slotStatus,
       issues,
+      // v7.0.62: 팀 프로젝트 목록 및 추천
+      teamProjects: teamProjects.length > 0 ? teamProjects : undefined,
+      suggestedProject,
     };
   } catch (error) {
     logger.error('Workflow scan failed', {
@@ -514,6 +544,64 @@ async function executeWorkflowScan(
 
 function generatePassword(length: number = 32): string {
   return randomBytes(length).toString('base64url').slice(0, length);
+}
+
+/**
+ * Find similar project name using Levenshtein distance (v7.0.62)
+ * Returns the most similar project name if distance <= 3
+ */
+function findSimilarProject(input: string, projects: string[]): string | undefined {
+  const inputLower = input.toLowerCase();
+  let bestMatch: string | undefined;
+  let bestDistance = Infinity;
+
+  for (const proj of projects) {
+    const projLower = proj.toLowerCase();
+
+    // Exact substring match
+    if (projLower.includes(inputLower) || inputLower.includes(projLower)) {
+      return proj;
+    }
+
+    // Levenshtein distance
+    const distance = levenshteinDistance(inputLower, projLower);
+    if (distance < bestDistance && distance <= 3) {
+      bestDistance = distance;
+      bestMatch = proj;
+    }
+  }
+
+  return bestMatch;
+}
+
+/**
+ * Calculate Levenshtein distance between two strings
+ */
+function levenshteinDistance(a: string, b: string): number {
+  const matrix: number[][] = [];
+
+  for (let i = 0; i <= b.length; i++) {
+    matrix[i] = [i];
+  }
+  for (let j = 0; j <= a.length; j++) {
+    matrix[0][j] = j;
+  }
+
+  for (let i = 1; i <= b.length; i++) {
+    for (let j = 1; j <= a.length; j++) {
+      if (b.charAt(i - 1) === a.charAt(j - 1)) {
+        matrix[i][j] = matrix[i - 1][j - 1];
+      } else {
+        matrix[i][j] = Math.min(
+          matrix[i - 1][j - 1] + 1, // substitution
+          matrix[i][j - 1] + 1,     // insertion
+          matrix[i - 1][j] + 1      // deletion
+        );
+      }
+    }
+  }
+
+  return matrix[b.length][a.length];
 }
 
 async function allocateRedisDb(ssh: any, projectName: string): Promise<number> {

@@ -1,16 +1,19 @@
 /**
- * CodeB v7.0 - Environment Variables Sync Tool
+ * CodeB v7.0.62 - Environment Variables Management Tools
  *
  * Vercel 스타일 환경변수 관리:
- * - 로컬 .env 파일 내용을 API로 전송
- * - 서버에서 파싱 후 저장
- * - SSH 권한 없이 환경변수 동기화
+ * - env_sync: 로컬 .env를 서버로 동기화
+ * - env_get: 서버 ENV 조회 (마스킹)
+ * - env_scan: 로컬 vs 서버 ENV 비교 (v7.0.62)
+ * - env_restore: 백업에서 ENV 복원 (v7.0.62)
  */
 
 import { z } from 'zod';
-import type { AuthContext } from '../lib/types.js';
+import type { AuthContext, Environment } from '../lib/types.js';
 import { withSSH } from '../lib/ssh.js';
 import { SERVERS } from '../lib/servers.js';
+import { ProjectRepo, ProjectEnvRepo } from '../lib/database.js';
+import { logger } from '../lib/logger.js';
 
 const APP_SERVER = SERVERS.app.ip;
 
@@ -292,4 +295,316 @@ export const envGetTool = {
   },
 };
 
-export default { envSyncTool, envGetTool };
+// ============================================================================
+// env_scan Tool (v7.0.62) - 로컬 vs 서버 ENV 비교
+// ============================================================================
+
+export const envScanInputSchema = z.object({
+  projectName: z.string().min(1).max(50),
+  environment: z.enum(['staging', 'production']).default('production'),
+  localEnvContent: z.string().optional(), // 로컬 .env 내용 (없으면 서버만 조회)
+});
+
+interface EnvDiff {
+  key: string;
+  localValue?: string;
+  serverValue?: string;
+  status: 'added' | 'removed' | 'changed' | 'same';
+}
+
+interface EnvScanResult {
+  success: boolean;
+  projectName: string;
+  environment: string;
+  differences: EnvDiff[];
+  summary: {
+    total: number;
+    added: number;    // 로컬에만 있음
+    removed: number;  // 서버에만 있음
+    changed: number;  // 값이 다름
+    same: number;     // 동일
+  };
+  serverBackups?: string[];
+  teamProjects?: string[];
+  error?: string;
+}
+
+function maskValue(value: string | undefined): string {
+  if (!value) return '(없음)';
+  if (value.length <= 8) return '****';
+  return value.slice(0, 4) + '****' + value.slice(-4);
+}
+
+function compareEnvs(
+  localEnv: Record<string, string>,
+  serverEnv: Record<string, string>
+): EnvDiff[] {
+  const diffs: EnvDiff[] = [];
+  const allKeys = new Set([...Object.keys(localEnv), ...Object.keys(serverEnv)]);
+
+  for (const key of allKeys) {
+    const localValue = localEnv[key];
+    const serverValue = serverEnv[key];
+
+    if (localValue !== undefined && serverValue === undefined) {
+      diffs.push({ key, localValue: maskValue(localValue), status: 'added' });
+    } else if (localValue === undefined && serverValue !== undefined) {
+      diffs.push({ key, serverValue: maskValue(serverValue), status: 'removed' });
+    } else if (localValue !== serverValue) {
+      diffs.push({ key, localValue: maskValue(localValue), serverValue: maskValue(serverValue), status: 'changed' });
+    } else {
+      diffs.push({ key, localValue: maskValue(localValue), serverValue: maskValue(serverValue), status: 'same' });
+    }
+  }
+
+  // Sort: changed first, then added, removed, same
+  const statusOrder = { changed: 0, added: 1, removed: 2, same: 3 };
+  diffs.sort((a, b) => statusOrder[a.status] - statusOrder[b.status]);
+
+  return diffs;
+}
+
+export const envScanTool = {
+  name: 'env_scan',
+  description: 'Compare local .env with server ENV variables and list backups',
+  inputSchema: envScanInputSchema,
+
+  async execute(
+    params: z.infer<typeof envScanInputSchema>,
+    auth: AuthContext
+  ): Promise<EnvScanResult> {
+    const { projectName, environment, localEnvContent } = params;
+
+    logger.info('Scanning ENV differences', { projectName, environment });
+
+    try {
+      // Check if project exists
+      const project = await ProjectRepo.findByName(projectName);
+      let teamProjects: string[] = [];
+
+      if (!project) {
+        // Get team projects for suggestion
+        try {
+          const allTeamProjects = await ProjectRepo.findByTeam(auth.teamId);
+          teamProjects = allTeamProjects.map(p => p.name);
+        } catch {
+          // ignore
+        }
+
+        return {
+          success: false,
+          projectName,
+          environment,
+          differences: [],
+          summary: { total: 0, added: 0, removed: 0, changed: 0, same: 0 },
+          teamProjects: teamProjects.length > 0 ? teamProjects : undefined,
+          error: `프로젝트 '${projectName}'가 DB에 등록되지 않았습니다.${teamProjects.length > 0 ? ` 팀 프로젝트: ${teamProjects.join(', ')}` : ''}`,
+        };
+      }
+
+      // Get server ENV
+      let serverEnv: Record<string, string> = {};
+      let serverBackups: string[] = [];
+
+      // 1. Try DB SSOT first
+      const dbEnv = await ProjectEnvRepo.findByProject(projectName, environment);
+      if (dbEnv && Object.keys(dbEnv.env_data).length > 0) {
+        serverEnv = dbEnv.env_data;
+      } else {
+        // 2. Fallback to file on server
+        await withSSH(APP_SERVER, async (ssh) => {
+          const envPath = `/opt/codeb/env/${projectName}/.env`;
+          try {
+            const result = await ssh.exec(`cat ${envPath} 2>/dev/null || echo ""`);
+            if (result.stdout.trim()) {
+              serverEnv = parseEnvContent(result.stdout);
+            }
+          } catch {
+            // No server ENV file
+          }
+
+          // Get backup list
+          try {
+            const backupDir = `/opt/codeb/env-backup/${projectName}`;
+            const result = await ssh.exec(`ls -t ${backupDir}/.env.* 2>/dev/null | head -10 || true`);
+            serverBackups = result.stdout.trim().split('\n').filter(Boolean);
+          } catch {
+            // No backups
+          }
+        });
+      }
+
+      // Parse local ENV
+      const localEnv = localEnvContent ? parseEnvContent(localEnvContent) : {};
+
+      // Compare
+      const differences = compareEnvs(localEnv, serverEnv);
+
+      // Calculate summary
+      const summary = {
+        total: differences.length,
+        added: differences.filter(d => d.status === 'added').length,
+        removed: differences.filter(d => d.status === 'removed').length,
+        changed: differences.filter(d => d.status === 'changed').length,
+        same: differences.filter(d => d.status === 'same').length,
+      };
+
+      logger.info('ENV scan completed', { projectName, environment, summary });
+
+      return {
+        success: true,
+        projectName,
+        environment,
+        differences,
+        summary,
+        serverBackups: serverBackups.length > 0 ? serverBackups : undefined,
+      };
+    } catch (error) {
+      const errorMessage = error instanceof Error ? error.message : String(error);
+      logger.error('ENV scan failed', { projectName, error: errorMessage });
+      return {
+        success: false,
+        projectName,
+        environment,
+        differences: [],
+        summary: { total: 0, added: 0, removed: 0, changed: 0, same: 0 },
+        error: errorMessage,
+      };
+    }
+  },
+};
+
+// ============================================================================
+// env_restore Tool (v7.0.62) - 백업에서 ENV 복원
+// ============================================================================
+
+export const envRestoreInputSchema = z.object({
+  projectName: z.string().min(1).max(50),
+  environment: z.enum(['staging', 'production']).default('production'),
+  version: z.enum(['master', 'current']).default('master'), // master=최신백업, current=DB
+});
+
+export const envRestoreTool = {
+  name: 'env_restore',
+  description: 'Restore ENV from backup (master=latest backup, current=DB)',
+  inputSchema: envRestoreInputSchema,
+
+  async execute(
+    params: z.infer<typeof envRestoreInputSchema>,
+    auth: AuthContext
+  ): Promise<{
+    success: boolean;
+    projectName: string;
+    environment: string;
+    restoredFrom: string;
+    keysRestored: number;
+    error?: string;
+  }> {
+    const { projectName, environment, version } = params;
+
+    logger.info('Restoring ENV', { projectName, environment, version });
+
+    try {
+      // Check if project exists
+      const project = await ProjectRepo.findByName(projectName);
+      if (!project) {
+        return {
+          success: false,
+          projectName,
+          environment,
+          restoredFrom: '',
+          keysRestored: 0,
+          error: `프로젝트 '${projectName}'가 DB에 등록되지 않았습니다.`,
+        };
+      }
+
+      let restoredEnv: Record<string, string> = {};
+      let restoredFrom = '';
+
+      if (version === 'current') {
+        // Restore from DB
+        const dbEnv = await ProjectEnvRepo.findByProject(projectName, environment);
+        if (dbEnv && Object.keys(dbEnv.env_data).length > 0) {
+          restoredEnv = dbEnv.env_data;
+          restoredFrom = `DB v${dbEnv.version}`;
+        } else {
+          return {
+            success: false,
+            projectName,
+            environment,
+            restoredFrom: '',
+            keysRestored: 0,
+            error: 'DB에 저장된 ENV가 없습니다.',
+          };
+        }
+      } else {
+        // Restore from file backup (master = latest)
+        await withSSH(APP_SERVER, async (ssh) => {
+          const backupDir = `/opt/codeb/env-backup/${projectName}`;
+          const envPath = `/opt/codeb/env/${projectName}/.env`;
+
+          // Get latest backup
+          const result = await ssh.exec(`ls -t ${backupDir}/.env.* 2>/dev/null | head -1`);
+          const backupPath = result.stdout.trim();
+
+          if (!backupPath) {
+            throw new Error('백업 파일이 없습니다.');
+          }
+
+          // Read backup content
+          const contentResult = await ssh.exec(`cat ${backupPath}`);
+          restoredEnv = parseEnvContent(contentResult.stdout);
+          restoredFrom = backupPath;
+
+          // Write to current ENV file
+          await ssh.exec(`mkdir -p /opt/codeb/env/${projectName}`);
+          const base64Content = Buffer.from(contentResult.stdout).toString('base64');
+          await ssh.exec(`echo "${base64Content}" | base64 -d > ${envPath}`);
+          await ssh.exec(`chmod 600 ${envPath}`);
+
+          // Create new backup with timestamp
+          const timestamp = Date.now();
+          await ssh.exec(`cp ${envPath} ${backupDir}/.env.${timestamp}`);
+        });
+      }
+
+      // Save to DB SSOT
+      if (Object.keys(restoredEnv).length > 0) {
+        await ProjectEnvRepo.upsert({
+          projectName,
+          environment,
+          envData: restoredEnv,
+          createdBy: auth.teamId,
+        });
+      }
+
+      logger.info('ENV restored', {
+        projectName,
+        environment,
+        restoredFrom,
+        keysRestored: Object.keys(restoredEnv).length,
+      });
+
+      return {
+        success: true,
+        projectName,
+        environment,
+        restoredFrom,
+        keysRestored: Object.keys(restoredEnv).length,
+      };
+    } catch (error) {
+      const errorMessage = error instanceof Error ? error.message : String(error);
+      logger.error('ENV restore failed', { projectName, error: errorMessage });
+      return {
+        success: false,
+        projectName,
+        environment,
+        restoredFrom: '',
+        keysRestored: 0,
+        error: errorMessage,
+      };
+    }
+  },
+};
+
+export default { envSyncTool, envGetTool, envScanTool, envRestoreTool };

@@ -63,6 +63,8 @@ const PERMISSIONS: Record<string, TeamRole> = {
   // ENV management
   'env.get': 'viewer',
   'env.set': 'member',
+  'env.read': 'viewer',      // v7.0.62: env_scan, env_get
+  'env.write': 'member',     // v7.0.62: env_sync, env_restore
   'env.restore': 'member',
   'env.history': 'viewer',
 
