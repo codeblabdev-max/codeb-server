@@ -191,45 +191,74 @@ async function executeWorkflowInit(
     });
 
     // ============================================================
-    // Step 4: 팀이 없으면 자동 생성 (Foreign Key 해결)
+    // Step 4: 팀 찾기 또는 자동 생성 (Foreign Key 해결)
     // ============================================================
-    const existingTeam = await TeamRepo.findById(auth.teamId);
+    let existingTeam = await TeamRepo.findById(auth.teamId);
+
+    // ID로 못 찾으면 slug로도 확인 (API Key의 teamId가 slug인 경우)
+    if (!existingTeam) {
+      const teamSlug = auth.teamId.toLowerCase().replace(/[^a-z0-9-]/g, '-');
+      existingTeam = await TeamRepo.findBySlug(teamSlug);
+      if (existingTeam) {
+        logger.info('Team found by slug', { requestedId: auth.teamId, actualId: existingTeam.id, slug: teamSlug });
+      }
+    }
+
+    // 실제 사용할 팀 ID (DB의 팀 ID 또는 새로 생성할 ID)
+    let actualTeamId = existingTeam?.id || auth.teamId;
+
     if (!existingTeam) {
       logger.info('Team not found, creating automatically', { teamId: auth.teamId });
-      await TeamRepo.create({
-        id: auth.teamId,
-        name: auth.teamId,
-        slug: auth.teamId.toLowerCase().replace(/[^a-z0-9-]/g, '-'),
-        owner: auth.keyId || 'system',
-        plan: 'free',
-        projects: [],
-        settings: {
-          defaultEnvironment: 'production',
-          autoPromote: false,
-          gracePeriodHours: 48,
-        },
-      });
-      logger.info('Team created', { teamId: auth.teamId });
+      try {
+        await TeamRepo.create({
+          id: auth.teamId,
+          name: auth.teamId,
+          slug: auth.teamId.toLowerCase().replace(/[^a-z0-9-]/g, '-'),
+          owner: auth.keyId || 'system',
+          plan: 'free',
+          projects: [],
+          settings: {
+            defaultEnvironment: 'production',
+            autoPromote: false,
+            gracePeriodHours: 48,
+          },
+        });
+        actualTeamId = auth.teamId;
+        logger.info('Team created', { teamId: auth.teamId });
+      } catch (teamError: any) {
+        // 이미 존재하는 경우 (slug 중복 등) slug로 다시 찾기
+        if (teamError?.message?.includes('duplicate key') || teamError?.message?.includes('unique constraint')) {
+          logger.info('Team already exists (concurrent creation), finding by slug', { teamId: auth.teamId });
+          const teamBySlug = await TeamRepo.findBySlug(auth.teamId.toLowerCase().replace(/[^a-z0-9-]/g, '-'));
+          if (teamBySlug) {
+            actualTeamId = teamBySlug.id;
+          }
+        } else {
+          throw teamError;
+        }
+      }
     }
+
+    logger.info('Using team ID for project', { requestedTeamId: auth.teamId, actualTeamId });
 
     // ============================================================
     // Step 5: DB에 프로젝트 등록 (SSOT)
     // ============================================================
     await ProjectRepo.create({
       name: projectName,
-      teamId: auth.teamId,
+      teamId: actualTeamId,  // 실제 DB 팀 ID 사용
       type,
       databaseName: dbInfo?.name,
       databasePort: dbInfo ? SERVERS.storage.ports.postgresql : undefined,
       redisDb: redisInfo?.db,
       redisPort: redisInfo ? SERVERS.storage.ports.redis : undefined,
     });
-    logger.info('Project registered in database', { projectName });
+    logger.info('Project registered in database', { projectName, teamId: actualTeamId });
 
     // ============================================================
     // Step 6: DB에 슬롯 레지스트리 생성
     // ============================================================
-    await initializeSlots(projectName, 'production', basePort, auth.teamId);
+    await initializeSlots(projectName, 'production', basePort, actualTeamId);
     logger.info('Slot registry initialized', { projectName });
 
     // ============================================================
