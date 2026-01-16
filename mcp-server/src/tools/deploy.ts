@@ -1,10 +1,14 @@
 /**
- * CodeB v7.0.58 - Blue-Green Deploy Tool
+ * CodeB v7.0.63 - Blue-Green Deploy Tool
  * PostgreSQL DB 기반 SSOT + Team-based Authentication
  *
  * Docker 기반 배포
  * - docker run / docker stop / docker rm
  * - 포트 범위: DB SSOT와 동기화 (production: 4100-4499)
+ *
+ * v7.0.63 변경사항:
+ * - ENV 자동 백업/복원: 배포 전 DB에 ENV 백업, 필요 시 복원
+ * - ENV 파일 누락 시 DB에서 자동 복원
  *
  * v7.0.58 변경사항:
  * - JSON 파일 → PostgreSQL DB Repository 전환
@@ -24,7 +28,8 @@ import type {
 } from '../lib/types.js';
 import { getSSHClient, withSSH } from '../lib/ssh.js';
 import { getSlotPorts, SERVERS } from '../lib/servers.js';
-import { ProjectRepo, SlotRepo, DeploymentRepo } from '../lib/database.js';
+import { ProjectRepo, SlotRepo, DeploymentRepo, ProjectEnvRepo } from '../lib/database.js';
+import { logger } from '../lib/logger.js';
 
 // ============================================================================
 // Input Schema
@@ -200,30 +205,84 @@ export async function executeDeploy(
     // Step 5-9: SSH로 실제 배포 수행
     // ================================================================
     return await withSSH(SERVERS.app.ip, async (ssh) => {
-      // Step 5: ENV 파일 검증
+      // Step 5: ENV 파일 검증 및 자동 복원
       if (!skipValidation) {
         const step5Start = Date.now();
         const envFile = `/opt/codeb/env/${projectName}/.env`;
         const envAltFile = `/opt/codeb/projects/${projectName}/.env.${environment}`;
+        const envBackupDir = `/opt/codeb/env-backup/${projectName}`;
 
         try {
           const envCheck = await ssh.exec(`test -f ${envFile} && echo "OK" || test -f ${envAltFile} && echo "OK" || echo "MISSING"`);
+
           if (envCheck.stdout.trim() === 'MISSING') {
+            // ENV 파일이 없으면 DB SSOT에서 복원 시도
+            logger.info('ENV file missing, attempting restore from DB', { projectName, environment });
+
+            const dbEnv = await ProjectEnvRepo.findByProject(projectName, environment);
+
+            if (dbEnv && Object.keys(dbEnv.env_data).length > 0) {
+              // DB에서 ENV 복원
+              const envContent = Object.entries(dbEnv.env_data)
+                .map(([key, value]) => `${key}=${value}`)
+                .join('\n');
+
+              await ssh.exec(`mkdir -p /opt/codeb/env/${projectName}`);
+              const base64Content = Buffer.from(envContent).toString('base64');
+              await ssh.exec(`echo "${base64Content}" | base64 -d > ${envFile}`);
+              await ssh.exec(`chmod 600 ${envFile}`);
+
+              // 백업도 생성
+              await ssh.exec(`mkdir -p ${envBackupDir}`);
+              await ssh.exec(`cp ${envFile} ${envBackupDir}/.env.restored.${Date.now()}`);
+
+              logger.info('ENV restored from DB SSOT', { projectName, environment, keys: Object.keys(dbEnv.env_data).length });
+
+              steps.push({
+                name: 'verify_env',
+                status: 'success',
+                duration: Date.now() - step5Start,
+                output: `ENV restored from DB SSOT (${Object.keys(dbEnv.env_data).length} keys)`,
+              });
+            } else {
+              // DB에도 없으면 실패
+              steps.push({
+                name: 'verify_env',
+                status: 'failed',
+                duration: Date.now() - step5Start,
+                error: `ENV file not found and no backup in DB. Use /we:quick to initialize or env_sync to upload.`,
+              });
+              await DeploymentRepo.updateStatus(deploymentId, 'failed', { error: 'ENV file missing' });
+              return buildResult(false, steps, startTime, targetSlot, targetPort, projectName, environment);
+            }
+          } else {
+            // ENV 파일 존재 - DB에 백업
+            try {
+              const envContent = await ssh.exec(`cat ${envFile} 2>/dev/null || cat ${envAltFile} 2>/dev/null`);
+              if (envContent.stdout.trim()) {
+                const envData = parseEnvContent(envContent.stdout);
+                if (Object.keys(envData).length > 0) {
+                  await ProjectEnvRepo.upsert({
+                    projectName,
+                    environment,
+                    envData,
+                    createdBy: auth.teamId,
+                  });
+                  logger.info('ENV backed up to DB SSOT', { projectName, environment, keys: Object.keys(envData).length });
+                }
+              }
+            } catch (backupError) {
+              // 백업 실패는 경고만 (배포는 계속)
+              logger.warn('ENV backup to DB failed', { projectName, error: String(backupError) });
+            }
+
             steps.push({
               name: 'verify_env',
-              status: 'failed',
+              status: 'success',
               duration: Date.now() - step5Start,
-              error: `ENV file not found. Expected: ${envFile} or ${envAltFile}`,
+              output: 'ENV file verified and backed up to DB',
             });
-            await DeploymentRepo.updateStatus(deploymentId, 'failed', { error: 'ENV file missing' });
-            return buildResult(false, steps, startTime, targetSlot, targetPort, projectName, environment);
           }
-          steps.push({
-            name: 'verify_env',
-            status: 'success',
-            duration: Date.now() - step5Start,
-            output: 'ENV file verified',
-          });
         } catch (error) {
           steps.push({
             name: 'verify_env',
@@ -430,6 +489,36 @@ export async function executeDeploy(
 // ============================================================================
 // Helper Functions
 // ============================================================================
+
+/**
+ * Parse .env file content to key-value object
+ */
+function parseEnvContent(content: string): Record<string, string> {
+  const env: Record<string, string> = {};
+  const lines = content.split('\n');
+
+  for (const line of lines) {
+    const trimmed = line.trim();
+    // Skip empty lines and comments
+    if (!trimmed || trimmed.startsWith('#')) continue;
+
+    const eqIndex = trimmed.indexOf('=');
+    if (eqIndex > 0) {
+      const key = trimmed.substring(0, eqIndex).trim();
+      let value = trimmed.substring(eqIndex + 1).trim();
+
+      // Remove surrounding quotes if present
+      if ((value.startsWith('"') && value.endsWith('"')) ||
+          (value.startsWith("'") && value.endsWith("'"))) {
+        value = value.slice(1, -1);
+      }
+
+      env[key] = value;
+    }
+  }
+
+  return env;
+}
 
 /**
  * Wait for container to become healthy (Docker)
