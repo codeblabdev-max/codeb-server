@@ -24,6 +24,14 @@ echo "          🚀 CodeB CLI Unified Installer"
 echo "═══════════════════════════════════════════════════════════"
 echo ""
 
+# Check existing installation
+if [ -d "$CODEB_DIR" ] && [ -f "$CODEB_DIR/package.json" ]; then
+  CURRENT_VERSION=$(grep -o '"version"[[:space:]]*:[[:space:]]*"[^"]*"' "$CODEB_DIR/package.json" 2>/dev/null | cut -d'"' -f4 || echo "unknown")
+  echo "📌 Current version: $CURRENT_VERSION"
+  echo "🔄 Upgrading installation..."
+  echo ""
+fi
+
 # Get latest version
 VERSION=$(curl -sf "$MINIO_URL/cli/version.json" | grep -o '"version"[[:space:]]*:[[:space:]]*"[^"]*"' | cut -d'"' -f4)
 if [ -z "$VERSION" ]; then
@@ -51,16 +59,23 @@ echo "└───────────────────────�
 # Create directories
 mkdir -p "$CLAUDE_DIR/commands/we"
 mkdir -p "$CLAUDE_DIR/skills"
-mkdir -p "$CODEB_DIR"
 
 # ============================================
 # Install CLI package (~/.codeb/)
 # ============================================
 echo "📦 Installing CLI package..."
+
+# Clean old installation completely for upgrade
+if [ -d "$CODEB_DIR" ]; then
+  rm -rf "$CODEB_DIR"
+fi
+mkdir -p "$CODEB_DIR"
+
 cp -r /tmp/codeb-release/bin "$CODEB_DIR/"
 cp -r /tmp/codeb-release/src "$CODEB_DIR/"
 cp /tmp/codeb-release/package.json "$CODEB_DIR/"
 cp /tmp/codeb-release/package-lock.json "$CODEB_DIR/" 2>/dev/null || true
+cp /tmp/codeb-release/VERSION "$CODEB_DIR/" 2>/dev/null || true
 
 # Install dependencies (--ignore-scripts to prevent postinstall from running old commands)
 if [ -f "$CODEB_DIR/package.json" ]; then
