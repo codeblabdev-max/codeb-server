@@ -1,236 +1,202 @@
 ---
-allowed-tools: [Read, Write, Edit, Bash, Glob, AskUserQuestion, TodoWrite, mcp__codeb-deploy__scan, mcp__codeb-deploy__workflow_init, mcp__codeb-deploy__deploy_project, mcp__codeb-deploy__domain_setup, mcp__codeb-deploy__health_check]
-description: "신규/기존 프로젝트 Step-by-Step 설정 (프로젝트 타입 → 환경 → 도메인까지)"
+allowed-tools: [Read, Write, Edit, Bash, Glob, TodoWrite, mcp__codeb-deploy__health_check, mcp__codeb-deploy__workflow_init, mcp__codeb-deploy__deploy_project, mcp__codeb-deploy__domain_setup]
+description: "신규/기존 프로젝트 One-Shot 설정 (헬스체크 → SSOT 등록 → 포트할당 → DB/Redis → ENV → 도메인)"
 ---
 
-# /we:quick - Quick Mode 프로젝트 설정
+# /we:quick - Quick Mode 프로젝트 설정 (v7.0.59)
 
-## 🎯 목적
-신규 또는 기존 프로젝트를 **Step-by-Step 대화형**으로 설정합니다.
-사용자에게 필요한 것만 질문하고, 자동으로 설정을 완료합니다.
+## 목적
+신규 또는 기존 프로젝트를 **한 번에** 설정합니다.
+질문을 최소화하고, 서버에서 자동으로 모든 인프라를 구성합니다.
 
-## 📌 핵심 규칙
+## 핵심 규칙
 - **모든 응답은 한글로 작성**
-- **각 단계마다 사용자에게 선택지 제공** (AskUserQuestion 사용)
-- **선택 후 자동 진행**
-- **에러 발생 시 명확한 안내**
+- **질문 없이 바로 서버 작업 실행** (기본값 사용)
+- **실패 시 명확한 에러 메시지 제공**
 
 ---
 
-## ⚡ Step-by-Step 플로우
+## 실행 흐름 (One-Shot)
 
-### Step 1: 프로젝트 감지
-```
-1. 현재 디렉토리의 package.json 또는 설정 파일 확인
-2. 기존 프로젝트인지 신규인지 판단
-3. 프로젝트명 자동 감지 또는 사용자 입력
-```
+### 1단계: 프로젝트 정보 확인
 
-### Step 2: 프로젝트 타입 선택 (AskUserQuestion)
 ```
-질문: "프로젝트 타입을 선택하세요"
-옵션:
-  - Next.js (권장)
-  - Remix
-  - Node.js API
-  - Python FastAPI
-  - Go
-  - 기타
+Read 도구로 package.json 확인:
+file_path: package.json
+→ name 필드에서 프로젝트명 추출
+→ 없으면 현재 디렉토리명 사용
 ```
 
-### Step 3: 환경 설정 (AskUserQuestion)
-```
-질문: "어떤 환경에 배포할까요?"
-옵션:
-  - Staging만 (개발/테스트)
-  - Production만 (운영)
-  - Staging + Production (둘 다)
-```
+### 2단계: 헬스체크 (서버 연결 확인)
 
-### Step 4: 데이터베이스 (AskUserQuestion)
 ```
-질문: "데이터베이스가 필요한가요?"
-옵션:
-  - PostgreSQL (권장)
-  - 필요 없음
-```
-
-### Step 5: Redis (AskUserQuestion)
-```
-질문: "Redis 캐시가 필요한가요?"
-옵션:
-  - 예 (세션, 캐시용)
-  - 아니오
-```
-
-### Step 6: 도메인 설정 (AskUserQuestion)
-```
-질문: "도메인을 어떻게 설정할까요?"
-옵션:
-  - 서브도메인 사용 (예: myapp.codeb.dev)
-  - 커스텀 도메인 (예: myapp.com)
-  - 나중에 설정
-```
-
-### Step 7: 서브도메인 입력 (Step 6에서 서브도메인 선택 시)
-```
-질문: "서브도메인 이름을 입력하세요"
-예시: myapp → myapp.codeb.dev
-```
-
-### Step 8: 커스텀 도메인 입력 (Step 6에서 커스텀 선택 시)
-```
-질문: "커스텀 도메인을 입력하세요"
-예시: myapp.com
-```
-
-### Step 9: 설정 확인 (AskUserQuestion)
-```
-질문: "다음 설정으로 진행할까요?"
-
-설정 요약:
-- 프로젝트: myapp
-- 타입: Next.js
-- 환경: Staging + Production
-- DB: PostgreSQL
-- Redis: 예
-- 도메인: myapp.codeb.dev
-
-옵션:
-  - 진행
-  - 취소
-```
-
-### Step 10: 자동 실행
-```
-1. workflow_init 호출 (Quadlet, Dockerfile, GitHub Actions 생성)
-2. 도메인 설정 (domain_setup 호출)
-3. 결과 보고
-```
-
----
-
-## 🔧 구현 로직
-
-```typescript
-// Step 1: 프로젝트 감지
-const packageJson = await readPackageJson();
-const projectName = packageJson?.name || path.basename(cwd);
-const isExisting = packageJson !== null;
-
-// Step 2-8: 사용자 입력 수집
-const answers = await askUserQuestions([
-  { question: "프로젝트 타입", options: ["nextjs", "remix", "nodejs", "python", "go"] },
-  { question: "배포 환경", options: ["staging", "production", "both"] },
-  { question: "데이터베이스", options: ["postgresql", "none"] },
-  { question: "Redis", options: ["yes", "no"] },
-  { question: "도메인", options: ["subdomain", "custom", "later"] },
-]);
-
-// Step 9: 확인
-const confirmed = await confirmSettings(answers);
-
-// Step 10: 실행
-if (confirmed) {
-  await workflowInit(projectName, answers);
-  if (answers.domain !== "later") {
-    await domainSetup(projectName, answers.domain);
-  }
+mcp__codeb-deploy__health_check
+{
+  "server": "all"
 }
 ```
 
+**실패 시**: API 키 확인 요청 또는 서버 상태 안내
+
+### 3단계: 서버 인프라 초기화 (One-Shot)
+
+`workflow_init`이 자동으로 수행하는 작업:
+1. DB에서 포트 할당 (4100-4499 범위)
+2. Storage 서버: PostgreSQL DB/User 생성
+3. Storage 서버: Redis DB 번호 할당
+4. SSOT DB에 프로젝트 등록
+5. DB에 슬롯 레지스트리 생성
+6. App 서버: ENV 파일 생성
+7. App 서버: Caddy 도메인 설정
+8. PowerDNS A 레코드 추가
+
+```
+mcp__codeb-deploy__workflow_init
+{
+  "projectName": "<프로젝트명>",
+  "type": "nextjs",
+  "database": true,
+  "redis": true
+}
+```
+
+### 4단계: 로컬 파일 생성
+
+workflow_init 응답에서 받은 템플릿으로 로컬 파일 생성:
+
+```
+Write 도구로 GitHub Actions 워크플로우 생성:
+file_path: .github/workflows/deploy.yml
+content: <githubActionsWorkflow 응답값>
+
+Write 도구로 Dockerfile 생성 (없으면):
+file_path: Dockerfile
+content: <dockerfile 응답값>
+```
+
+### 5단계: 결과 요약 출력
+
+```
+✅ 프로젝트 초기화 완료!
+
+📊 할당된 리소스:
+   포트: Blue=4100, Green=4101
+   DB: myapp_db (myapp_user@db.codeb.kr)
+   Redis: DB 1
+   도메인: myapp.codeb.kr
+
+📁 생성된 파일:
+   ├── .github/workflows/deploy.yml
+   └── Dockerfile
+
+🔑 GitHub Secrets 설정 필요:
+   - CODEB_API_KEY: CodeB API 키
+
+🚀 다음 단계:
+   1. git add . && git commit -m "feat: add deployment config"
+   2. git push origin main  (자동 배포)
+   3. we promote myapp  (트래픽 전환)
+```
+
 ---
 
-## 📝 사용 예시
+## 사용 예시
 
 ```bash
-/we:quick              # 현재 디렉토리에서 시작
-/we:quick myapp        # myapp 프로젝트 설정
+/we:quick              # 현재 디렉토리에서 바로 실행
+/we:quick myapp        # 특정 프로젝트명으로 실행
 ```
 
-### 실행 예시 화면
+### 실행 화면 예시
 
 ```
-🚀 CodeB Quick Mode - 프로젝트 설정
+🚀 CodeB Quick Mode - 프로젝트 초기화
 
-📦 프로젝트 감지: myapp (기존 프로젝트)
-
-━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
-
-[Step 1/6] 프로젝트 타입을 선택하세요:
-  ● Next.js (권장)
-  ○ Remix
-  ○ Node.js API
-  ○ Python FastAPI
+📦 프로젝트: myapp (package.json에서 감지)
 
 ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
 
-[Step 2/6] 어떤 환경에 배포할까요?
-  ○ Staging만
-  ○ Production만
-  ● Staging + Production (권장)
+[1/4] 서버 헬스체크...
+   ✅ App Server (api.codeb.kr): 정상
+   ✅ Storage Server (db.codeb.kr): 정상
+   ✅ Streaming Server (ws.codeb.kr): 정상
+
+[2/4] 인프라 초기화 중...
+   ✅ 포트 할당: Blue=4100, Green=4101
+   ✅ PostgreSQL DB 생성: myapp_db
+   ✅ Redis DB 할당: 1
+   ✅ SSOT 레지스트리 등록
+   ✅ ENV 파일 생성
+   ✅ Caddy 도메인 설정
+
+[3/4] 로컬 파일 생성...
+   ✅ .github/workflows/deploy.yml
+   ✅ Dockerfile
+
+[4/4] 완료!
 
 ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
 
-[Step 3/6] 데이터베이스가 필요한가요?
-  ● PostgreSQL (권장)
-  ○ 필요 없음
+🎉 프로젝트 초기화 완료!
 
-━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
-
-[Step 4/6] Redis 캐시가 필요한가요?
-  ● 예
-  ○ 아니오
-
-━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
-
-[Step 5/6] 도메인을 어떻게 설정할까요?
-  ● 서브도메인 (myapp.codeb.dev)
-  ○ 커스텀 도메인
-  ○ 나중에 설정
-
-━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
-
-[Step 6/6] 설정 확인
-
-┌─────────────────────────────────────────────┐
-│  📦 프로젝트: myapp                          │
-│  🔧 타입: Next.js                           │
-│  🌍 환경: Staging + Production              │
-│  🗄️ DB: PostgreSQL                          │
-│  ⚡ Redis: 예                               │
-│  🌐 도메인: myapp.codeb.dev                 │
-└─────────────────────────────────────────────┘
-
-이 설정으로 진행할까요?
-  ● 진행
-  ○ 취소
-
-━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
-
-✅ 설정 완료!
-
-생성된 파일:
-  ├── quadlet/myapp.container
-  ├── quadlet/myapp-staging.container
-  ├── .github/workflows/deploy.yml
-  ├── Dockerfile
-  └── .env.example
-
-도메인 설정:
-  ├── Staging: myapp-staging.codeb.dev
-  └── Production: myapp.codeb.dev
+도메인: https://myapp.codeb.kr
 
 다음 단계:
-  1. git push origin main  (자동 배포)
-  2. /we:deploy myapp staging  (수동 배포)
+  1. GitHub Secrets에 CODEB_API_KEY 추가
+  2. git push origin main (자동 배포)
+  3. /we:deploy promote myapp (트래픽 전환)
 ```
 
 ---
 
-## 📚 관련 명령어
+## 기본값
+
+| 항목 | 기본값 | 설명 |
+|------|--------|------|
+| type | nextjs | 프로젝트 타입 |
+| database | true | PostgreSQL 생성 |
+| redis | true | Redis DB 할당 |
+| environment | production | Blue-Green만 사용 |
+| domain | {projectName}.codeb.kr | 서브도메인 |
+
+---
+
+## 에러 처리
+
+### API 키 오류
+```
+❌ API Key not configured
+
+해결 방법:
+1. .env 파일에 CODEB_API_KEY 추가
+2. 또는: we init <YOUR_API_KEY>
+```
+
+### 프로젝트 중복
+```
+❌ Project 'myapp' already exists
+
+해결 방법:
+- /we:deploy myapp  (기존 프로젝트 배포)
+- 다른 프로젝트명 사용
+```
+
+### 서버 연결 실패
+```
+❌ Cannot connect to CodeB servers
+
+해결 방법:
+1. 인터넷 연결 확인
+2. API 키 유효성 확인
+3. /we:health 로 상세 상태 확인
+```
+
+---
+
+## 관련 명령어
 
 - `/we:deploy` - 프로젝트 배포
+- `/we:init` - API 키 설정만
 - `/we:workflow` - CI/CD만 설정
 - `/we:domain` - 도메인만 설정
 - `/we:health` - 서버 상태 확인

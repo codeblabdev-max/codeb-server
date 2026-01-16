@@ -33,7 +33,7 @@ import { randomBytes } from 'crypto';
 import type { AuthContext } from '../lib/types.js';
 import { withSSH } from '../lib/ssh.js';
 import { SERVERS, getSlotPorts } from '../lib/servers.js';
-import { ProjectRepo, SlotRepo } from '../lib/database.js';
+import { ProjectRepo, SlotRepo, TeamRepo } from '../lib/database.js';
 import { initializeSlots, getAvailablePort } from './slot.js';
 import { logger } from '../lib/logger.js';
 
@@ -191,7 +191,29 @@ async function executeWorkflowInit(
     });
 
     // ============================================================
-    // Step 4: DB에 프로젝트 등록 (SSOT)
+    // Step 4: 팀이 없으면 자동 생성 (Foreign Key 해결)
+    // ============================================================
+    const existingTeam = await TeamRepo.findById(auth.teamId);
+    if (!existingTeam) {
+      logger.info('Team not found, creating automatically', { teamId: auth.teamId });
+      await TeamRepo.create({
+        id: auth.teamId,
+        name: auth.teamId,
+        slug: auth.teamId.toLowerCase().replace(/[^a-z0-9-]/g, '-'),
+        owner: auth.keyId || 'system',
+        plan: 'free',
+        projects: [],
+        settings: {
+          defaultEnvironment: 'production',
+          autoPromote: false,
+          gracePeriodHours: 48,
+        },
+      });
+      logger.info('Team created', { teamId: auth.teamId });
+    }
+
+    // ============================================================
+    // Step 5: DB에 프로젝트 등록 (SSOT)
     // ============================================================
     await ProjectRepo.create({
       name: projectName,
@@ -205,13 +227,13 @@ async function executeWorkflowInit(
     logger.info('Project registered in database', { projectName });
 
     // ============================================================
-    // Step 5: DB에 슬롯 레지스트리 생성
+    // Step 6: DB에 슬롯 레지스트리 생성
     // ============================================================
     await initializeSlots(projectName, 'production', basePort, auth.teamId);
     logger.info('Slot registry initialized', { projectName });
 
     // ============================================================
-    // Step 6: App Server (디렉토리, ENV, Caddy)
+    // Step 7: App Server (디렉토리, ENV, Caddy)
     // ============================================================
     await withSSH(SERVERS.app.ip, async (appSSH) => {
       // 프로젝트 디렉토리 생성
@@ -278,7 +300,7 @@ ${domain} {
     });
 
     // ============================================================
-    // Step 7: 결과 반환
+    // Step 8: 결과 반환
     // ============================================================
     const githubActionsWorkflow = generateGitHubActionsWorkflow({ projectName, type });
     const dockerfile = generateDockerfile(type);
