@@ -1,4 +1,4 @@
-# CLAUDE.md v7.0.57 - CodeB Project Rules
+# CLAUDE.md v7.0.59 - CodeB Project Rules
 
 > 버전은 VERSION 파일에서 관리됩니다 (SSOT)
 
@@ -85,12 +85,9 @@
 ├── monitoring/
 │   ├── health.md         # /we:health
 │   └── monitor.md        # /we:monitor
-├── infrastructure/
-│   ├── domain.md         # /we:domain
-│   └── workflow.md       # /we:workflow
-└── analysis/
-    ├── analyze.md        # /we:analyze
-    └── optimize.md       # /we:optimize
+└── infrastructure/
+    ├── domain.md         # /we:domain
+    └── workflow.md       # /we:workflow
 ```
 
 ### Skill 파일 형식 (v7.0)
@@ -331,17 +328,15 @@ member - 배포, promote, rollback
 viewer - 조회만
 ```
 
-### Tool 목록 (22개)
+### Tool 목록 (16개)
 
 | 카테고리 | Tool | 설명 |
 |---------|------|------|
-| **Team** | team_create, team_list, team_get, team_delete, team_settings | 팀 관리 |
-| **Member** | member_invite, member_remove, member_list | 멤버 관리 |
-| **Token** | token_create, token_revoke, token_list | API 토큰 관리 |
 | **Deploy** | deploy, deploy_project, promote, slot_promote, rollback | Blue-Green 배포 |
 | **Slot** | slot_status, slot_cleanup, slot_list | Slot 관리 |
-| **Domain** | domain_setup, domain_verify, domain_list, domain_delete, ssl_status | 도메인 |
-| **Workflow** | workflow_init, workflow_scan | CI/CD 워크플로우 |
+| **Domain** | domain_setup, domain_list, domain_delete | 도메인 관리 |
+| **Project** | workflow_init, workflow_scan, scan | 프로젝트 초기화 |
+| **Utility** | health_check | 인프라 상태
 
 ---
 
@@ -371,42 +366,80 @@ rm -rf /var/lib/docker/*       # Docker 데이터 삭제
 
 ---
 
-## SSOT 버전 관리 시스템
+## CI/CD 배포 시스템
 
 ### 아키텍처
 
 ```
 ┌─────────────────────────────────────────────────────────────────┐
-│                    CodeB SSOT 배포 시스템                        │
+│                    CodeB CI/CD 배포 시스템                       │
 ├─────────────────────────────────────────────────────────────────┤
 │                                                                 │
-│  [관리자 로컬] ────→ [deploy-all.sh] ────→ [자동 배포]          │
-│   (VERSION 수정)      (단일 명령)          (모든 대상)          │
-│                                                                 │
-│  배포 대상 (자동 동기화):                                        │
-│  ┌─────────────┬─────────────┬─────────────┐                    │
-│  │ Git Repo    │ API Server  │ CLI Package │                    │
-│  │ (백업용)    │ (Docker)    │ (Minio)     │                    │
-│  │ GitHub      │ api.codeb.kr│ releases.   │                    │
-│  │             │             │ codeb.kr    │                    │
-│  └─────────────┴─────────────┴─────────────┘                    │
-│                                                                 │
-│  팀원: 읽기 전용 → "업데이트 필요" 알림만 표시                    │
+│  [로컬] ──git push──→ [GitHub Actions] ──→ [Self-Hosted Runner] │
+│                              │                     │            │
+│                              │              ┌──────┴──────┐     │
+│                              │              │ Incremental │     │
+│                              │              │    Build    │     │
+│                              │              └──────┬──────┘     │
+│                              │                     │            │
+│                              ▼                     ▼            │
+│                     ┌─────────────┬─────────────┬─────────────┐ │
+│                     │ API Server  │ Docker Image│ Minio Cache │ │
+│                     │ (Docker)    │ (GHCR)      │ (dist/npm)  │ │
+│                     └─────────────┴─────────────┴─────────────┘ │
 │                                                                 │
 └─────────────────────────────────────────────────────────────────┘
 ```
 
-### 배포 명령어 (관리자 전용)
+### 배포 방법 (Git Push = 자동 배포)
 
 ```bash
-# 통합 배포 (VERSION 파일 기준)
+# 1. 코드 수정 후 커밋
+git add -A
+git commit -m "feat: 새로운 기능"
+
+# 2. 푸시하면 자동 배포
+git push origin main
+
+# GitHub Actions가 자동으로:
+# - Incremental Build (변경된 부분만)
+# - Docker 이미지 빌드 & 푸시
+# - 컨테이너 배포 & 헬스체크
+```
+
+### Incremental Build (v7.0.59+)
+
+```
+┌─────────────────────────────────────────────────────────────────┐
+│                    Incremental Build 흐름                        │
+├─────────────────────────────────────────────────────────────────┤
+│                                                                 │
+│  1. NPM 해시 (package-lock.json)                                │
+│     └─→ 변경 없으면 node_modules 캐시 사용                      │
+│                                                                 │
+│  2. SRC 해시 (src/**/*.ts)                                      │
+│     └─→ 변경 없으면 dist/ 캐시 사용 (빌드 스킵!)               │
+│                                                                 │
+│  3. Docker 이미지 체크                                          │
+│     └─→ 버전 이미지 있으면 빌드 스킵                            │
+│                                                                 │
+│  4. 배포 체크                                                   │
+│     └─→ 동일 버전 실행 중이면 배포 스킵                         │
+│                                                                 │
+└─────────────────────────────────────────────────────────────────┘
+```
+
+### 수동 배포 (필요시)
+
+```bash
+# 로컬에서 직접 배포 (SSH 필요)
 ./scripts/deploy-all.sh
 
 # 새 버전으로 배포
 ./scripts/deploy-all.sh <NEW_VERSION>
 
-# 버전만 동기화 (배포 없이)
-./scripts/sync-version.sh
+# 강제 빌드 (GitHub Actions)
+# workflow_dispatch → force_build: true
 ```
 
 ### 버전 확인 방법
@@ -462,7 +495,7 @@ curl -s https://api.codeb.kr/health | jq '.version'
 - **Claude Code**: 2.1.x (Skills + Advanced Hooks)
 - **CLI**: @codeblabdev-max/we-cli
 - **MCP Server**: @codeblabdev-max/mcp-server
-- **API Endpoint**: https://api.codeb.kr (22 tools)
+- **API Endpoint**: https://api.codeb.kr (16 tools)
 - **CLI Download**: https://releases.codeb.kr/cli/install.sh
 - **Container Runtime**: Docker
 

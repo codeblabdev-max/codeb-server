@@ -255,6 +255,14 @@ jobs:
           docker stop codeb-mcp-api 2>/dev/null || true
           docker rm codeb-mcp-api 2>/dev/null || true
 
+          # env 파일 확인 (없으면 생성)
+          ENV_FILE="/opt/codeb/mcp-server/.env"
+          if [ ! -f "$ENV_FILE" ]; then
+            mkdir -p /opt/codeb/mcp-server
+            touch "$ENV_FILE"
+            echo "⚠️ Created empty .env file"
+          fi
+
           # 새 컨테이너 실행
           docker run -d \
             --name codeb-mcp-api \
@@ -264,7 +272,7 @@ jobs:
             -e PORT=9101 \
             -e LOG_DIR=/app/logs \
             -e SSH_PRIVATE_KEY_PATH=/app/ssh/id_rsa \
-            --env-file /opt/codeb/mcp-server/.env \
+            --env-file "$ENV_FILE" \
             -v /opt/codeb/logs:/app/logs \
             -v /opt/codeb/registry:/opt/codeb/registry \
             -v /opt/codeb/ssh:/app/ssh:ro \
