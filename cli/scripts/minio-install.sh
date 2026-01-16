@@ -130,6 +130,52 @@ echo "   ✅ CLAUDE.md → ~/.claude/CLAUDE.md"
 # MCP proxy is included in CLI package (src/mcp/)
 
 # ============================================
+# API Key 설정
+# ============================================
+echo ""
+echo "🔑 API Key Configuration..."
+
+# API 키 확인 (순서: 인자 > 환경변수 > config.json > 프롬프트)
+API_KEY="${1:-$CODEB_API_KEY}"
+
+if [ -z "$API_KEY" ] && [ -f "$CODEB_DIR/config.json" ]; then
+  API_KEY=$(grep -o '"apiKey"[[:space:]]*:[[:space:]]*"[^"]*"' "$CODEB_DIR/config.json" 2>/dev/null | cut -d'"' -f4)
+fi
+
+if [ -z "$API_KEY" ]; then
+  echo ""
+  echo "   ⚠️  API Key가 필요합니다."
+  echo "   팀 관리자에게 발급받은 API Key를 입력하세요."
+  echo ""
+  read -p "   API Key: " API_KEY
+fi
+
+if [ -z "$API_KEY" ]; then
+  echo "   ❌ API Key가 입력되지 않았습니다."
+  echo "   나중에 다음 명령으로 설정할 수 있습니다:"
+  echo "   we init <YOUR_API_KEY>"
+  API_KEY=""
+else
+  # API 키 형식 검증
+  if [[ ! "$API_KEY" =~ ^codeb_ ]]; then
+    echo "   ⚠️  API Key 형식이 올바르지 않습니다 (codeb_로 시작해야 함)"
+    API_KEY=""
+  else
+    echo "   ✅ API Key: ${API_KEY:0:20}..."
+
+    # config.json에 저장
+    mkdir -p "$CODEB_DIR"
+    cat > "$CODEB_DIR/config.json" << CONFIGEOF
+{
+  "apiKey": "$API_KEY",
+  "apiUrl": "https://api.codeb.kr",
+  "updatedAt": "$(date -u +%Y-%m-%dT%H:%M:%SZ)"
+}
+CONFIGEOF
+  fi
+fi
+
+# ============================================
 # MCP 설정 (기존 설정 유지, codeb-deploy만 추가)
 # ============================================
 echo ""
@@ -137,25 +183,50 @@ echo "🔌 Configuring MCP..."
 
 MCP_SCRIPT="$CODEB_DIR/src/mcp/index.js"
 
+# API 키가 있으면 MCP 환경변수에 포함
+if [ -n "$API_KEY" ]; then
+  MCP_ENV_JSON="{\"CODEB_API_URL\": \"https://api.codeb.kr\", \"CODEB_API_KEY\": \"$API_KEY\"}"
+else
+  MCP_ENV_JSON="{\"CODEB_API_URL\": \"https://api.codeb.kr\"}"
+fi
+
 if [ -f "$CLAUDE_JSON" ]; then
   # 기존 파일이 있으면 codeb-deploy만 추가/업데이트
   if command -v jq &> /dev/null; then
     TMP_JSON=$(mktemp)
-    jq --arg script "$MCP_SCRIPT" '
-      .mcpServers["codeb-deploy"] = {
-        "type": "stdio",
-        "command": "node",
-        "args": [$script],
-        "env": {
-          "CODEB_API_URL": "https://api.codeb.kr"
+    if [ -n "$API_KEY" ]; then
+      jq --arg script "$MCP_SCRIPT" --arg apikey "$API_KEY" '
+        .mcpServers["codeb-deploy"] = {
+          "type": "stdio",
+          "command": "node",
+          "args": [$script],
+          "env": {
+            "CODEB_API_URL": "https://api.codeb.kr",
+            "CODEB_API_KEY": $apikey
+          }
         }
-      }
-    ' "$CLAUDE_JSON" > "$TMP_JSON" && mv "$TMP_JSON" "$CLAUDE_JSON"
+      ' "$CLAUDE_JSON" > "$TMP_JSON" && mv "$TMP_JSON" "$CLAUDE_JSON"
+    else
+      jq --arg script "$MCP_SCRIPT" '
+        .mcpServers["codeb-deploy"] = {
+          "type": "stdio",
+          "command": "node",
+          "args": [$script],
+          "env": {
+            "CODEB_API_URL": "https://api.codeb.kr"
+          }
+        }
+      ' "$CLAUDE_JSON" > "$TMP_JSON" && mv "$TMP_JSON" "$CLAUDE_JSON"
+    fi
     echo "   ✅ codeb-deploy MCP 추가 (기존 설정 유지)"
   else
     if command -v claude &> /dev/null; then
       claude mcp remove codeb-deploy -s user 2>/dev/null || true
-      claude mcp add codeb-deploy -s user -e CODEB_API_URL=https://api.codeb.kr -- node "$MCP_SCRIPT" 2>/dev/null || true
+      if [ -n "$API_KEY" ]; then
+        claude mcp add codeb-deploy -s user -e CODEB_API_URL=https://api.codeb.kr -e CODEB_API_KEY="$API_KEY" -- node "$MCP_SCRIPT" 2>/dev/null || true
+      else
+        claude mcp add codeb-deploy -s user -e CODEB_API_URL=https://api.codeb.kr -- node "$MCP_SCRIPT" 2>/dev/null || true
+      fi
       echo "   ✅ codeb-deploy MCP 등록됨"
     else
       echo "   ⚠️  jq/claude CLI 없음 - 수동 등록 필요"
@@ -163,7 +234,24 @@ if [ -f "$CLAUDE_JSON" ]; then
   fi
 else
   # 새 파일 생성
-  cat > "$CLAUDE_JSON" << EOF
+  if [ -n "$API_KEY" ]; then
+    cat > "$CLAUDE_JSON" << EOF
+{
+  "mcpServers": {
+    "codeb-deploy": {
+      "type": "stdio",
+      "command": "node",
+      "args": ["$MCP_SCRIPT"],
+      "env": {
+        "CODEB_API_URL": "https://api.codeb.kr",
+        "CODEB_API_KEY": "$API_KEY"
+      }
+    }
+  }
+}
+EOF
+  else
+    cat > "$CLAUDE_JSON" << EOF
 {
   "mcpServers": {
     "codeb-deploy": {
@@ -177,6 +265,7 @@ else
   }
 }
 EOF
+  fi
   echo "   ✅ ~/.claude.json 생성됨"
 fi
 
@@ -266,9 +355,21 @@ echo "   • Path:      $CURRENT_DIR"
 echo "   • CLAUDE.md: Updated to v$VERSION"
 echo ""
 fi
+if [ -n "$API_KEY" ]; then
+echo "🔑 API Key: Configured ✅"
+echo ""
 echo "📋 Next Steps:"
-echo "   1. API 키 설정: ~/.codeb/.env.example 참고"
+echo "   1. Claude Code 재시작 (필수!)"
+echo "   2. /we:health 로 연결 확인"
+else
+echo "⚠️  API Key: Not configured"
+echo ""
+echo "📋 Next Steps:"
+echo "   1. API 키 설정:"
+echo "      curl -fsSL https://releases.codeb.kr/cli/install.sh | bash -s -- YOUR_API_KEY"
+echo "      또는 ~/.claude.json의 codeb-deploy.env에 CODEB_API_KEY 추가"
 echo "   2. Claude Code 재시작"
 echo "   3. /we:health 로 연결 확인"
+fi
 echo ""
 echo "═══════════════════════════════════════════════════════════"
