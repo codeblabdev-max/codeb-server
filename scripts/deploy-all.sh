@@ -113,12 +113,14 @@ DOCKERFILE
 
   docker build -t codeb-mcp-api:latest -f Dockerfile.prod . 2>&1 | tail -5
 
-  # systemd 서비스로 재시작 (자동 재시작 보장)
-  systemctl restart codeb-mcp-api
-
   rm -rf /tmp/mcp-deploy /tmp/mcp-server-deploy.tar.gz
-  sleep 3
 "
+
+# systemd 서비스 재시작 (SSH 세션 분리해서 확실하게)
+ssh $API_SERVER "systemctl stop codeb-mcp-api 2>/dev/null || true"
+sleep 2
+ssh $API_SERVER "systemctl start codeb-mcp-api"
+sleep 3
 
 # API 헬스체크
 API_VERSION=$(curl -sf https://api.codeb.kr/health | jq -r '.version')

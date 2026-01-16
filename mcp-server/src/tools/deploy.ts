@@ -1,25 +1,30 @@
 /**
- * CodeB v7.0 - Blue-Green Deploy Tool
- * Unified HTTP API + Team-based Authentication
+ * CodeB v7.0.58 - Blue-Green Deploy Tool
+ * PostgreSQL DB 기반 SSOT + Team-based Authentication
  *
- * Docker 기반 배포 (v7.0.30+)
+ * Docker 기반 배포
  * - docker run / docker stop / docker rm
- * - 포트 범위: SSOT와 동기화 (production: 4100-4499)
+ * - 포트 범위: DB SSOT와 동기화 (production: 4100-4499)
+ *
+ * v7.0.58 변경사항:
+ * - JSON 파일 → PostgreSQL DB Repository 전환
+ * - ProjectRepo, SlotRepo, DeploymentRepo 사용
+ * - 상세 배포 흐름 (SSOT 검증 → 슬롯 확인 → ENV 검증 → 배포)
  */
 
 import { z } from 'zod';
+import { randomBytes } from 'crypto';
 import type {
   DeployInput,
   DeployResult,
   DeployStep,
   SlotName,
   Environment,
-  ProjectSlots,
   AuthContext,
 } from '../lib/types.js';
 import { getSSHClient, withSSH } from '../lib/ssh.js';
 import { getSlotPorts, SERVERS } from '../lib/servers.js';
-import { getSlotRegistry, updateSlotRegistry } from './slot.js';
+import { ProjectRepo, SlotRepo, DeploymentRepo } from '../lib/database.js';
 
 // ============================================================================
 // Input Schema
@@ -31,6 +36,7 @@ export const deployInputSchema = z.object({
   version: z.string().optional().describe('Version/commit SHA (default: latest)'),
   image: z.string().optional().describe('Container image (default: ghcr.io/{org}/{project}:{version})'),
   skipHealthcheck: z.boolean().optional().describe('Skip health check'),
+  skipValidation: z.boolean().optional().describe('Skip pre-deploy validation'),
 });
 
 // ============================================================================
@@ -38,16 +44,19 @@ export const deployInputSchema = z.object({
 // ============================================================================
 
 /**
- * Execute Blue-Green Deploy with Docker
+ * Execute Blue-Green Deploy with Docker (DB 기반)
  *
  * Flow:
- * 1. Get current slot status
- * 2. Select inactive slot (blue or green)
- * 3. Pull Docker image
- * 4. Stop and remove existing container (if any)
- * 5. Run new container with docker run
- * 6. Health check
- * 7. Return preview URL (NOT switch traffic yet)
+ * 1. DB에서 프로젝트 검증 (SSOT)
+ * 2. DB에서 슬롯 상태 조회
+ * 3. ENV 파일 검증 (서버)
+ * 4. 비활성 슬롯 선택
+ * 5. Docker 이미지 Pull
+ * 6. 기존 컨테이너 정리
+ * 7. 새 컨테이너 실행
+ * 8. 헬스체크
+ * 9. DB 슬롯 레지스트리 업데이트
+ * 10. 배포 이력 저장
  */
 export async function executeDeploy(
   input: DeployInput,
@@ -55,10 +64,15 @@ export async function executeDeploy(
 ): Promise<DeployResult> {
   const {
     projectName,
-    environment,
+    environment = 'production',
     version = 'latest',
     skipHealthcheck = false,
+    skipValidation = false,
   } = input;
+
+  const steps: DeployStep[] = [];
+  const startTime = Date.now();
+  const deploymentId = randomBytes(16).toString('hex');
 
   // Validate team has access to project
   if (!auth.projects.includes(projectName) && auth.role !== 'owner') {
@@ -73,120 +87,224 @@ export async function executeDeploy(
     };
   }
 
-  return withSSH(SERVERS.app.ip, async (ssh) => {
-    const steps: DeployStep[] = [];
-    const startTime = Date.now();
+  try {
+    // ================================================================
+    // Step 1: DB에서 프로젝트 검증 (SSOT)
+    // ================================================================
+    const step1Start = Date.now();
+    const project = await ProjectRepo.findByName(projectName);
 
-    try {
-      // Step 1: Get current slot status
-      const step1Start = Date.now();
-      let slots: ProjectSlots;
+    if (!project) {
+      steps.push({
+        name: 'verify_project',
+        status: 'failed',
+        duration: Date.now() - step1Start,
+        error: `Project "${projectName}" not found in SSOT. Run /we:quick first.`,
+      });
+      return buildResult(false, steps, startTime, 'blue', 0, projectName, environment);
+    }
 
-      try {
-        slots = await getSlotRegistry(projectName, environment);
-        steps.push({
-          name: 'get_slot_status',
-          status: 'success',
-          duration: Date.now() - step1Start,
-          output: `Active slot: ${slots.activeSlot}`,
-        });
-      } catch {
-        // First deploy - initialize slots
-        const basePort = await allocateBasePort(ssh, environment, projectName);
-        const slotPorts = getSlotPorts(basePort);
+    // 팀 소속 확인
+    if (project.teamId !== auth.teamId && auth.role !== 'owner') {
+      steps.push({
+        name: 'verify_project',
+        status: 'failed',
+        duration: Date.now() - step1Start,
+        error: `Project "${projectName}" belongs to different team`,
+      });
+      return buildResult(false, steps, startTime, 'blue', 0, projectName, environment);
+    }
 
-        slots = {
-          projectName,
-          environment,
-          activeSlot: 'blue',
-          blue: { name: 'blue', state: 'empty', port: slotPorts.blue },
-          green: { name: 'green', state: 'empty', port: slotPorts.green },
-          lastUpdated: new Date().toISOString(),
-        };
+    steps.push({
+      name: 'verify_project',
+      status: 'success',
+      duration: Date.now() - step1Start,
+      output: `Project verified: ${projectName} (type: ${project.type})`,
+    });
 
-        steps.push({
-          name: 'get_slot_status',
-          status: 'success',
-          duration: Date.now() - step1Start,
-          output: `First deploy - initialized slots (blue: ${slotPorts.blue}, green: ${slotPorts.green})`,
-        });
-      }
+    // ================================================================
+    // Step 2: DB에서 슬롯 상태 조회
+    // ================================================================
+    const step2Start = Date.now();
+    let slots = await SlotRepo.findByProject(projectName, environment);
 
-      // Step 2: Select inactive slot
-      const step2Start = Date.now();
-      const targetSlot: SlotName = slots.activeSlot === 'blue' ? 'green' : 'blue';
-      const targetPort = slots[targetSlot].port;
+    if (!slots) {
+      // 첫 배포 - 슬롯 초기화 필요
+      const basePort = await allocatePortFromDB(projectName, environment);
+      const slotPorts = getSlotPorts(basePort);
+
+      slots = {
+        projectName,
+        environment,
+        activeSlot: 'blue',
+        lastUpdated: new Date().toISOString(),
+        blue: { name: 'blue', state: 'empty', port: slotPorts.blue },
+        green: { name: 'green', state: 'empty', port: slotPorts.green },
+      };
+
+      await SlotRepo.upsert(slots);
 
       steps.push({
-        name: 'select_slot',
+        name: 'get_slot_status',
         status: 'success',
         duration: Date.now() - step2Start,
-        output: `Target slot: ${targetSlot} (port ${targetPort})`,
+        output: `First deploy - initialized slots (blue: ${slotPorts.blue}, green: ${slotPorts.green})`,
       });
+    } else {
+      steps.push({
+        name: 'get_slot_status',
+        status: 'success',
+        duration: Date.now() - step2Start,
+        output: `Active slot: ${slots.activeSlot}, Blue: ${slots.blue.state}, Green: ${slots.green.state}`,
+      });
+    }
 
-      // Step 3: Pull Docker image
-      const step3Start = Date.now();
+    // ================================================================
+    // Step 3: 비활성 슬롯 선택
+    // ================================================================
+    const step3Start = Date.now();
+    const targetSlot: SlotName = slots.activeSlot === 'blue' ? 'green' : 'blue';
+    const targetPort = slots[targetSlot].port;
+
+    if (!targetPort) {
+      steps.push({
+        name: 'select_slot',
+        status: 'failed',
+        duration: Date.now() - step3Start,
+        error: `No port assigned to ${targetSlot} slot. Re-initialize project.`,
+      });
+      return buildResult(false, steps, startTime, targetSlot, 0, projectName, environment);
+    }
+
+    steps.push({
+      name: 'select_slot',
+      status: 'success',
+      duration: Date.now() - step3Start,
+      output: `Target slot: ${targetSlot} (port ${targetPort})`,
+    });
+
+    // ================================================================
+    // Step 4: 배포 이력 생성 (pending)
+    // ================================================================
+    await DeploymentRepo.create({
+      id: deploymentId,
+      projectName,
+      environment,
+      slot: targetSlot,
+      version,
+      image: input.image,
+      deployedBy: auth.keyId,
+    });
+
+    // ================================================================
+    // Step 5-9: SSH로 실제 배포 수행
+    // ================================================================
+    return await withSSH(SERVERS.app.ip, async (ssh) => {
+      // Step 5: ENV 파일 검증
+      if (!skipValidation) {
+        const step5Start = Date.now();
+        const envFile = `/opt/codeb/env/${projectName}/.env`;
+        const envAltFile = `/opt/codeb/projects/${projectName}/.env.${environment}`;
+
+        try {
+          const envCheck = await ssh.exec(`test -f ${envFile} && echo "OK" || test -f ${envAltFile} && echo "OK" || echo "MISSING"`);
+          if (envCheck.stdout.trim() === 'MISSING') {
+            steps.push({
+              name: 'verify_env',
+              status: 'failed',
+              duration: Date.now() - step5Start,
+              error: `ENV file not found. Expected: ${envFile} or ${envAltFile}`,
+            });
+            await DeploymentRepo.updateStatus(deploymentId, 'failed', { error: 'ENV file missing' });
+            return buildResult(false, steps, startTime, targetSlot, targetPort, projectName, environment);
+          }
+          steps.push({
+            name: 'verify_env',
+            status: 'success',
+            duration: Date.now() - step5Start,
+            output: 'ENV file verified',
+          });
+        } catch (error) {
+          steps.push({
+            name: 'verify_env',
+            status: 'failed',
+            duration: Date.now() - step5Start,
+            error: error instanceof Error ? error.message : String(error),
+          });
+          await DeploymentRepo.updateStatus(deploymentId, 'failed', { error: 'ENV check failed' });
+          return buildResult(false, steps, startTime, targetSlot, targetPort, projectName, environment);
+        }
+      }
+
+      // Step 6: Docker 이미지 Pull
+      const step6Start = Date.now();
       const containerName = `${projectName}-${environment}-${targetSlot}`;
       const imageUrl = input.image || `ghcr.io/codeblabdev-max/${projectName}:${version}`;
-      const envFile = `/opt/codeb/projects/${projectName}/.env.${environment}`;
+      const envFile = `/opt/codeb/env/${projectName}/.env`;
+      const envAltFile = `/opt/codeb/projects/${projectName}/.env.${environment}`;
 
       try {
         await ssh.exec(`docker pull ${imageUrl}`, { timeout: 180000 });
-
         steps.push({
           name: 'pull_image',
           status: 'success',
-          duration: Date.now() - step3Start,
+          duration: Date.now() - step6Start,
           output: `Pulled ${imageUrl}`,
         });
       } catch (error) {
         steps.push({
           name: 'pull_image',
           status: 'failed',
-          duration: Date.now() - step3Start,
+          duration: Date.now() - step6Start,
           error: error instanceof Error ? error.message : String(error),
         });
+        await DeploymentRepo.updateStatus(deploymentId, 'failed', { steps, error: 'Image pull failed' });
         return buildResult(false, steps, startTime, targetSlot, targetPort, projectName, environment);
       }
 
-      // Step 4: Stop and remove existing container
-      const step4Start = Date.now();
+      // Step 7: 기존 컨테이너 정리
+      const step7Start = Date.now();
       try {
         await ssh.exec(`docker stop ${containerName} 2>/dev/null || true`);
         await ssh.exec(`docker rm ${containerName} 2>/dev/null || true`);
-
         steps.push({
           name: 'cleanup_container',
           status: 'success',
-          duration: Date.now() - step4Start,
+          duration: Date.now() - step7Start,
           output: 'Previous container cleaned up',
         });
       } catch (error) {
         steps.push({
           name: 'cleanup_container',
           status: 'failed',
-          duration: Date.now() - step4Start,
+          duration: Date.now() - step7Start,
           error: error instanceof Error ? error.message : String(error),
         });
+        await DeploymentRepo.updateStatus(deploymentId, 'failed', { steps, error: 'Cleanup failed' });
         return buildResult(false, steps, startTime, targetSlot, targetPort, projectName, environment);
       }
 
-      // Step 5: Run new container with Docker
-      const step5Start = Date.now();
+      // Step 8: 새 컨테이너 실행
+      const step8Start = Date.now();
       const dockerLabels = [
         `codeb.project=${projectName}`,
         `codeb.environment=${environment}`,
         `codeb.slot=${targetSlot}`,
         `codeb.version=${version}`,
         `codeb.team=${auth.teamId}`,
+        `codeb.deployment_id=${deploymentId}`,
         `codeb.deployed_at=${new Date().toISOString()}`,
       ].map(l => `-l ${l}`).join(' ');
+
+      // ENV 파일 경로 결정
+      const envFileToUse = await ssh.exec(`test -f ${envFile} && echo "${envFile}" || echo "${envAltFile}"`);
+      const actualEnvFile = envFileToUse.stdout.trim();
 
       try {
         const dockerCmd = `docker run -d \\
           --name ${containerName} \\
           --restart always \\
-          --env-file ${envFile} \\
+          --env-file ${actualEnvFile} \\
           -p ${targetPort}:3000 \\
           --health-cmd="curl -sf http://localhost:3000/health || curl -sf http://localhost:3000/api/health || exit 1" \\
           --health-interval=10s \\
@@ -199,46 +317,46 @@ export async function executeDeploy(
           ${imageUrl}`;
 
         await ssh.exec(dockerCmd, { timeout: 60000 });
-
         steps.push({
           name: 'start_container',
           status: 'success',
-          duration: Date.now() - step5Start,
+          duration: Date.now() - step8Start,
           output: `Started ${containerName} on port ${targetPort}`,
         });
       } catch (error) {
         steps.push({
           name: 'start_container',
           status: 'failed',
-          duration: Date.now() - step5Start,
+          duration: Date.now() - step8Start,
           error: error instanceof Error ? error.message : String(error),
         });
+        await DeploymentRepo.updateStatus(deploymentId, 'failed', { steps, error: 'Container start failed' });
         return buildResult(false, steps, startTime, targetSlot, targetPort, projectName, environment);
       }
 
-      // Step 6: Health check
-      const step6Start = Date.now();
+      // Step 9: 헬스체크
+      const step9Start = Date.now();
       if (!skipHealthcheck) {
         try {
           await waitForHealthy(ssh, targetPort, 60, containerName);
-
           steps.push({
             name: 'health_check',
             status: 'success',
-            duration: Date.now() - step6Start,
+            duration: Date.now() - step9Start,
             output: 'Container is healthy',
           });
         } catch (error) {
-          // Rollback: stop failed container
+          // 롤백: 실패한 컨테이너 제거
           await ssh.exec(`docker stop ${containerName} 2>/dev/null || true`);
           await ssh.exec(`docker rm ${containerName} 2>/dev/null || true`);
 
           steps.push({
             name: 'health_check',
             status: 'failed',
-            duration: Date.now() - step6Start,
+            duration: Date.now() - step9Start,
             error: error instanceof Error ? error.message : String(error),
           });
+          await DeploymentRepo.updateStatus(deploymentId, 'failed', { steps, error: 'Health check failed' });
           return buildResult(false, steps, startTime, targetSlot, targetPort, projectName, environment);
         }
       } else {
@@ -250,8 +368,8 @@ export async function executeDeploy(
         });
       }
 
-      // Step 7: Update slot registry
-      const step7Start = Date.now();
+      // Step 10: DB 슬롯 레지스트리 업데이트
+      const step10Start = Date.now();
       try {
         slots[targetSlot] = {
           name: targetSlot,
@@ -265,37 +383,48 @@ export async function executeDeploy(
         };
         slots.lastUpdated = new Date().toISOString();
 
-        await updateSlotRegistry(projectName, environment, slots);
+        await SlotRepo.upsert(slots);
 
         steps.push({
           name: 'update_registry',
           status: 'success',
-          duration: Date.now() - step7Start,
-          output: 'Slot registry updated',
+          duration: Date.now() - step10Start,
+          output: 'DB slot registry updated',
         });
       } catch (error) {
         steps.push({
           name: 'update_registry',
           status: 'failed',
-          duration: Date.now() - step7Start,
+          duration: Date.now() - step10Start,
           error: error instanceof Error ? error.message : String(error),
         });
+        // 레지스트리 업데이트 실패해도 배포 자체는 성공
       }
 
-      return buildResult(true, steps, startTime, targetSlot, targetPort, projectName, environment, version);
+      // 배포 이력 업데이트 (success)
+      const duration = Date.now() - startTime;
+      await DeploymentRepo.updateStatus(deploymentId, 'success', { steps, duration });
 
-    } catch (error) {
-      return {
-        success: false,
-        slot: 'blue',
-        port: 0,
-        previewUrl: '',
-        steps,
-        duration: Date.now() - startTime,
-        error: error instanceof Error ? error.message : String(error),
-      };
-    }
-  });
+      return buildResult(true, steps, startTime, targetSlot, targetPort, projectName, environment, version);
+    });
+
+  } catch (error) {
+    // 전역 에러 핸들링
+    await DeploymentRepo.updateStatus(deploymentId, 'failed', {
+      steps,
+      error: error instanceof Error ? error.message : String(error),
+    }).catch(() => {}); // 무시
+
+    return {
+      success: false,
+      slot: 'blue',
+      port: 0,
+      previewUrl: '',
+      steps,
+      duration: Date.now() - startTime,
+      error: error instanceof Error ? error.message : String(error),
+    };
+  }
 }
 
 // ============================================================================
@@ -313,7 +442,7 @@ async function waitForHealthy(
 ): Promise<void> {
   const maxAttempts = Math.ceil(timeoutSeconds / 5);
 
-  // Initial wait for container to start
+  // 컨테이너 시작 대기
   await new Promise(resolve => setTimeout(resolve, 3000));
 
   for (let i = 0; i < maxAttempts; i++) {
@@ -324,17 +453,17 @@ async function waitForHealthy(
       );
       const healthStatus = healthResult.stdout.trim();
       if (healthStatus === 'healthy') {
-        return; // Container is healthy
+        return;
       }
     }
 
-    // 2차: 컨테이너 내부에서 직접 curl (네트워크 문제 우회)
+    // 2차: 컨테이너 내부에서 직접 curl
     if (containerName) {
       const execResult = await ssh.exec(
         `docker exec ${containerName} sh -c 'curl -sf http://localhost:3000/health 2>/dev/null || curl -sf http://localhost:3000/api/health 2>/dev/null' && echo "OK" || echo "FAIL"`
       );
       if (execResult.stdout.includes('OK')) {
-        return; // Container responds to health check
+        return;
       }
     }
 
@@ -344,7 +473,7 @@ async function waitForHealthy(
     );
     const statusCode = result.stdout.trim();
     if (statusCode.startsWith('2')) {
-      return; // Healthy
+      return;
     }
 
     await new Promise(resolve => setTimeout(resolve, 5000));
@@ -354,16 +483,13 @@ async function waitForHealthy(
 }
 
 /**
- * Allocate base port for new project
- * Checks both SSOT registry AND actual running containers
- * Port ranges synchronized with server SSOT (v7.0.30+)
+ * DB에서 포트 할당 (SSOT)
  */
-async function allocateBasePort(
-  ssh: ReturnType<typeof getSSHClient>,
-  environment: Environment,
-  _projectName: string
+async function allocatePortFromDB(
+  _projectName: string,
+  environment: Environment
 ): Promise<number> {
-  // Port ranges synchronized with server SSOT
+  // 포트 범위
   const ranges: Record<Environment, { start: number; end: number }> = {
     staging: { start: 4500, end: 4999 },
     production: { start: 4100, end: 4499 },
@@ -372,62 +498,18 @@ async function allocateBasePort(
 
   const range = ranges[environment];
 
-  // Read SSOT to find registered ports
-  const ssotPath = '/opt/codeb/registry/ssot.json';
-  const ssotResult = await ssh.exec(`cat ${ssotPath} 2>/dev/null || echo "{}"`);
+  // DB에서 사용 중인 포트 조회
+  const allSlots = await SlotRepo.listAll();
+  const usedPorts = new Set<number>();
 
-  let ssot: { ports?: { used: number[]; allocated?: Record<string, unknown> } } = {};
-  try {
-    ssot = JSON.parse(ssotResult.stdout);
-  } catch {
-    ssot = {};
+  for (const slot of allSlots) {
+    if (slot.blue.port) usedPorts.add(slot.blue.port);
+    if (slot.green.port) usedPorts.add(slot.green.port);
   }
 
-  const registeredPorts = new Set(ssot.ports?.used || []);
-
-  // Also add ports from allocated map if exists
-  if (ssot.ports?.allocated) {
-    Object.keys(ssot.ports.allocated).forEach(p => registeredPorts.add(parseInt(p, 10)));
-  }
-
-  // Get actual ports in use by running containers (Docker)
-  const portsResult = await ssh.exec(
-    `docker ps --format '{{.Ports}}' 2>/dev/null | grep -oE '[0-9]+->3000' | cut -d'-' -f1 | sort -u || true`
-  );
-  const runningPorts = new Set(
-    portsResult.stdout
-      .split('\n')
-      .filter(Boolean)
-      .map((p: string) => parseInt(p.trim(), 10))
-      .filter((p: number) => !isNaN(p))
-  );
-
-  // Also check ports via ss/netstat for any service
-  const listeningResult = await ssh.exec(
-    `ss -tlnp 2>/dev/null | awk '{print $4}' | grep -oE ':([0-9]+)$' | cut -d':' -f2 | sort -u || true`
-  );
-  const listeningPorts = new Set(
-    listeningResult.stdout
-      .split('\n')
-      .filter(Boolean)
-      .map((p: string) => parseInt(p.trim(), 10))
-      .filter((p: number) => !isNaN(p) && p >= range.start && p <= range.end)
-  );
-
-  // Combine all used ports
-  const usedPorts = new Set([...registeredPorts, ...runningPorts, ...listeningPorts]);
-
-  // Find next available even port (blue gets even, green gets odd)
+  // 사용 가능한 짝수 포트 찾기 (blue=짝수, green=홀수)
   for (let port = range.start; port <= range.end; port += 2) {
     if (!usedPorts.has(port) && !usedPorts.has(port + 1)) {
-      // Reserve both ports in SSOT
-      const updatedUsed = [...(ssot.ports?.used || []), port, port + 1];
-      const updatedSsot = {
-        ...ssot,
-        ports: { ...ssot.ports, used: updatedUsed },
-      };
-
-      await ssh.writeFile(ssotPath, JSON.stringify(updatedSsot, null, 2));
       return port;
     }
   }
@@ -444,12 +526,12 @@ function buildResult(
   startTime: number,
   slot: SlotName,
   port: number,
-  _projectName: string,
+  projectName: string,
   _environment: Environment,
   _version?: string
 ): DeployResult {
   const previewUrl = success
-    ? `https://${_projectName}-${slot}.preview.codeb.kr`
+    ? `https://${projectName}-${slot}.preview.codeb.kr`
     : '';
 
   return {
@@ -469,7 +551,7 @@ function buildResult(
 
 export const deployTool = {
   name: 'deploy',
-  description: 'Deploy to inactive Blue-Green slot using Docker. Returns preview URL for testing.',
+  description: 'Deploy to inactive Blue-Green slot using Docker. DB-based SSOT. Returns preview URL for testing.',
   inputSchema: deployInputSchema,
 
   async execute(params: DeployInput, auth: AuthContext): Promise<DeployResult> {

@@ -1,6 +1,6 @@
-# CodeB v7.0 HTTP API Server Deployment
+# CodeB v7.0.59 HTTP API Server Deployment
 # Deploys to api.codeb.kr (158.247.203.55)
-# WITH Minio Cache (Storage Server: 64.176.226.119)
+# WITH Minio Cache + Incremental Build (소스 해시 기반 부분 빌드)
 
 name: Deploy API Server
 
@@ -13,14 +13,11 @@ on:
       - '.github/workflows/deploy-api.yml'
   workflow_dispatch:
     inputs:
-      environment:
-        description: 'Deployment environment'
-        required: true
-        default: 'production'
-        type: choice
-        options:
-          - production
-          - staging
+      force_build:
+        description: 'Force full rebuild (ignore cache)'
+        required: false
+        default: false
+        type: boolean
 
 env:
   NODE_VERSION: '20.x'
@@ -29,9 +26,8 @@ env:
   MINIO_BUCKET: build-cache
 
 jobs:
-  # Build: Self-hosted runner on App server with Minio Cache
   build:
-    name: Build & Deploy (with Minio Cache)
+    name: Incremental Build & Deploy
     runs-on: self-hosted
     permissions:
       contents: read
@@ -45,124 +41,153 @@ jobs:
         run: |
           VERSION=$(cat VERSION | tr -d '\n')
           echo "version=$VERSION" >> $GITHUB_OUTPUT
-          echo "📦 Building version: $VERSION"
-
-      - name: Generate cache hash
-        id: cache
-        run: |
-          NPM_HASH=$(md5sum mcp-server/package-lock.json | cut -d' ' -f1 | head -c8)
-          echo "npm_hash=$NPM_HASH" >> $GITHUB_OUTPUT
-          echo "📋 Cache hash: $NPM_HASH"
+          echo "📦 Version: $VERSION"
 
       # ============================================
-      # Minio Cache Setup & Restore
+      # 캐시 해시 생성 (npm + src 분리)
+      # ============================================
+      - name: Generate cache hashes
+        id: cache
+        run: |
+          # npm 의존성 해시 (package-lock.json)
+          NPM_HASH=$(md5sum mcp-server/package-lock.json | cut -d' ' -f1 | head -c8)
+          echo "npm_hash=$NPM_HASH" >> $GITHUB_OUTPUT
+
+          # 소스 코드 해시 (src/**/*.ts)
+          SRC_HASH=$(find mcp-server/src -name "*.ts" -exec md5sum {} \; | sort | md5sum | cut -d' ' -f1 | head -c8)
+          echo "src_hash=$SRC_HASH" >> $GITHUB_OUTPUT
+
+          echo "📋 NPM hash: $NPM_HASH"
+          echo "📋 SRC hash: $SRC_HASH"
+
+      # ============================================
+      # Minio 설정
       # ============================================
       - name: Setup Minio CLI
         run: |
           if ! command -v mc &> /dev/null; then
-            echo "📥 Installing Minio Client..."
             curl -sO https://dl.min.io/client/mc/release/linux-amd64/mc
             chmod +x mc && sudo mv mc /usr/local/bin/
           fi
           mc alias set codeb ${{ secrets.MINIO_ENDPOINT }} \
             ${{ secrets.MINIO_ACCESS_KEY }} ${{ secrets.MINIO_SECRET_KEY }} --api S3v4 2>/dev/null || true
-          echo "✅ Minio CLI ready"
 
-      - name: Restore npm cache from Minio
-        run: |
-          CACHE_KEY="codeb-api/npm-${{ steps.cache.outputs.npm_hash }}.tar.gz"
-          if mc stat codeb/${{ env.MINIO_BUCKET }}/$CACHE_KEY > /dev/null 2>&1; then
-            echo "🔄 Restoring npm cache..."
-            mc cp codeb/${{ env.MINIO_BUCKET }}/$CACHE_KEY /tmp/npm-cache.tar.gz
-            mkdir -p ~/.npm
-            tar -xzf /tmp/npm-cache.tar.gz -C ~/.npm 2>/dev/null || true
-            rm -f /tmp/npm-cache.tar.gz
-            echo "✅ npm cache restored"
-          else
-            echo "⚠️ No npm cache found, will create new"
-          fi
-
+      # ============================================
+      # 캐시 복원 (node_modules + dist)
+      # ============================================
       - name: Restore node_modules from Minio
+        id: restore_modules
         run: |
           CACHE_KEY="codeb-api/node-modules-${{ steps.cache.outputs.npm_hash }}.tar.gz"
           if mc stat codeb/${{ env.MINIO_BUCKET }}/$CACHE_KEY > /dev/null 2>&1; then
-            echo "🔄 Restoring node_modules cache..."
+            echo "🔄 Restoring node_modules..."
             mc cp codeb/${{ env.MINIO_BUCKET }}/$CACHE_KEY /tmp/node-modules.tar.gz
-            cd mcp-server
-            tar -xzf /tmp/node-modules.tar.gz 2>/dev/null || true
+            cd mcp-server && tar -xzf /tmp/node-modules.tar.gz 2>/dev/null || true
             rm -f /tmp/node-modules.tar.gz
+            echo "restored=true" >> $GITHUB_OUTPUT
             echo "✅ node_modules restored"
           else
-            echo "⚠️ No node_modules cache found"
+            echo "restored=false" >> $GITHUB_OUTPUT
+            echo "⚠️ No node_modules cache"
+          fi
+
+      - name: Restore dist from Minio
+        id: restore_dist
+        run: |
+          CACHE_KEY="codeb-api/dist-${{ steps.cache.outputs.src_hash }}.tar.gz"
+          FORCE_BUILD="${{ github.event.inputs.force_build }}"
+
+          if [ "$FORCE_BUILD" = "true" ]; then
+            echo "restored=false" >> $GITHUB_OUTPUT
+            echo "🔨 Force build requested, skipping dist cache"
+          elif mc stat codeb/${{ env.MINIO_BUCKET }}/$CACHE_KEY > /dev/null 2>&1; then
+            echo "🔄 Restoring dist (소스 변경 없음)..."
+            mc cp codeb/${{ env.MINIO_BUCKET }}/$CACHE_KEY /tmp/dist.tar.gz
+            cd mcp-server && tar -xzf /tmp/dist.tar.gz 2>/dev/null || true
+            rm -f /tmp/dist.tar.gz
+            echo "restored=true" >> $GITHUB_OUTPUT
+            echo "✅ dist restored (빌드 스킵!)"
+          else
+            echo "restored=false" >> $GITHUB_OUTPUT
+            echo "⚠️ No dist cache (소스 변경됨, 빌드 필요)"
           fi
 
       # ============================================
-      # Build (with cache optimization)
+      # 조건부 빌드 (소스 변경 시에만)
       # ============================================
       - name: Setup Node.js
+        if: steps.restore_dist.outputs.restored != 'true'
         uses: actions/setup-node@v4
         with:
           node-version: ${{ env.NODE_VERSION }}
 
-      - name: Build TypeScript (with cache)
+      - name: Install dependencies
+        if: steps.restore_modules.outputs.restored != 'true'
         run: |
           cd mcp-server
-          # Use cached node_modules if available
-          if [ -d "node_modules" ] && [ -f "node_modules/.package-lock.json" ]; then
-            echo "✅ Using cached node_modules"
-            npm ci --prefer-offline || npm ci
-          else
+          echo "📦 Installing dependencies..."
+          npm ci
+          echo "✅ Dependencies installed"
+
+      - name: Build TypeScript
+        if: steps.restore_dist.outputs.restored != 'true'
+        run: |
+          cd mcp-server
+          # node_modules 캐시 복원된 경우에도 npm ci 필요할 수 있음
+          if [ ! -d "node_modules" ]; then
             npm ci
           fi
+          echo "🔨 Building TypeScript..."
           npm run build
-          echo "✅ TypeScript build complete"
+          echo "✅ Build complete"
           ls -la dist/
 
       # ============================================
-      # Save Cache to Minio
+      # 캐시 저장 (변경된 것만)
       # ============================================
-      - name: Save npm cache to Minio
-        if: always()
-        run: |
-          CACHE_KEY="codeb-api/npm-${{ steps.cache.outputs.npm_hash }}.tar.gz"
-          if [ -d ~/.npm ]; then
-            echo "💾 Saving npm cache..."
-            tar -czf /tmp/npm-cache.tar.gz -C ~ .npm
-            mc cp /tmp/npm-cache.tar.gz codeb/${{ env.MINIO_BUCKET }}/$CACHE_KEY 2>/dev/null || true
-            rm -f /tmp/npm-cache.tar.gz
-            echo "✅ npm cache saved"
-          fi
-
       - name: Save node_modules to Minio
-        if: always()
+        if: steps.restore_modules.outputs.restored != 'true'
         run: |
           cd mcp-server
           CACHE_KEY="codeb-api/node-modules-${{ steps.cache.outputs.npm_hash }}.tar.gz"
           if [ -d "node_modules" ]; then
-            echo "💾 Saving node_modules cache..."
+            echo "💾 Saving node_modules..."
             tar -czf /tmp/node-modules.tar.gz node_modules
-            mc cp /tmp/node-modules.tar.gz codeb/${{ env.MINIO_BUCKET }}/$CACHE_KEY 2>/dev/null || true
+            mc cp /tmp/node-modules.tar.gz codeb/${{ env.MINIO_BUCKET }}/$CACHE_KEY
             rm -f /tmp/node-modules.tar.gz
             echo "✅ node_modules saved"
           fi
 
-      # ============================================
-      # Deploy Container
-      # ============================================
-      - name: Stop legacy node service (if any)
+      - name: Save dist to Minio
+        if: steps.restore_dist.outputs.restored != 'true'
         run: |
-          if sudo systemctl is-active codeb-mcp-api.service 2>/dev/null; then
-            echo "⚠️ Stopping legacy node service..."
-            sudo systemctl stop codeb-mcp-api.service
-            sudo systemctl disable codeb-mcp-api.service
+          cd mcp-server
+          CACHE_KEY="codeb-api/dist-${{ steps.cache.outputs.src_hash }}.tar.gz"
+          if [ -d "dist" ]; then
+            echo "💾 Saving dist..."
+            tar -czf /tmp/dist.tar.gz dist
+            mc cp /tmp/dist.tar.gz codeb/${{ env.MINIO_BUCKET }}/$CACHE_KEY
+            rm -f /tmp/dist.tar.gz
+            echo "✅ dist saved"
           fi
 
-      - name: Stop existing container
+      # ============================================
+      # Docker 이미지 빌드 & 배포
+      # ============================================
+      - name: Check if image exists
+        id: image_check
         run: |
-          docker stop codeb-mcp-api || true
-          docker rm codeb-mcp-api || true
+          VERSION="${{ steps.version.outputs.version }}"
+          if docker manifest inspect ${{ env.REGISTRY }}/${{ env.IMAGE_NAME }}:$VERSION > /dev/null 2>&1; then
+            echo "exists=true" >> $GITHUB_OUTPUT
+            echo "✅ Image $VERSION already exists"
+          else
+            echo "exists=false" >> $GITHUB_OUTPUT
+            echo "⚠️ Image $VERSION not found, will build"
+          fi
 
       - name: Prepare production dependencies
+        if: steps.image_check.outputs.exists != 'true'
         run: |
           cd mcp-server
           rm -rf node_modules
@@ -170,20 +195,19 @@ jobs:
           echo "✅ Production dependencies ready"
 
       - name: Login to GHCR
+        if: steps.image_check.outputs.exists != 'true'
         run: |
           echo "${{ secrets.GITHUB_TOKEN }}" | docker login ghcr.io -u ${{ github.actor }} --password-stdin
 
-      - name: Copy VERSION file to mcp-server
-        run: |
-          cp VERSION mcp-server/VERSION
-          echo "✅ VERSION file copied to mcp-server/"
+      - name: Copy VERSION file
+        run: cp VERSION mcp-server/VERSION
 
-      - name: Build minimal Docker image
+      - name: Build & Push Docker image
+        if: steps.image_check.outputs.exists != 'true'
         run: |
           VERSION="${{ steps.version.outputs.version }}"
           cd mcp-server
 
-          # Create minimal Dockerfile for pre-built code
           cat > Dockerfile.prod <<'DOCKERFILE'
           FROM node:20-alpine
           RUN addgroup -g 1001 -S nodejs && adduser -S codeb -u 1001 -G nodejs
@@ -205,23 +229,33 @@ jobs:
             -t ${{ env.REGISTRY }}/${{ env.IMAGE_NAME }}:latest \
             -f Dockerfile.prod .
 
-          rm Dockerfile.prod
-
-      - name: Push image
-        run: |
-          VERSION="${{ steps.version.outputs.version }}"
           docker push ${{ env.REGISTRY }}/${{ env.IMAGE_NAME }}:$VERSION
           docker push ${{ env.REGISTRY }}/${{ env.IMAGE_NAME }}:latest
+          rm Dockerfile.prod
+          echo "✅ Image pushed"
 
-      - name: Deploy CodeB API
+      # ============================================
+      # 배포
+      # ============================================
+      - name: Deploy container
         run: |
           VERSION="${{ steps.version.outputs.version }}"
-          echo "🚀 Deploying CodeB API v$VERSION..."
 
-          # Load DB credentials
-          source /opt/codeb/mcp-server/.env 2>/dev/null || true
+          # 현재 버전 확인
+          CURRENT=$(curl -sf http://localhost:9101/health 2>/dev/null | jq -r '.version' || echo "none")
 
-          # Run container with host network (Docker)
+          if [ "$CURRENT" = "$VERSION" ]; then
+            echo "✅ Already running v$VERSION, skipping deploy"
+            exit 0
+          fi
+
+          echo "🚀 Deploying v$VERSION (current: $CURRENT)..."
+
+          # 기존 컨테이너 중지
+          docker stop codeb-mcp-api 2>/dev/null || true
+          docker rm codeb-mcp-api 2>/dev/null || true
+
+          # 새 컨테이너 실행
           docker run -d \
             --name codeb-mcp-api \
             --restart always \
@@ -236,25 +270,35 @@ jobs:
             -v /opt/codeb/ssh:/app/ssh:ro \
             ${{ env.REGISTRY }}/${{ env.IMAGE_NAME }}:$VERSION
 
-          # Health check
+      - name: Health check
+        run: |
           echo "⏳ Waiting for health check..."
           sleep 5
 
           for i in 1 2 3 4 5; do
-            if curl -sf http://localhost:9101/health; then
-              echo ""
-              echo "✅ Health check passed!"
-              break
+            HEALTH=$(curl -sf http://localhost:9101/health 2>/dev/null)
+            if [ -n "$HEALTH" ]; then
+              VERSION=$(echo "$HEALTH" | jq -r '.version')
+              echo "✅ Health check passed! Version: $VERSION"
+              exit 0
             fi
             echo "Retry $i/5..."
             sleep 2
           done
 
-          # Verify version
-          DEPLOYED_VERSION=$(curl -sf http://localhost:9101/health | jq -r '.version')
-          echo "✅ Deployed version: $DEPLOYED_VERSION"
+          echo "❌ Health check failed"
+          exit 1
 
-      - name: Verify external access
+      - name: Summary
         run: |
-          sleep 3
-          curl -sf https://api.codeb.kr/health && echo "✅ External access OK" || echo "⚠️ External access check failed"
+          echo ""
+          echo "═══════════════════════════════════════════════════════════"
+          echo "📊 Build Summary"
+          echo "═══════════════════════════════════════════════════════════"
+          echo "Version:     ${{ steps.version.outputs.version }}"
+          echo "NPM Hash:    ${{ steps.cache.outputs.npm_hash }}"
+          echo "SRC Hash:    ${{ steps.cache.outputs.src_hash }}"
+          echo "node_modules: ${{ steps.restore_modules.outputs.restored == 'true' && 'CACHED ✅' || 'INSTALLED 📦' }}"
+          echo "dist:         ${{ steps.restore_dist.outputs.restored == 'true' && 'CACHED ✅ (빌드 스킵!)' || 'BUILT 🔨' }}"
+          echo "Docker:       ${{ steps.image_check.outputs.exists == 'true' && 'CACHED ✅' || 'BUILT 🐳' }}"
+          echo "═══════════════════════════════════════════════════════════"

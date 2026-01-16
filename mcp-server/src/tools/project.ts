@@ -1,7 +1,10 @@
 /**
- * CodeB v7.0 - Project Init/Scan Tool
+ * CodeB v7.0.58 - Project Init/Scan Tool (DB-Primary)
  *
- * Docker 기반 배포 (v7.0.30+)
+ * v7.0.58 Changes:
+ * - DB-Primary: PostgreSQL이 주 데이터 소스
+ * - ProjectRepo, SlotRepo 사용
+ * - 파일 기반 백업 (secondary)
  *
  * /we:quick 명령어에서 내부적으로 호출됨:
  * - workflow_init (project_init): 프로젝트 초기화
@@ -10,18 +13,19 @@
  * 프로젝트 초기화 (서버별 리소스 생성):
  *
  * App Server (158.247.203.55):
- * 1. SSOT 등록 (프로젝트, 포트, DB, Redis 정보)
- * 2. 포트 할당 (SSOT와 동기화)
- * 3. ENV 파일 생성 + 백업
- * 4. Caddy 도메인 설정
+ * 1. DB에 프로젝트 등록 (SSOT)
+ * 2. DB에서 포트 할당
+ * 3. DB에 슬롯 레지스트리 생성
+ * 4. ENV 파일 생성 + 백업
+ * 5. Caddy 도메인 설정
  *
  * Storage Server (64.176.226.119):
- * 5. PostgreSQL DB/User 생성
- * 6. Redis DB 번호 할당
+ * 6. PostgreSQL DB/User 생성
+ * 7. Redis DB 번호 할당
  *
  * 로컬 (반환값으로 제공):
- * 7. GitHub Actions workflow 템플릿
- * 8. Dockerfile 템플릿
+ * 8. GitHub Actions workflow 템플릿
+ * 9. Dockerfile 템플릿
  */
 
 import { z } from 'zod';
@@ -29,6 +33,9 @@ import { randomBytes } from 'crypto';
 import type { AuthContext } from '../lib/types.js';
 import { withSSH } from '../lib/ssh.js';
 import { SERVERS, getSlotPorts } from '../lib/servers.js';
+import { ProjectRepo, SlotRepo } from '../lib/database.js';
+import { initializeSlots, getAvailablePort } from './slot.js';
+import { logger } from '../lib/logger.js';
 
 // ============================================================================
 // Input Schema
@@ -93,11 +100,16 @@ interface WorkflowScanResult {
     blue: number;
     green: number;
   };
+  slotStatus?: {
+    activeSlot: string;
+    blueState: string;
+    greenState: string;
+  };
   issues: string[];
 }
 
 // ============================================================================
-// Workflow Init
+// Workflow Init (DB-Primary)
 // ============================================================================
 
 async function executeWorkflowInit(
@@ -115,41 +127,34 @@ async function executeWorkflowInit(
 
   try {
     // ============================================================
-    // Phase 1: App Server (SSOT, 포트, 슬롯 레지스트리)
+    // Step 1: 기존 프로젝트 체크 (DB)
     // ============================================================
-    await withSSH(SERVERS.app.ip, async (appSSH) => {
-      // 1. 프로젝트 디렉토리 생성
-      const projectDir = `/opt/codeb/projects/${projectName}`;
-      await appSSH.exec(`mkdir -p ${projectDir}`);
-      await appSSH.exec(`mkdir -p /opt/codeb/env/${projectName}`);
-      await appSSH.exec(`mkdir -p /opt/codeb/env-backup/${projectName}`);
-
-      // 2. 포트 할당 및 Registry 등록
-      const registryDir = '/opt/codeb/registry/slots';
-      await appSSH.exec(`mkdir -p ${registryDir}`);
-
-      const basePort = await allocatePort(appSSH, projectName);
-      ports = getSlotPorts(basePort);
-
-      const registry = {
+    const existingProject = await ProjectRepo.findByName(projectName);
+    if (existingProject) {
+      logger.warn('Project already exists', { projectName });
+      return {
+        success: false,
         projectName,
-        teamId: auth.teamId,
-        environment: 'production',
-        activeSlot: 'blue',
-        blue: { name: 'blue', state: 'empty', port: ports.blue },
-        green: { name: 'green', state: 'empty', port: ports.green },
-        lastUpdated: new Date().toISOString(),
+        files: [],
+        ports: { blue: 0, green: 0 },
+        domain,
+        registryPath: '',
+        githubActionsWorkflow: '',
+        dockerfile: '',
+        instructions: [],
+        error: `Project ${projectName} already exists. Use /we:deploy to deploy.`,
       };
-
-      await appSSH.writeFile(
-        `${registryDir}/${projectName}-production.json`,
-        JSON.stringify(registry, null, 2)
-      );
-      files.push(`${registryDir}/${projectName}-production.json`);
-    });
+    }
 
     // ============================================================
-    // Phase 2: Storage Server (PostgreSQL, Redis)
+    // Step 2: DB에서 포트 할당
+    // ============================================================
+    const basePort = await getAvailablePort('production');
+    ports = getSlotPorts(basePort);
+    logger.info('Ports allocated from DB', { projectName, ports });
+
+    // ============================================================
+    // Step 3: Storage Server (PostgreSQL, Redis)
     // ============================================================
     await withSSH(SERVERS.storage.ip, async (storageSSH) => {
       const dbPassword = generatePassword();
@@ -173,9 +178,8 @@ async function executeWorkflowInit(
         };
       }
 
-      // Redis DB 번호 할당 (SSOT에서 관리)
+      // Redis DB 번호 할당
       if (needsRedis) {
-        // Redis DB 번호는 SSOT에서 자동 할당 (0-15)
         const redisDb = await allocateRedisDb(storageSSH, projectName);
         redisInfo = {
           db: redisDb,
@@ -187,9 +191,38 @@ async function executeWorkflowInit(
     });
 
     // ============================================================
-    // Phase 3: App Server (ENV 생성, SSOT 업데이트, Caddy 도메인)
+    // Step 4: DB에 프로젝트 등록 (SSOT)
+    // ============================================================
+    await ProjectRepo.create({
+      name: projectName,
+      teamId: auth.teamId,
+      type,
+      databaseName: dbInfo?.name,
+      databasePort: dbInfo ? SERVERS.storage.ports.postgresql : undefined,
+      redisDb: redisInfo?.db,
+      redisPort: redisInfo ? SERVERS.storage.ports.redis : undefined,
+    });
+    logger.info('Project registered in database', { projectName });
+
+    // ============================================================
+    // Step 5: DB에 슬롯 레지스트리 생성
+    // ============================================================
+    await initializeSlots(projectName, 'production', basePort, auth.teamId);
+    logger.info('Slot registry initialized', { projectName });
+
+    // ============================================================
+    // Step 6: App Server (디렉토리, ENV, Caddy)
     // ============================================================
     await withSSH(SERVERS.app.ip, async (appSSH) => {
+      // 프로젝트 디렉토리 생성
+      const projectDir = `/opt/codeb/projects/${projectName}`;
+      await appSSH.exec(`mkdir -p ${projectDir}`);
+      await appSSH.exec(`mkdir -p /opt/codeb/env/${projectName}`);
+      await appSSH.exec(`mkdir -p /opt/codeb/env-backup/${projectName}`);
+
+      // 슬롯 레지스트리 디렉토리 (파일 백업용)
+      await appSSH.exec(`mkdir -p /opt/codeb/registry/slots`);
+
       // ENV 파일 생성
       const envContent = generateEnvWithCredentials({
         projectName,
@@ -205,31 +238,6 @@ async function executeWorkflowInit(
       // ENV 백업
       const backupPath = `/opt/codeb/env-backup/${projectName}/.env.${Date.now()}`;
       await appSSH.exec(`cp ${envPath} ${backupPath}`);
-
-      // SSOT 업데이트
-      const ssotPath = '/opt/codeb/registry/ssot.json';
-      let ssot: any = { version: '7.0', projects: {}, ports: { used: [] }, redis: { used: [] } };
-
-      try {
-        const ssotContent = await appSSH.readFile(ssotPath);
-        ssot = JSON.parse(ssotContent);
-      } catch {
-        // 파일 없으면 새로 생성
-      }
-
-      ssot.projects[projectName] = {
-        teamId: auth.teamId,
-        type,
-        ports: { blue: ports.blue, green: ports.green },
-        database: dbInfo ? { name: dbInfo.name, user: dbInfo.user } : null,
-        redis: redisInfo ? { db: redisInfo.db } : null,
-        domain,
-        createdAt: new Date().toISOString(),
-        createdBy: auth.keyId,
-      };
-
-      await appSSH.writeFile(ssotPath, JSON.stringify(ssot, null, 2));
-      files.push(ssotPath);
 
       // Caddy 도메인 설정
       const caddySnippet = `
@@ -258,20 +266,19 @@ ${domain} {
       }
 
       // SSL 인증서 발급 대기 (최대 30초)
-      // Caddy가 자동으로 Let's Encrypt 인증서를 발급함
       for (let i = 0; i < 10; i++) {
-        await new Promise(resolve => setTimeout(resolve, 3000)); // 3초 대기
+        await new Promise(resolve => setTimeout(resolve, 3000));
         const certCheck = await appSSH.exec(
           `curl -sI https://${domain} --connect-timeout 5 2>&1 | head -1 || echo "pending"`
         );
         if (certCheck.stdout.includes('HTTP/') || certCheck.stdout.includes('200')) {
-          break; // 인증서 발급 완료
+          break;
         }
       }
     });
 
     // ============================================================
-    // Phase 4: 결과 반환
+    // Step 7: 결과 반환
     // ============================================================
     const githubActionsWorkflow = generateGitHubActionsWorkflow({ projectName, type });
     const dockerfile = generateDockerfile(type);
@@ -297,6 +304,8 @@ ${domain} {
       `   we promote ${projectName}  # → 트래픽 전환`,
     ].filter(Boolean);
 
+    logger.info('Workflow init completed', { projectName, domain, ports });
+
     return {
       success: true,
       projectName,
@@ -305,12 +314,17 @@ ${domain} {
       database: dbInfo,
       redis: redisInfo,
       domain,
-      registryPath: `/opt/codeb/registry/slots/${projectName}-production.json`,
+      registryPath: `DB: projects/${projectName}`,
       githubActionsWorkflow,
       dockerfile,
       instructions,
     };
   } catch (error) {
+    logger.error('Workflow init failed', {
+      projectName,
+      error: error instanceof Error ? error.message : String(error),
+    });
+
     return {
       success: false,
       projectName,
@@ -327,37 +341,50 @@ ${domain} {
 }
 
 // ============================================================================
-// Workflow Scan
+// Workflow Scan (DB-Primary)
 // ============================================================================
 
 async function executeWorkflowScan(
   input: z.infer<typeof projectScanInputSchema>,
-  auth: AuthContext
+  _auth: AuthContext
 ): Promise<WorkflowScanResult> {
   const { projectName } = input;
 
-  return withSSH(SERVERS.app.ip, async (ssh) => {
-    const issues: string[] = [];
-    let ports: WorkflowScanResult['ports'] = { blue: 0, green: 0 };
+  const issues: string[] = [];
+  let ports: WorkflowScanResult['ports'] = { blue: 0, green: 0 };
+  let slotStatus: WorkflowScanResult['slotStatus'];
 
-    try {
+  try {
+    // ============================================================
+    // Step 1: DB에서 프로젝트 조회
+    // ============================================================
+    const project = await ProjectRepo.findByName(projectName);
+    const registered = !!project;
+
+    if (!registered) {
+      issues.push('프로젝트가 DB에 등록되지 않음. /we:quick 실행 필요');
+    }
+
+    // ============================================================
+    // Step 2: DB에서 슬롯 조회
+    // ============================================================
+    const slots = await SlotRepo.findByProject(projectName, 'production');
+    if (slots) {
+      ports = { blue: slots.blue.port, green: slots.green.port };
+      slotStatus = {
+        activeSlot: slots.activeSlot,
+        blueState: slots.blue.state,
+        greenState: slots.green.state,
+      };
+    } else if (registered) {
+      issues.push('슬롯 레지스트리가 없음');
+    }
+
+    // ============================================================
+    // Step 3: App Server에서 상태 확인
+    // ============================================================
+    const serverStatus = await withSSH(SERVERS.app.ip, async (ssh) => {
       const projectDir = `/opt/codeb/projects/${projectName}`;
-      const registryDir = '/opt/codeb/registry/slots';
-
-      // Registry 확인 (Production Only)
-      let registered = false;
-      try {
-        const prodReg = await ssh.readFile(`${registryDir}/${projectName}-production.json`);
-        const prodData = JSON.parse(prodReg);
-        ports = { blue: prodData.blue.port, green: prodData.green.port };
-        registered = true;
-      } catch {
-        // production 없음
-      }
-
-      if (!registered) {
-        issues.push('프로젝트가 Registry에 등록되지 않음. /we:quick 실행 필요');
-      }
 
       // Dockerfile 확인
       let hasDockerfile = false;
@@ -365,7 +392,7 @@ async function executeWorkflowScan(
         await ssh.exec(`test -f ${projectDir}/Dockerfile`);
         hasDockerfile = true;
       } catch {
-        issues.push('Dockerfile이 없음');
+        // no dockerfile
       }
 
       // Docker 컨테이너 확인
@@ -376,47 +403,58 @@ async function executeWorkflowScan(
       } catch {
         // no docker containers
       }
-      if (!hasDockerContainer) {
-        issues.push('Docker 컨테이너가 없음 (첫 배포 필요)');
-      }
-
-      // GitHub Actions 확인 (로컬에서 확인해야 함 - 여기선 skip)
-      const hasGitHubActions = false; // 서버에서 확인 불가
 
       // ENV 확인
       let hasEnv = false;
       try {
-        await ssh.exec(`test -f ${projectDir}/.env`);
+        await ssh.exec(`test -f /opt/codeb/env/${projectName}/.env`);
         hasEnv = true;
       } catch {
-        issues.push('ENV 파일이 없음');
+        // no env
       }
 
-      return {
-        success: true,
-        projectName,
-        registered,
-        hasDockerfile,
-        hasDockerContainer,
-        hasGitHubActions,
-        hasEnv,
-        ports,
-        issues,
-      };
-    } catch (error) {
-      return {
-        success: false,
-        projectName,
-        registered: false,
-        hasDockerfile: false,
-        hasDockerContainer: false,
-        hasGitHubActions: false,
-        hasEnv: false,
-        ports,
-        issues: [error instanceof Error ? error.message : String(error)],
-      };
+      return { hasDockerfile, hasDockerContainer, hasEnv };
+    });
+
+    if (!serverStatus.hasDockerContainer) {
+      issues.push('Docker 컨테이너가 없음 (첫 배포 필요)');
     }
-  });
+    if (!serverStatus.hasEnv) {
+      issues.push('ENV 파일이 없음');
+    }
+
+    logger.debug('Workflow scan completed', { projectName, registered, issues });
+
+    return {
+      success: true,
+      projectName,
+      registered,
+      hasDockerfile: serverStatus.hasDockerfile,
+      hasDockerContainer: serverStatus.hasDockerContainer,
+      hasGitHubActions: false, // 서버에서 확인 불가
+      hasEnv: serverStatus.hasEnv,
+      ports,
+      slotStatus,
+      issues,
+    };
+  } catch (error) {
+    logger.error('Workflow scan failed', {
+      projectName,
+      error: error instanceof Error ? error.message : String(error),
+    });
+
+    return {
+      success: false,
+      projectName,
+      registered: false,
+      hasDockerfile: false,
+      hasDockerContainer: false,
+      hasGitHubActions: false,
+      hasEnv: false,
+      ports,
+      issues: [error instanceof Error ? error.message : String(error)],
+    };
+  }
 }
 
 // ============================================================================
@@ -465,7 +503,7 @@ function generateEnvWithCredentials(params: {
 }): string {
   const { projectName, database, redis, domain } = params;
 
-  let content = `# CodeB v7.0 - Environment Variables
+  let content = `# CodeB v7.0.58 - Environment Variables
 # Project: ${projectName}
 # Domain: ${domain}
 # Generated: ${new Date().toISOString()}
@@ -496,42 +534,6 @@ NEXT_PUBLIC_WS_URL=wss://${SERVERS.streaming.domain}/connection/websocket
   return content;
 }
 
-async function allocatePort(ssh: any, projectName: string): Promise<number> {
-  const ssotPath = '/opt/codeb/registry/ssot.json';
-  let ssot: any = { version: '7.0', projects: {}, ports: { allocated: {}, reserved: [] } };
-
-  try {
-    const content = await ssh.readFile(ssotPath);
-    ssot = JSON.parse(content);
-  } catch {
-    // 파일 없으면 새로 생성
-  }
-
-  // SSOT 구조 보장
-  if (!ssot.ports) ssot.ports = { allocated: {}, reserved: [] };
-  if (!ssot.ports.allocated) ssot.ports.allocated = {};
-
-  // 포트 범위 (Production Only): 4100-4998 (짝수=blue, 홀수=green)
-  const baseRange = 4100;
-  const maxRange = 4998;
-
-  // allocated 객체에서 사용 중인 포트 추출
-  const usedPorts = new Set(Object.keys(ssot.ports.allocated).map(Number));
-
-  // 사용 가능한 첫 번째 짝수 포트 찾기 (blue용, green은 +1)
-  for (let port = baseRange; port < maxRange; port += 2) {
-    if (!usedPorts.has(port) && !usedPorts.has(port + 1)) {
-      // 포트 예약 (allocated 객체 형식)
-      ssot.ports.allocated[port] = { project: projectName, slot: 'blue' };
-      ssot.ports.allocated[port + 1] = { project: projectName, slot: 'green' };
-      await ssh.writeFile(ssotPath, JSON.stringify(ssot, null, 2));
-      return port;
-    }
-  }
-
-  throw new Error('No available ports in production range (4100-4998)');
-}
-
 function generateGitHubActionsWorkflow(params: {
   projectName: string;
   type: string;
@@ -549,7 +551,7 @@ function generateGitHubActionsWorkflow(params: {
 
   const config = buildConfigs[type] || buildConfigs.nextjs;
 
-  return `# CodeB v7.0 - Blue-Green Deployment Workflow (Production Only)
+  return `# CodeB v7.0.58 - Blue-Green Deployment Workflow (Production Only)
 # Generated: ${new Date().toISOString()}
 #
 # Blue-Green 배포: Staging 없이 Production에서 Blue/Green 슬롯으로 무중단 배포
@@ -611,7 +613,7 @@ jobs:
 
       - name: Build and push Docker image
         run: |
-          docker build --build-arg NPM_TOKEN=\${{ secrets.GHCR_PAT }} \
+          docker build --build-arg NPM_TOKEN=\${{ secrets.GHCR_PAT }} \\
             -t \${{ env.REGISTRY }}/\${{ env.IMAGE_NAME }}:\${{ github.sha }} .
           docker push \${{ env.REGISTRY }}/\${{ env.IMAGE_NAME }}:\${{ github.sha }}
           docker tag \${{ env.REGISTRY }}/\${{ env.IMAGE_NAME }}:\${{ github.sha }} \${{ env.REGISTRY }}/\${{ env.IMAGE_NAME }}:latest
@@ -667,7 +669,7 @@ jobs:
 
 function generateDockerfile(type: string): string {
   const templates: Record<string, string> = {
-    nextjs: `# CodeB v7.0 - Next.js Dockerfile
+    nextjs: `# CodeB v7.0.58 - Next.js Dockerfile
 FROM node:20-alpine AS base
 
 # Install dependencies only when needed
@@ -701,7 +703,7 @@ USER nextjs
 EXPOSE 3000
 CMD ["node", "server.js"]
 `,
-    remix: `# CodeB v7.0 - Remix Dockerfile
+    remix: `# CodeB v7.0.58 - Remix Dockerfile
 FROM node:20-alpine AS base
 
 FROM base AS deps
@@ -728,7 +730,7 @@ COPY package*.json ./
 EXPOSE 3000
 CMD ["npm", "start"]
 `,
-    nodejs: `# CodeB v7.0 - Node.js Dockerfile
+    nodejs: `# CodeB v7.0.58 - Node.js Dockerfile
 FROM node:20-alpine
 
 WORKDIR /app
@@ -743,7 +745,7 @@ COPY . .
 EXPOSE 3000
 CMD ["node", "index.js"]
 `,
-    python: `# CodeB v7.0 - Python Dockerfile
+    python: `# CodeB v7.0.58 - Python Dockerfile
 FROM python:3.11-slim
 
 WORKDIR /app
@@ -759,7 +761,7 @@ COPY . .
 EXPOSE 3000
 CMD ["python", "app.py"]
 `,
-    go: `# CodeB v7.0 - Go Dockerfile
+    go: `# CodeB v7.0.58 - Go Dockerfile
 FROM golang:1.21-alpine AS builder
 
 WORKDIR /app
@@ -788,7 +790,7 @@ CMD ["./app"]
 
 export const projectInitTool = {
   name: 'workflow_init',
-  description: 'Initialize project with Registry, Docker, ENV templates',
+  description: 'Initialize project with Registry, Docker, ENV templates (DB-based)',
 
   async execute(
     params: z.infer<typeof projectInitInputSchema>,
@@ -801,7 +803,7 @@ export const projectInitTool = {
 
 export const projectScanTool = {
   name: 'workflow_scan',
-  description: 'Scan project for workflow configuration status',
+  description: 'Scan project for workflow configuration status (DB-based)',
 
   async execute(
     params: z.infer<typeof projectScanInputSchema>,

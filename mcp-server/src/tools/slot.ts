@@ -1,10 +1,15 @@
 /**
- * CodeB v7.0 - Slot Registry Management (Unified)
+ * CodeB v7.0.58 - Slot Registry Management (DB-Primary)
  * Blue-Green slot state management with Team-based access
  *
+ * v7.0.58 Changes:
+ * - DB-Primary: PostgreSQL이 주 데이터 소스
+ * - File-Secondary: 서버 파일은 백업/캐시 용도
+ * - 전체 슬롯 목록을 DB에서 효율적으로 조회
+ *
  * Features:
- * - 파일 기반 slot registry (SSH)
- * - PostgreSQL DB 자동 동기화
+ * - PostgreSQL DB 기반 slot registry (primary)
+ * - 파일 기반 백업 (secondary)
  * - Docker 기반 배포 (v7.0.30+)
  */
 
@@ -12,6 +17,7 @@ import { z } from 'zod';
 import type {
   ProjectSlots,
   SlotName,
+  SlotState,
   Environment,
   AuthContext,
 } from '../lib/types.js';
@@ -25,6 +31,7 @@ import { logger } from '../lib/logger.js';
 // ============================================================================
 
 const REGISTRY_BASE = '/opt/codeb/registry/slots';
+const GRACE_PERIOD_HOURS = 48;
 
 function getSlotFilePath(projectName: string, environment: string): string {
   return `${REGISTRY_BASE}/${projectName}-${environment}.json`;
@@ -46,27 +53,57 @@ export const slotCleanupInputSchema = z.object({
 });
 
 // ============================================================================
-// Get Slot Registry
+// Get Slot Registry (DB-Primary)
 // ============================================================================
 
 export async function getSlotRegistry(
   projectName: string,
   environment: Environment
 ): Promise<ProjectSlots> {
+  // 1. DB에서 먼저 조회 (Primary)
+  try {
+    const slots = await SlotRepo.findByProject(projectName, environment);
+    if (slots) {
+      logger.debug('Slot registry loaded from database', { projectName, environment });
+      return slots;
+    }
+  } catch (error) {
+    logger.warn('Failed to load slot registry from database, falling back to file', {
+      projectName,
+      environment,
+      error: error instanceof Error ? error.message : String(error),
+    });
+  }
+
+  // 2. DB에 없으면 파일에서 조회 (Fallback)
   return withSSH(SERVERS.app.ip, async (ssh) => {
     const filePath = getSlotFilePath(projectName, environment);
     const content = await ssh.readFile(filePath);
 
     if (!content.trim()) {
-      throw new Error(`Slot registry not found for ${projectName}/${environment}`);
+      throw new Error(`Slot registry not found for ${projectName}/${environment}. Run /we:quick or /we:deploy first.`);
     }
 
-    return JSON.parse(content) as ProjectSlots;
+    const slots = JSON.parse(content) as ProjectSlots;
+
+    // 파일에서 로드했으면 DB에 동기화
+    try {
+      await SlotRepo.upsert(slots);
+      logger.info('Slot registry synced from file to database', { projectName, environment });
+    } catch (syncError) {
+      logger.warn('Failed to sync slot registry to database', {
+        projectName,
+        environment,
+        error: syncError instanceof Error ? syncError.message : String(syncError),
+      });
+    }
+
+    return slots;
   });
 }
 
 // ============================================================================
-// Update Slot Registry (File + DB Sync)
+// Update Slot Registry (DB-Primary, File-Secondary)
 // ============================================================================
 
 export async function updateSlotRegistry(
@@ -74,29 +111,78 @@ export async function updateSlotRegistry(
   environment: Environment,
   slots: ProjectSlots
 ): Promise<void> {
-  // 1. Update file-based registry (primary source)
-  await withSSH(SERVERS.app.ip, async (ssh) => {
-    const filePath = getSlotFilePath(projectName, environment);
+  // 업데이트 시간 갱신
+  slots.lastUpdated = new Date().toISOString();
 
-    // Ensure directory exists
-    await ssh.mkdir(REGISTRY_BASE);
-
-    // Write slot registry with proper formatting
-    await ssh.writeFile(filePath, JSON.stringify(slots, null, 2));
-  });
-
-  // 2. Sync to PostgreSQL database (secondary/query source)
+  // 1. DB 업데이트 (Primary)
   try {
     await SlotRepo.upsert(slots);
-    logger.debug('Slot registry synced to database', { projectName, environment });
+    logger.debug('Slot registry updated in database', { projectName, environment });
   } catch (error) {
-    // Log but don't fail - file is the primary source
-    logger.warn('Failed to sync slot registry to database', {
+    logger.error('Failed to update slot registry in database', {
+      projectName,
+      environment,
+      error: error instanceof Error ? error.message : String(error),
+    });
+    throw error; // DB 실패 시 전체 실패
+  }
+
+  // 2. 파일 백업 (Secondary)
+  try {
+    await withSSH(SERVERS.app.ip, async (ssh) => {
+      const filePath = getSlotFilePath(projectName, environment);
+
+      // Ensure directory exists
+      await ssh.mkdir(REGISTRY_BASE);
+
+      // Write slot registry with proper formatting
+      await ssh.writeFile(filePath, JSON.stringify(slots, null, 2));
+    });
+    logger.debug('Slot registry backed up to file', { projectName, environment });
+  } catch (error) {
+    // 파일 백업 실패는 경고만 (DB가 primary이므로)
+    logger.warn('Failed to backup slot registry to file', {
       projectName,
       environment,
       error: error instanceof Error ? error.message : String(error),
     });
   }
+}
+
+// ============================================================================
+// Initialize Slots (새 프로젝트용)
+// ============================================================================
+
+export async function initializeSlots(
+  projectName: string,
+  environment: Environment,
+  basePort: number,
+  teamId?: string
+): Promise<ProjectSlots> {
+  const now = new Date().toISOString();
+
+  const slots: ProjectSlots = {
+    projectName,
+    teamId,
+    environment,
+    activeSlot: 'blue',
+    blue: {
+      name: 'blue',
+      state: 'empty',
+      port: basePort,     // Blue = even port
+    },
+    green: {
+      name: 'green',
+      state: 'empty',
+      port: basePort + 1, // Green = odd port
+    },
+    lastUpdated: now,
+  };
+
+  await updateSlotRegistry(projectName, environment, slots);
+  logger.info('Initialized slot registry', { projectName, environment, basePort });
+
+  return slots;
 }
 
 // ============================================================================
@@ -107,21 +193,24 @@ export interface SlotStatusResult {
   success: boolean;
   data?: {
     projectName: string;
+    teamId?: string;
     environment: string;
     activeSlot: SlotName;
     blue: {
-      state: string;
+      state: SlotState;
       port: number;
       version?: string;
+      image?: string;
       deployedAt?: string;
       deployedBy?: string;
       healthStatus?: string;
       graceExpiresAt?: string;
     };
     green: {
-      state: string;
+      state: SlotState;
       port: number;
       version?: string;
+      image?: string;
       deployedAt?: string;
       deployedBy?: string;
       healthStatus?: string;
@@ -151,12 +240,14 @@ export async function executeSlotStatus(
       success: true,
       data: {
         projectName: slots.projectName,
+        teamId: slots.teamId,
         environment: slots.environment,
         activeSlot: slots.activeSlot,
         blue: {
           state: slots.blue.state,
           port: slots.blue.port,
           version: slots.blue.version,
+          image: slots.blue.image,
           deployedAt: slots.blue.deployedAt,
           deployedBy: slots.blue.deployedBy,
           healthStatus: slots.blue.healthStatus,
@@ -166,6 +257,7 @@ export async function executeSlotStatus(
           state: slots.green.state,
           port: slots.green.port,
           version: slots.green.version,
+          image: slots.green.image,
           deployedAt: slots.green.deployedAt,
           deployedBy: slots.green.deployedBy,
           healthStatus: slots.green.healthStatus,
@@ -207,91 +299,143 @@ export async function executeSlotCleanup(
     };
   }
 
-  return withSSH(SERVERS.app.ip, async (ssh) => {
-    try {
-      const slots = await getSlotRegistry(projectName, environment);
+  try {
+    const slots = await getSlotRegistry(projectName, environment);
 
-      // Find slot in grace state
-      let graceSlot: SlotName | null = null;
-      if (slots.blue.state === 'grace') {
-        graceSlot = 'blue';
-      } else if (slots.green.state === 'grace') {
-        graceSlot = 'green';
-      }
+    // Find slot in grace state
+    let graceSlot: SlotName | null = null;
+    if (slots.blue.state === 'grace') {
+      graceSlot = 'blue';
+    } else if (slots.green.state === 'grace') {
+      graceSlot = 'green';
+    }
 
-      if (!graceSlot) {
+    if (!graceSlot) {
+      return {
+        success: true,
+        message: 'No slots in grace state to clean up',
+      };
+    }
+
+    const slot = slots[graceSlot];
+
+    // Check grace period
+    if (!force && slot.graceExpiresAt) {
+      const expiresAt = new Date(slot.graceExpiresAt);
+      if (expiresAt > new Date()) {
+        const remaining = Math.ceil((expiresAt.getTime() - Date.now()) / (1000 * 60 * 60));
         return {
-          success: true,
-          message: 'No slots in grace state to clean up',
+          success: false,
+          error: `Grace period not expired. ${remaining} hours remaining. Use force=true to override.`,
         };
       }
+    }
 
-      const slot = slots[graceSlot];
-
-      // Check grace period
-      if (!force && slot.graceExpiresAt) {
-        const expiresAt = new Date(slot.graceExpiresAt);
-        if (expiresAt > new Date()) {
-          const remaining = Math.ceil((expiresAt.getTime() - Date.now()) / (1000 * 60 * 60));
-          return {
-            success: false,
-            error: `Grace period not expired. ${remaining} hours remaining. Use force=true to override.`,
-          };
-        }
-      }
-
-      // Stop and remove container via Docker
+    // Stop and remove container via Docker
+    await withSSH(SERVERS.app.ip, async (ssh) => {
       const containerName = `${projectName}-${environment}-${graceSlot}`;
       await ssh.exec(`docker stop ${containerName} 2>/dev/null || true`);
       await ssh.exec(`docker rm ${containerName} 2>/dev/null || true`);
+    });
 
-      // Update slot state
-      slots[graceSlot] = {
-        ...slot,
-        state: 'empty',
-        version: undefined,
-        image: undefined,
-        deployedAt: undefined,
-        deployedBy: undefined,
-        healthStatus: undefined,
-        graceExpiresAt: undefined,
-      };
-      slots.lastUpdated = new Date().toISOString();
+    // Update slot state
+    slots[graceSlot] = {
+      ...slot,
+      state: 'empty',
+      version: undefined,
+      image: undefined,
+      deployedAt: undefined,
+      deployedBy: undefined,
+      healthStatus: undefined,
+      graceExpiresAt: undefined,
+    };
 
-      await updateSlotRegistry(projectName, environment, slots);
+    await updateSlotRegistry(projectName, environment, slots);
 
-      return {
-        success: true,
-        cleanedSlot: graceSlot,
-        message: `Cleaned up ${graceSlot} slot for ${projectName}/${environment}`,
-      };
-    } catch (error) {
-      return {
-        success: false,
-        error: error instanceof Error ? error.message : String(error),
-      };
-    }
-  });
+    logger.info('Slot cleaned up', { projectName, environment, slot: graceSlot });
+
+    return {
+      success: true,
+      cleanedSlot: graceSlot,
+      message: `Cleaned up ${graceSlot} slot for ${projectName}/${environment}`,
+    };
+  } catch (error) {
+    return {
+      success: false,
+      error: error instanceof Error ? error.message : String(error),
+    };
+  }
 }
 
 // ============================================================================
-// List All Slots
+// List All Slots (DB-Based)
 // ============================================================================
 
 export interface SlotListResult {
   success: boolean;
   data?: Array<{
     projectName: string;
+    teamId?: string;
     environment: string;
     activeSlot: SlotName;
-    blueState: string;
-    greenState: string;
+    blueState: SlotState;
+    bluePort: number;
+    blueVersion?: string;
+    greenState: SlotState;
+    greenPort: number;
+    greenVersion?: string;
     lastUpdated: string;
   }>;
+  total?: number;
   error?: string;
 }
 
 export async function executeSlotList(
+  auth: AuthContext
+): Promise<SlotListResult> {
+  try {
+    // DB에서 모든 슬롯 조회
+    const allSlots = await SlotRepo.listAll();
+
+    // Filter by team access
+    const filteredSlots = allSlots.filter((slots) => {
+      if (auth.role === 'owner') return true;
+      return auth.projects.includes(slots.projectName);
+    });
+
+    const data = filteredSlots.map((slots) => ({
+      projectName: slots.projectName,
+      teamId: slots.teamId,
+      environment: slots.environment,
+      activeSlot: slots.activeSlot,
+      blueState: slots.blue.state,
+      bluePort: slots.blue.port,
+      blueVersion: slots.blue.version,
+      greenState: slots.green.state,
+      greenPort: slots.green.port,
+      greenVersion: slots.green.version,
+      lastUpdated: slots.lastUpdated,
+    }));
+
+    logger.debug('Slot list retrieved from database', { total: data.length });
+
+    return {
+      success: true,
+      data,
+      total: data.length,
+    };
+  } catch (error) {
+    logger.error('Failed to list slots from database', {
+      error: error instanceof Error ? error.message : String(error),
+    });
+
+    // Fallback to file-based listing
+    return executeSlotListFromFiles(auth);
+  }
+}
+
+// Fallback: 파일 기반 슬롯 목록 조회
+async function executeSlotListFromFiles(
   auth: AuthContext
 ): Promise<SlotListResult> {
   return withSSH(SERVERS.app.ip, async (ssh) => {
@@ -303,6 +447,7 @@ export async function executeSlotList(
         return {
           success: true,
           data: [],
+          total: 0,
         };
       }
 
@@ -320,10 +465,15 @@ export async function executeSlotList(
 
         slots.push({
           projectName: data.projectName,
+          teamId: data.teamId,
           environment: data.environment,
           activeSlot: data.activeSlot,
           blueState: data.blue.state,
+          bluePort: data.blue.port,
+          blueVersion: data.blue.version,
           greenState: data.green.state,
+          greenPort: data.green.port,
+          greenVersion: data.green.version,
           lastUpdated: data.lastUpdated,
         });
       }
@@ -331,6 +481,7 @@ export async function executeSlotList(
       return {
         success: true,
         data: slots,
+        total: slots.length,
       };
     } catch (error) {
       return {
@@ -342,12 +493,90 @@ export async function executeSlotList(
 }
 
 // ============================================================================
+// Get Available Port (DB-Based)
+// ============================================================================
+
+export async function getAvailablePort(environment: Environment): Promise<number> {
+  // Port ranges by environment
+  const portRanges: Record<Environment, { min: number; max: number }> = {
+    staging: { min: 4500, max: 4999 },
+    production: { min: 4100, max: 4499 },
+    preview: { min: 5000, max: 5499 },
+  };
+
+  const range = portRanges[environment];
+
+  // DB에서 사용 중인 포트 조회
+  const allSlots = await SlotRepo.listAll();
+  const usedPorts = new Set<number>();
+
+  for (const slots of allSlots) {
+    if (slots.environment === environment) {
+      usedPorts.add(slots.blue.port);
+      usedPorts.add(slots.green.port);
+    }
+  }
+
+  // Find available even port (blue) in range
+  for (let port = range.min; port <= range.max; port += 2) {
+    if (!usedPorts.has(port) && !usedPorts.has(port + 1)) {
+      logger.debug('Available port found', { environment, port });
+      return port;
+    }
+  }
+
+  throw new Error(`No available ports in ${environment} range (${range.min}-${range.max})`);
+}
+
+// ============================================================================
+// Update Slot State Helper
+// ============================================================================
+
+export async function updateSlotState(
+  projectName: string,
+  environment: Environment,
+  slotName: SlotName,
+  updates: Partial<{
+    state: SlotState;
+    version: string;
+    image: string;
+    deployedAt: string;
+    deployedBy: string;
+    promotedAt: string;
+    promotedBy: string;
+    rolledBackAt: string;
+    rolledBackBy: string;
+    healthStatus: 'healthy' | 'unhealthy' | 'unknown';
+    graceExpiresAt: string;
+  }>
+): Promise<ProjectSlots> {
+  const slots = await getSlotRegistry(projectName, environment);
+
+  // Update specific slot
+  slots[slotName] = {
+    ...slots[slotName],
+    ...updates,
+  };
+
+  // 만약 grace 상태로 변경되면 graceExpiresAt 설정
+  if (updates.state === 'grace' && !updates.graceExpiresAt) {
+    const graceExpires = new Date();
+    graceExpires.setHours(graceExpires.getHours() + GRACE_PERIOD_HOURS);
+    slots[slotName].graceExpiresAt = graceExpires.toISOString();
+  }
+
+  await updateSlotRegistry(projectName, environment, slots);
+
+  return slots;
+}
+
+// ============================================================================
 // Tool Definitions
 // ============================================================================
 
 export const slotStatusTool = {
   name: 'slot_status',
-  description: 'Get Blue-Green slot status for a project',
+  description: 'Get Blue-Green slot status for a project (DB-based)',
   inputSchema: slotStatusInputSchema,
 
   async execute(params: { projectName: string; environment: Environment }, auth: AuthContext) {
@@ -370,7 +599,7 @@ export const slotCleanupTool = {
 
 export const slotListTool = {
   name: 'slot_list',
-  description: 'List all slot registries (filtered by team access)',
+  description: 'List all slot registries from database (filtered by team access)',
   inputSchema: z.object({}),
 
   async execute(_params: unknown, auth: AuthContext) {

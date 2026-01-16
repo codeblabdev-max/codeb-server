@@ -16,11 +16,10 @@
 import express, { Request, Response, NextFunction } from 'express';
 import cors from 'cors';
 import helmet from 'helmet';
-import { randomBytes } from 'crypto';
 import { readFileSync } from 'fs';
 import { join, dirname } from 'path';
 import { fileURLToPath } from 'url';
-import type { AuthContext, TeamRole } from './lib/types.js';
+import type { AuthContext } from './lib/types.js';
 import { auth, checkRateLimit } from './lib/auth.js';
 import { runMigrations, AuditLogRepo, getPool, closePool } from './lib/database.js';
 import { logger, createContextualLogger, generateCorrelationId, logHttpRequest } from './lib/logger.js';
@@ -35,34 +34,17 @@ import {
 } from './lib/metrics.js';
 import { logStream, createLogEntry } from './lib/log-stream.js';
 
-// Tools - Team Management
-import {
-  teamCreateTool,
-  teamListTool,
-  teamGetTool,
-  teamDeleteTool,
-  memberInviteTool,
-  memberRemoveTool,
-  memberListTool,
-  teamSettingsTool,
-  tokenCreateTool,
-  tokenRevokeTool,
-  tokenListTool,
-} from './tools/team.js';
-
 // Tools - Blue-Green Deployment
 import { deployTool } from './tools/deploy.js';
 import { promoteTool } from './tools/promote.js';
 import { rollbackTool } from './tools/rollback.js';
-import { slotStatusTool, slotCleanupTool, slotListTool, getSlotRegistry } from './tools/slot.js';
+import { slotStatusTool, slotCleanupTool, slotListTool } from './tools/slot.js';
 
 // Tools - Domain Management
 import {
   domainSetupTool,
-  domainVerifyTool,
   domainListTool,
   domainDeleteTool,
-  sslStatusTool,
 } from './tools/domain.js';
 
 // Tools - Project (Initialization & Scan)
@@ -70,9 +52,6 @@ import {
   projectInitTool,
   projectScanTool,
 } from './tools/project.js';
-
-// Tools - Environment Variables
-import { envSyncTool, envGetTool } from './tools/env.js';
 
 // SSH for infrastructure status
 import { withSSH } from './lib/ssh.js';
@@ -253,24 +232,7 @@ const TOOLS: Record<string, {
   handler: (params: any, auth: AuthContext) => Promise<any>;
   permission: string;
 }> = {
-  // Team management
-  team_create: { handler: (p, a) => teamCreateTool.execute(p, a), permission: 'team.create' },
-  team_list: { handler: (_p, a) => teamListTool.execute(a), permission: 'team.view' },
-  team_get: { handler: (p, a) => teamGetTool.execute(p.teamId, a), permission: 'team.view' },
-  team_delete: { handler: (p, a) => teamDeleteTool.execute(p.teamId, a), permission: 'team.delete' },
-  team_settings: { handler: (p, a) => teamSettingsTool.execute(p, a), permission: 'team.settings' },
-
-  // Member management
-  member_invite: { handler: (p, a) => memberInviteTool.execute(p, a), permission: 'member.invite' },
-  member_remove: { handler: (p, a) => memberRemoveTool.execute(p, a), permission: 'member.remove' },
-  member_list: { handler: (p, a) => memberListTool.execute(p.teamId, a), permission: 'member.list' },
-
-  // Token management
-  token_create: { handler: (p, a) => tokenCreateTool.execute(p, a), permission: 'token.create' },
-  token_revoke: { handler: (p, a) => tokenRevokeTool.execute(p, a), permission: 'token.revoke.own' },
-  token_list: { handler: (p, a) => tokenListTool.execute(p.teamId, a), permission: 'token.list' },
-
-  // Blue-Green Deployment
+  // Blue-Green Deployment (핵심)
   deploy: { handler: (p, a) => deployTool.execute(p, a), permission: 'deploy.create' },
   deploy_project: { handler: (p, a) => deployTool.execute(p, a), permission: 'deploy.create' },
   promote: { handler: (p, a) => promoteTool.execute(p, a), permission: 'deploy.promote' },
@@ -284,20 +246,14 @@ const TOOLS: Record<string, {
 
   // Domain Management
   domain_setup: { handler: (p, a) => domainSetupTool.execute(p, a), permission: 'domain.manage' },
-  domain_verify: { handler: (p, a) => domainVerifyTool.execute(p, a), permission: 'domain.view' },
   domain_list: { handler: (p, a) => domainListTool.execute(p, a), permission: 'domain.view' },
   domain_delete: { handler: (p, a) => domainDeleteTool.execute(p, a), permission: 'domain.manage' },
-  ssl_status: { handler: (p, a) => sslStatusTool.execute(p, a), permission: 'domain.view' },
 
-  // Project (Initialization & Scan) - /we:quick에서 내부적으로 호출
+  // Project (Initialization & Scan) - /we:quick에서 호출
   workflow_init: { handler: (p, a) => projectInitTool.execute(p, a), permission: 'deploy.create' },
   workflow_scan: { handler: (p, a) => projectScanTool.execute(p, a), permission: 'project.view' },
 
-  // Environment Variables - Vercel 스타일 환경변수 관리
-  env_sync: { handler: (p, a) => envSyncTool.execute(p, a), permission: 'deploy.create' },
-  env_get: { handler: (p, a) => envGetTool.execute(p, a), permission: 'project.view' },
-
-  // Aliases for Commands compatibility
+  // Utility
   health_check: { handler: executeInfraStatus, permission: 'project.view' },
   scan: { handler: (p, a) => projectScanTool.execute(p, a), permission: 'project.view' },
 };
@@ -484,11 +440,9 @@ app.get('/api', (_req, res) => {
     tools: Object.keys(TOOLS),
     features: [
       'blue-green-deployment',
-      'team-management',
-      'edge-functions',
-      'analytics',
+      'slot-management',
       'domain-management',
-      'log-streaming',
+      'project-initialization',
     ],
   });
 });

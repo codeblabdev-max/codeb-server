@@ -116,6 +116,7 @@ export interface DeployInput {
   version?: string;
   image?: string;
   skipHealthcheck?: boolean;
+  skipValidation?: boolean;
 }
 
 export interface DeployResult {
