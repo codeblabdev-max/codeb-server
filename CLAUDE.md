@@ -376,17 +376,17 @@ rm -rf /var/lib/docker/*       # Docker 데이터 삭제
 ├─────────────────────────────────────────────────────────────────┤
 │                                                                 │
 │  [로컬] ──git push──→ [GitHub Actions] ──→ [Self-Hosted Runner] │
-│                              │                     │            │
-│                              │              ┌──────┴──────┐     │
-│                              │              │ Incremental │     │
-│                              │              │    Build    │     │
-│                              │              └──────┬──────┘     │
-│                              │                     │            │
-│                              ▼                     ▼            │
-│                     ┌─────────────┬─────────────┬─────────────┐ │
-│                     │ API Server  │ Docker Image│ Minio Cache │ │
-│                     │ (Docker)    │ (GHCR)      │ (dist/npm)  │ │
-│                     └─────────────┴─────────────┴─────────────┘ │
+│                                                    │            │
+│                                             ┌──────┴──────┐     │
+│                                             │ Incremental │     │
+│                                             │    Build    │     │
+│                                             └──────┬──────┘     │
+│                                                    │            │
+│                                                    ▼            │
+│                              ┌─────────────┬─────────────┐      │
+│                              │  Systemd    │ Minio Cache │      │
+│                              │  (Node.js)  │ (dist/npm)  │      │
+│                              └─────────────┴─────────────┘      │
 │                                                                 │
 └─────────────────────────────────────────────────────────────────┘
 ```
@@ -394,17 +394,13 @@ rm -rf /var/lib/docker/*       # Docker 데이터 삭제
 ### 배포 방법 (Git Push = 자동 배포)
 
 ```bash
-# 1. 코드 수정 후 커밋
-git add -A
-git commit -m "feat: 새로운 기능"
-
-# 2. 푸시하면 자동 배포
-git push origin main
+# 코드 수정 후 커밋 & 푸시
+git add -A && git commit -m "feat: 새로운 기능" && git push
 
 # GitHub Actions가 자동으로:
 # - Incremental Build (변경된 부분만)
-# - Docker 이미지 빌드 & 푸시
-# - 컨테이너 배포 & 헬스체크
+# - /opt/codeb/mcp-server에 배포
+# - systemctl restart codeb-mcp-api
 ```
 
 ### Incremental Build (v7.0.59+)
@@ -414,17 +410,17 @@ git push origin main
 │                    Incremental Build 흐름                        │
 ├─────────────────────────────────────────────────────────────────┤
 │                                                                 │
-│  1. NPM 해시 (package-lock.json)                                │
+│  1. 버전 체크                                                   │
+│     └─→ 동일 버전 실행 중이면 전체 스킵                         │
+│                                                                 │
+│  2. NPM 해시 (package-lock.json)                                │
 │     └─→ 변경 없으면 node_modules 캐시 사용                      │
 │                                                                 │
-│  2. SRC 해시 (src/**/*.ts)                                      │
+│  3. SRC 해시 (src/**/*.ts)                                      │
 │     └─→ 변경 없으면 dist/ 캐시 사용 (빌드 스킵!)               │
 │                                                                 │
-│  3. Docker 이미지 체크                                          │
-│     └─→ 버전 이미지 있으면 빌드 스킵                            │
-│                                                                 │
-│  4. 배포 체크                                                   │
-│     └─→ 동일 버전 실행 중이면 배포 스킵                         │
+│  4. Systemd 재시작                                              │
+│     └─→ systemctl restart codeb-mcp-api                        │
 │                                                                 │
 └─────────────────────────────────────────────────────────────────┘
 ```
@@ -434,9 +430,6 @@ git push origin main
 ```bash
 # 로컬에서 직접 배포 (SSH 필요)
 ./scripts/deploy-all.sh
-
-# 새 버전으로 배포
-./scripts/deploy-all.sh <NEW_VERSION>
 
 # 강제 빌드 (GitHub Actions)
 # workflow_dispatch → force_build: true
