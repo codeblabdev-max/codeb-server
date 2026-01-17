@@ -366,13 +366,13 @@ rm -rf /var/lib/docker/*       # Docker 데이터 삭제
 
 ---
 
-## CI/CD 배포 시스템
+## CI/CD 배포 시스템 (GitHub Actions)
 
 ### 아키텍처
 
 ```
 ┌─────────────────────────────────────────────────────────────────┐
-│                    CodeB CI/CD 배포 시스템                       │
+│               GitHub Actions CI/CD 배포 시스템                    │
 ├─────────────────────────────────────────────────────────────────┤
 │                                                                 │
 │  [로컬] ──git push──→ [GitHub Actions] ──→ [Self-Hosted Runner] │
@@ -383,10 +383,10 @@ rm -rf /var/lib/docker/*       # Docker 데이터 삭제
 │                                             └──────┬──────┘     │
 │                                                    │            │
 │                                                    ▼            │
-│                              ┌─────────────┬─────────────┐      │
-│                              │  Systemd    │ Minio Cache │      │
-│                              │  (Node.js)  │ (dist/npm)  │      │
-│                              └─────────────┴─────────────┘      │
+│                              ┌─────────────────────────────┐    │
+│                              │ Docker Build → GHCR Push    │    │
+│                              │ MCP API → Blue-Green Deploy │    │
+│                              └─────────────────────────────┘    │
 │                                                                 │
 └─────────────────────────────────────────────────────────────────┘
 ```
@@ -394,84 +394,63 @@ rm -rf /var/lib/docker/*       # Docker 데이터 삭제
 ### 배포 방법 (Git Push = 자동 배포)
 
 ```bash
-# 코드 수정 후 커밋 & 푸시
+# 코드 수정 후 커밋 & 푸시 (자동 배포)
 git add -A && git commit -m "feat: 새로운 기능" && git push
 
 # GitHub Actions가 자동으로:
-# - Incremental Build (변경된 부분만)
-# - /opt/codeb/mcp-server에 배포
-# - systemctl restart codeb-mcp-api
+# 1. Incremental Build (GHCR 캐시 활용)
+# 2. Docker 이미지 빌드 & GHCR 푸시
+# 3. MCP API 호출 → Blue-Green 배포
+# 4. Preview URL 반환 → promote 대기
 ```
 
-### Incremental Build (v7.0.59+)
+### Incremental Build (캐시 최적화)
 
 ```
 ┌─────────────────────────────────────────────────────────────────┐
 │                    Incremental Build 흐름                        │
 ├─────────────────────────────────────────────────────────────────┤
 │                                                                 │
-│  1. 버전 체크                                                   │
-│     └─→ 동일 버전 실행 중이면 전체 스킵                         │
+│  1. 해시 계산                                                   │
+│     └─→ NPM_HASH (package-lock.json)                           │
+│     └─→ SRC_HASH (src/**/*.ts, *.tsx, *.css)                   │
 │                                                                 │
-│  2. NPM 해시 (package-lock.json)                                │
-│     └─→ 변경 없으면 node_modules 캐시 사용                      │
+│  2. GHCR 캐시 확인                                              │
+│     └─→ cache-${NPM_HASH}-${SRC_HASH} 이미지 존재?             │
 │                                                                 │
-│  3. SRC 해시 (src/**/*.ts)                                      │
-│     └─→ 변경 없으면 dist/ 캐시 사용 (빌드 스킵!)               │
+│  3. 캐시 Hit → 빌드 스킵!                                       │
+│     └─→ 캐시된 이미지 pull & tag & push                        │
 │                                                                 │
-│  4. Systemd 재시작                                              │
-│     └─→ systemctl restart codeb-mcp-api                        │
+│  4. 캐시 Miss → 새로 빌드                                       │
+│     └─→ Docker build with --cache-from                         │
 │                                                                 │
 └─────────────────────────────────────────────────────────────────┘
 ```
 
-### 수동 배포 (필요시)
+### 워크플로우 생성
 
 ```bash
-# 로컬에서 직접 배포 (SSH 필요)
-./scripts/deploy-all.sh
+# /we:workflow 명령으로 자동 생성
+/we:workflow init <project-name>
 
-# 강제 빌드 (GitHub Actions)
-# workflow_dispatch → force_build: true
+# 생성되는 파일:
+# .github/workflows/deploy.yml (Incremental Build 포함)
 ```
 
-### 버전 확인 방법
+### 워크플로우 액션
+
+| 액션 | 트리거 | 설명 |
+|------|--------|------|
+| **deploy** | git push / workflow_dispatch | 비활성 Slot에 배포 |
+| **promote** | workflow_dispatch | 트래픽 전환 |
+| **rollback** | workflow_dispatch | 즉시 롤백 |
+
+### 강제 빌드
 
 ```bash
-# 1. 로컬 VERSION 파일
-cat VERSION
-
-# 2. API Server 버전
-curl -sf https://api.codeb.kr/health | jq '.version'
-
-# 3. CLI Package 버전
-curl -sf https://releases.codeb.kr/cli/version.json | jq '.version'
-
-# 4. SSOT Registry
-ssh root@158.247.203.55 "cat /opt/codeb/registry/versions.json"
+# GitHub Actions → workflow_dispatch → force_build: true
+# 캐시 무시하고 전체 빌드 수행
 ```
-
-### 버전 불일치 시 조치
-
-1. **API 버전 불일치**: Docker 컨테이너 재배포
-2. **CLI 버전 불일치**: Minio tarball 재업로드
-3. **Git 버전 불일치**: 커밋 & 푸시
-
-### 단일 버전 소스 (SSOT)
-
-```
-VERSION              # 루트의 VERSION 파일이 기준
-```
-
-### 동기화 대상 파일
-
-| 파일 | 용도 |
-|------|------|
-| VERSION | SSOT 기준 |
-| mcp-server/package.json | API 서버 |
-| cli/package.json | CLI 패키지 |
-| CLAUDE.md | 규칙 문서 |
-| cli/rules/CLAUDE.md | 배포용 규칙 |
 
 ---
 
@@ -495,13 +474,13 @@ curl -s https://api.codeb.kr/health | jq '.version'
 ### 프로젝트 구조
 
 ```
-codeb-server/
-├── VERSION                    # SSOT (Single Source of Truth)
-├── mcp-server/                # TypeScript MCP API Server
-├── cli/                       # we CLI
-│   └── mcp-proxy/             # MCP Proxy for Claude Code
-├── scripts/                   # 유틸리티 스크립트
-└── .github/workflows/         # CI/CD 파이프라인
+your-project/
+├── .github/
+│   └── workflows/
+│       └── deploy.yml         # GitHub Actions CI/CD
+├── src/                       # 소스코드
+├── Dockerfile                 # Docker 빌드 설정
+└── package.json
 
 .claude/
 ├── settings.local.json        # v7.0 설정 (Docker 기반)

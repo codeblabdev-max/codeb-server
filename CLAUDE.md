@@ -445,6 +445,91 @@ VERSION              # 루트의 VERSION 파일이 기준
 
 ---
 
+## 다른 프로젝트 배포 (workb, heeling 등)
+
+### GitHub Actions CI/CD 방식
+
+> **중요**: codeb-server 외의 모든 프로젝트는 GitHub Actions CI/CD를 사용합니다.
+
+```
+┌─────────────────────────────────────────────────────────────────┐
+│               일반 프로젝트 GitHub Actions CI/CD                  │
+├─────────────────────────────────────────────────────────────────┤
+│                                                                 │
+│  [로컬] ──git push──→ [GitHub Actions] ──→ [Self-Hosted Runner] │
+│                                                    │            │
+│                                             ┌──────┴──────┐     │
+│                                             │ Incremental │     │
+│                                             │    Build    │     │
+│                                             └──────┬──────┘     │
+│                                                    │            │
+│                                                    ▼            │
+│                              ┌─────────────────────────────┐    │
+│                              │ Docker Build → GHCR Push    │    │
+│                              │ MCP API → Blue-Green Deploy │    │
+│                              └─────────────────────────────┘    │
+│                                                                 │
+└─────────────────────────────────────────────────────────────────┘
+```
+
+### 배포 흐름
+
+```bash
+# 코드 수정 후 커밋 & 푸시 (자동 배포)
+git add -A && git commit -m "feat: 새로운 기능" && git push
+
+# GitHub Actions가 자동으로:
+# 1. Incremental Build (GHCR 캐시 활용)
+# 2. Docker 이미지 빌드 & GHCR 푸시
+# 3. MCP API 호출 → Blue-Green 배포
+# 4. Preview URL 반환 → promote 대기
+```
+
+### Incremental Build (캐시 최적화)
+
+```yaml
+# .github/workflows/deploy.yml 핵심 구조
+- name: Calculate cache hashes
+  run: |
+    NPM_HASH=$(sha256sum package-lock.json | head -c 16)
+    SRC_HASH=$(find src -type f | xargs cat | sha256sum | head -c 16)
+
+- name: Check cache
+  run: |
+    # GHCR에서 캐시된 이미지 확인
+    if docker manifest inspect "cache-${CACHE_KEY}" > /dev/null 2>&1; then
+      echo "cache_hit=true"  # 빌드 스킵!
+    fi
+
+- name: Use cached image (skip build)
+  if: cache_hit == 'true'
+  run: |
+    docker pull "$CACHED_IMAGE"
+    docker tag "$CACHED_IMAGE" "$IMAGE_TAG"
+    docker push "$IMAGE_TAG"
+```
+
+### 워크플로우 생성 방법
+
+```bash
+# /we:workflow 명령으로 자동 생성
+/we:workflow init myproject
+
+# 생성되는 파일:
+# .github/workflows/deploy.yml (Incremental Build 포함)
+```
+
+### 프로젝트별 배포 방식 비교
+
+| 프로젝트 | 배포 방식 | 트리거 | 캐시 |
+|----------|----------|--------|------|
+| **codeb-server** | 수동 (`deploy-all.sh`) | 직접 실행 | 없음 |
+| **workb** | GitHub Actions | git push | GHCR |
+| **heeling** | GitHub Actions | git push | GHCR |
+| **기타 프로젝트** | GitHub Actions | git push | GHCR |
+
+---
+
 ## Version
 
 버전은 `VERSION` 파일에서 관리됩니다 (SSOT).
@@ -470,8 +555,8 @@ codeb-server/
 ├── mcp-server/                # TypeScript MCP API Server
 ├── cli/                       # we CLI
 │   └── mcp-proxy/             # MCP Proxy for Claude Code
-├── scripts/                   # 유틸리티 스크립트
-└── .github/workflows/         # CI/CD 파이프라인
+└── scripts/                   # 배포 스크립트 (deploy-all.sh)
+    # 주의: .github/workflows/ 사용하지 않음 (수동 배포만)
 
 .claude/
 ├── settings.local.json        # v7.0 설정 (Docker 기반)
