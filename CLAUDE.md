@@ -366,74 +366,44 @@ rm -rf /var/lib/docker/*       # Docker 데이터 삭제
 
 ---
 
-## CI/CD 배포 시스템
+## codeb-server 프로젝트 배포 (본 프로젝트 전용)
 
 ### 아키텍처
 
 ```
 ┌─────────────────────────────────────────────────────────────────┐
-│                    CodeB CI/CD 배포 시스템                       │
+│                 codeb-server 수동 배포 시스템                     │
 ├─────────────────────────────────────────────────────────────────┤
 │                                                                 │
-│  [로컬] ──git push──→ [GitHub Actions] ──→ [Self-Hosted Runner] │
-│                                                    │            │
-│                                             ┌──────┴──────┐     │
-│                                             │ Incremental │     │
-│                                             │    Build    │     │
-│                                             └──────┬──────┘     │
-│                                                    │            │
-│                                                    ▼            │
-│                              ┌─────────────┬─────────────┐      │
-│                              │  Systemd    │ Minio Cache │      │
-│                              │  (Node.js)  │ (dist/npm)  │      │
-│                              └─────────────┴─────────────┘      │
+│  [로컬] ──./scripts/deploy-all.sh──→ [App Server + Storage]    │
+│                                                                 │
+│  배포 대상:                                                     │
+│  ├── [1/5] 로컬 파일 버전 동기화 (package.json, CLAUDE.md)     │
+│  ├── [2/5] Git 커밋 & 푸시 (백업용)                            │
+│  ├── [3/5] API Server (Docker → Systemd)                       │
+│  ├── [4/5] CLI Package (tarball → Minio)                       │
+│  └── [5/5] SSOT Registry 업데이트                              │
 │                                                                 │
 └─────────────────────────────────────────────────────────────────┘
 ```
 
-### 배포 방법 (Git Push = 자동 배포)
+### 배포 방법 (수동 통합 배포)
 
 ```bash
-# 코드 수정 후 커밋 & 푸시
-git add -A && git commit -m "feat: 새로운 기능" && git push
-
-# GitHub Actions가 자동으로:
-# - Incremental Build (변경된 부분만)
-# - /opt/codeb/mcp-server에 배포
-# - systemctl restart codeb-mcp-api
-```
-
-### Incremental Build (v7.0.59+)
-
-```
-┌─────────────────────────────────────────────────────────────────┐
-│                    Incremental Build 흐름                        │
-├─────────────────────────────────────────────────────────────────┤
-│                                                                 │
-│  1. 버전 체크                                                   │
-│     └─→ 동일 버전 실행 중이면 전체 스킵                         │
-│                                                                 │
-│  2. NPM 해시 (package-lock.json)                                │
-│     └─→ 변경 없으면 node_modules 캐시 사용                      │
-│                                                                 │
-│  3. SRC 해시 (src/**/*.ts)                                      │
-│     └─→ 변경 없으면 dist/ 캐시 사용 (빌드 스킵!)               │
-│                                                                 │
-│  4. Systemd 재시작                                              │
-│     └─→ systemctl restart codeb-mcp-api                        │
-│                                                                 │
-└─────────────────────────────────────────────────────────────────┘
-```
-
-### 수동 배포 (필요시)
-
-```bash
-# 로컬에서 직접 배포 (SSH 필요)
+# 단일 명령으로 API + CLI + Registry 모두 배포
 ./scripts/deploy-all.sh
 
-# 강제 빌드 (GitHub Actions)
-# workflow_dispatch → force_build: true
+# 버전 지정 배포
+./scripts/deploy-all.sh 7.0.65
 ```
+
+### 배포 규칙
+
+> **중요**: codeb-server는 GitHub Actions 자동 배포를 사용하지 않습니다.
+>
+> - GitHub Actions 워크플로우 파일을 추가하지 마세요
+> - `deploy-all.sh` 스크립트만 사용하세요
+> - Git push는 백업 목적으로만 수행됩니다
 
 ### 버전 확인 방법
 
