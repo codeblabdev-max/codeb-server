@@ -73,6 +73,7 @@ mkdir -p "$CODEB_DIR"
 
 cp -r /tmp/codeb-release/bin "$CODEB_DIR/"
 cp -r /tmp/codeb-release/src "$CODEB_DIR/"
+cp -r /tmp/codeb-release/templates "$CODEB_DIR/" 2>/dev/null || true  # GitHub Actions 템플릿
 cp /tmp/codeb-release/package.json "$CODEB_DIR/"
 cp /tmp/codeb-release/package-lock.json "$CODEB_DIR/" 2>/dev/null || true
 cp /tmp/codeb-release/VERSION "$CODEB_DIR/" 2>/dev/null || true

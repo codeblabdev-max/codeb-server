@@ -145,6 +145,7 @@ cp -r cli/commands /tmp/codeb-release/
 cp -r cli/rules /tmp/codeb-release/
 cp -r cli/scripts /tmp/codeb-release/
 cp -r cli/skills /tmp/codeb-release/
+cp -r cli/templates /tmp/codeb-release/  # GitHub Actions 템플릿 포함
 cp cli/package.json /tmp/codeb-release/
 cp cli/package-lock.json /tmp/codeb-release/
 cp VERSION /tmp/codeb-release/
