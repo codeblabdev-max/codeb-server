@@ -11,8 +11,9 @@ description: "워크플로우", "workflow", "CI/CD", "GitHub Actions" 등의 요
 - 프로젝트 초기화, 인프라 설정
 
 ## 사용 도구
-- `mcp__codeb-deploy__workflow_init` - 서버 인프라 초기화
+- `mcp__codeb-deploy__workflow_init` - 서버 인프라 초기화 (신규 프로젝트)
 - `mcp__codeb-deploy__workflow_scan` - 기존 설정 스캔
+- `mcp__codeb-deploy__workflow_generate` - Private Registry 워크플로우 생성 (기존 프로젝트)
 
 ## 초기화 절차
 

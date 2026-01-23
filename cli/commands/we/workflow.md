@@ -41,12 +41,14 @@ workflow init 실행 시:
 ```
 
 ## MCP 도구
-- `mcp__codeb-deploy__workflow_init` - 프로젝트 초기화
+- `mcp__codeb-deploy__workflow_init` - 프로젝트 초기화 (신규 프로젝트)
 - `mcp__codeb-deploy__workflow_scan` - 프로젝트 스캔
+- `mcp__codeb-deploy__workflow_generate` - 워크플로우 생성 (기존 프로젝트, Private Registry)
 - `mcp__codeb-deploy__slot_status` - 슬롯 상태 확인
 
 ## 예제
 ```
+# 신규 프로젝트 초기화
 mcp__codeb-deploy__workflow_init
 {
   "projectName": "myapp",
@@ -55,11 +57,29 @@ mcp__codeb-deploy__workflow_init
   "redis": true
 }
 
+# 프로젝트 상태 스캔
 mcp__codeb-deploy__workflow_scan
 {
   "projectName": "myapp"
 }
+
+# 기존 프로젝트에 Private Registry 워크플로우 생성
+mcp__codeb-deploy__workflow_generate
+{
+  "projectName": "workb",
+  "baseDomain": "codeb.kr",
+  "type": "nextjs"
+}
 ```
+
+## 기존 GHCR → Private Registry 마이그레이션
+
+기존 프로젝트가 GHCR 워크플로우를 사용 중이라면:
+
+1. `workflow_generate` 실행하여 새 워크플로우 생성
+2. 반환된 `workflow` 내용을 `.github/workflows/deploy.yml`에 저장
+3. 기존 GHCR 워크플로우 파일 삭제
+4. git push → Private Registry로 빌드 & 배포
 
 ## 관련 명령어
 - `/we:deploy` - 프로젝트 배포
