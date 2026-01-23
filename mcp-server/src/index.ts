@@ -51,6 +51,7 @@ import {
 import {
   projectInitTool,
   projectScanTool,
+  workflowGenerateTool,
 } from './tools/project.js';
 
 // Tools - Environment Variables (v7.0.62)
@@ -260,6 +261,7 @@ const TOOLS: Record<string, {
   // Project (Initialization & Scan) - /we:quick에서 호출
   workflow_init: { handler: (p, a) => projectInitTool.execute(p, a), permission: 'deploy.create' },
   workflow_scan: { handler: (p, a) => projectScanTool.execute(p, a), permission: 'project.view' },
+  workflow_generate: { handler: (p, a) => workflowGenerateTool.execute(p, a), permission: 'project.view' },
 
   // Environment Variables (v7.0.62) - 로컬 vs 서버 ENV 관리
   env_sync: { handler: (p, a) => envSyncTool.execute(p, a), permission: 'env.write' },

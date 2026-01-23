@@ -115,6 +115,7 @@ export interface DeployInput {
   environment: Environment;
   version?: string;
   image?: string;
+  useGhcr?: boolean;
   skipHealthcheck?: boolean;
   skipValidation?: boolean;
 }

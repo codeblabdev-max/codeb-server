@@ -352,6 +352,41 @@ rm -rf /opt/codeb/*            # 프로젝트 폴더 삭제
 rm -rf /var/lib/docker/*       # Docker 데이터 삭제
 ```
 
+### Vultr CLI 안전 규칙
+
+> **경고**: Vultr CLI는 인프라 관리 권한이 있습니다. 아래 규칙을 반드시 준수하세요.
+
+```bash
+# ⛔ 절대 금지 (복구 불가능)
+vultr-cli instance delete *           # 서버 삭제
+vultr-cli instance reinstall *        # 서버 초기화 (데이터 전체 삭제)
+vultr-cli firewall group delete *     # 방화벽 그룹 삭제
+vultr-cli snapshot delete *           # 스냅샷 삭제
+
+# ✅ 허용되는 작업
+vultr-cli instance list               # 서버 목록 조회
+vultr-cli instance get <id>           # 서버 상세 정보
+vultr-cli firewall group list         # 방화벽 그룹 목록
+vultr-cli firewall rule list <id>     # 방화벽 규칙 조회
+vultr-cli firewall rule create <id>   # 방화벽 규칙 추가 (포트 오픈)
+vultr-cli snapshot list               # 스냅샷 목록 조회
+```
+
+### 서버 정보 (삭제/초기화 금지)
+
+| 역할 | Instance ID | IP |
+|------|-------------|-----|
+| App | `00bad969-1751-4ff7-b0ba-26e9359c0d88` | 158.247.203.55 |
+| Streaming | `56797584-ce45-4d5c-bb0f-6e47db0d2ed4` | 141.164.42.213 |
+| Storage | `5b3c19bf-a6ac-4b36-8e3a-bbef72b2c8d1` | 64.176.226.119 |
+| Backup | `27f996e9-7bb7-4354-b3b5-6f6234f713d1` | 141.164.37.63 |
+
+### 방화벽 그룹
+
+| 그룹 ID | 설명 |
+|---------|------|
+| `47ac5479-91b1-4a4e-9e1f-7217a731335d` | CodeB Internal Servers (현재 사용 중) |
+
 ### 올바른 CLI 명령어
 
 ```bash

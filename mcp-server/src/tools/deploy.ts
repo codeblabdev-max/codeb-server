@@ -1,10 +1,15 @@
 /**
- * CodeB v7.0.64 - Blue-Green Deploy Tool
+ * CodeB v7.0.65 - Blue-Green Deploy Tool
  * PostgreSQL DB 기반 SSOT + Team-based Authentication
  *
  * Docker 기반 배포
  * - docker run / docker stop / docker rm
  * - 포트 범위: DB SSOT와 동기화 (production: 4100-4499)
+ *
+ * v7.0.65 변경사항:
+ * - Private Docker Registry 지원 (64.176.226.119:5000)
+ * - GHCR → Private Registry로 기본 이미지 URL 변경
+ * - 이미지 URL 우선순위: 사용자 지정 > Private Registry > GHCR (fallback)
  *
  * v7.0.64 변경사항:
  * - ENV 처리 순서 변경: 컨테이너 실행 직전에 DB SSOT에서 최신 ENV 동기화
@@ -39,11 +44,16 @@ import { logger } from '../lib/logger.js';
 // Input Schema
 // ============================================================================
 
+// Private Docker Registry 설정
+const PRIVATE_REGISTRY = '64.176.226.119:5000';
+const GHCR_FALLBACK = 'ghcr.io/codeblabdev-max';
+
 export const deployInputSchema = z.object({
   projectName: z.string().min(1).max(50).describe('Project name'),
   environment: z.enum(['staging', 'production', 'preview']).default('production').describe('Environment (default: production)'),
   version: z.string().optional().describe('Version/commit SHA (default: latest)'),
-  image: z.string().optional().describe('Container image (default: ghcr.io/{org}/{project}:{version})'),
+  image: z.string().optional().describe('Container image (default: private registry, fallback to GHCR)'),
+  useGhcr: z.boolean().optional().describe('Force use GHCR instead of private registry'),
   skipHealthcheck: z.boolean().optional().describe('Skip health check'),
   skipValidation: z.boolean().optional().describe('Skip pre-deploy validation'),
 });
@@ -215,9 +225,14 @@ export async function executeDeploy(
       const envBackupDir = `/opt/codeb/env-backup/${projectName}`;
 
       // Step 5: Docker 이미지 Pull
+      // 이미지 URL 우선순위: 사용자 지정 > Private Registry > GHCR (fallback)
       const step5Start = Date.now();
       const containerName = `${projectName}-${environment}-${targetSlot}`;
-      const imageUrl = input.image || `ghcr.io/codeblabdev-max/${projectName}:${version}`;
+      const imageUrl = input.image
+        ? input.image
+        : input.useGhcr
+          ? `${GHCR_FALLBACK}/${projectName}:${version}`
+          : `${PRIVATE_REGISTRY}/${projectName}:${version}`;
 
       try {
         await ssh.exec(`docker pull ${imageUrl}`, { timeout: 180000 });
