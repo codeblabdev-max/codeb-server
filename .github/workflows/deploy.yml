@@ -29,7 +29,7 @@ concurrency:
 jobs:
   deploy:
     name: Build & Deploy (API + CLI)
-    runs-on: [self-hosted, docker]
+    runs-on: [self-hosted, codeb]
 
     steps:
       - name: Checkout
