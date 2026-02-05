@@ -1,6 +1,6 @@
 {
   "name": "@codeblabdev-max/we-cli",
-  "version": "8.0.0",
+  "version": "8.0.1",
   "description": "/we: Web Deploy CLI - MCP-First + Skills Auto-Activation",
   "type": "module",
   "bin": {
