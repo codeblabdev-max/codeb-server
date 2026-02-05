@@ -21,7 +21,10 @@ import {
   listAllDomains,
   getProjectDomain,
   isSubdomain,
+  getBaseDomain,
+  getSubdomainName,
   BASE_DOMAIN,
+  SUPPORTED_DOMAINS,
   APP_SERVER_IP,
   type CaddySiteConfig,
   type DomainInfo,
@@ -71,19 +74,20 @@ export interface DomainVerifyInput {
 // ============================================================================
 
 const PDNS_API_URL = process.env.PDNS_API_URL || 'http://158.247.203.55:8081/api/v1';
-const PDNS_API_KEY = process.env.PDNS_API_KEY || '';
 
 // ============================================================================
 // PowerDNS Client (DNS 레코드 관리용)
 // ============================================================================
 
-function validatePdnsApiKey(): void {
-  if (!PDNS_API_KEY) {
+function getPdnsApiKey(): string {
+  const key = process.env.PDNS_API_KEY;
+  if (!key) {
     throw new Error(
       'PDNS_API_KEY is not configured. ' +
       'Please set PDNS_API_KEY in your project .env file or environment variables.'
     );
   }
+  return key;
 }
 
 async function pdnsRequest(
@@ -91,14 +95,14 @@ async function pdnsRequest(
   path: string,
   body?: Record<string, unknown>
 ): Promise<any> {
-  validatePdnsApiKey();
+  const apiKey = getPdnsApiKey();
   const url = `${PDNS_API_URL}${path}`;
 
   try {
     const response = await fetch(url, {
       method,
       headers: {
-        'X-API-Key': PDNS_API_KEY,
+        'X-API-Key': apiKey,
         'Content-Type': 'application/json',
       },
       body: body ? JSON.stringify(body) : undefined,
@@ -242,8 +246,16 @@ export const domainSetupTool = {
 
       if (domainIsSubdomain) {
         // Add A record for subdomain via PowerDNS
-        const subdomain = domain.replace(`.${BASE_DOMAIN}`, '');
-        await addDNSRecord(BASE_DOMAIN, 'A', subdomain, APP_SERVER_IP);
+        // Works for all supported domains: codeb.kr, workb.net
+        const baseDomain = getBaseDomain(domain);
+        const subdomain = getSubdomainName(domain);
+
+        if (!baseDomain || !subdomain) {
+          return { success: false, error: `Invalid subdomain format: ${domain}` };
+        }
+
+        logger.info('Adding DNS record', { baseDomain, subdomain, ip: APP_SERVER_IP });
+        await addDNSRecord(baseDomain, 'A', subdomain, APP_SERVER_IP);
         records.push({
           type: 'A',
           name: subdomain,
@@ -512,14 +524,19 @@ export const domainDeleteTool = {
         auth.teamId
       );
 
-      // Remove DNS record if subdomain
+      // Remove DNS record if subdomain (supports codeb.kr, workb.net)
       if (isSubdomain(domain)) {
-        const subdomain = domain.replace(`.${BASE_DOMAIN}`, '');
-        try {
-          await removeDNSRecord(BASE_DOMAIN, 'A', subdomain);
-        } catch (error) {
-          logger.warn('Failed to remove DNS record', { domain, error: String(error) });
-          // Continue even if DNS removal fails
+        const baseDomain = getBaseDomain(domain);
+        const subdomain = getSubdomainName(domain);
+
+        if (baseDomain && subdomain) {
+          try {
+            await removeDNSRecord(baseDomain, 'A', subdomain);
+            logger.info('DNS record removed', { domain, baseDomain, subdomain });
+          } catch (error) {
+            logger.warn('Failed to remove DNS record', { domain, error: String(error) });
+            // Continue even if DNS removal fails
+          }
         }
       }
 

@@ -18,6 +18,7 @@ import type { SlotName, Environment } from './types.js';
 
 const CADDY_SITES_DIR = '/etc/caddy/sites';
 const BASE_DOMAIN = 'codeb.kr';
+const SUPPORTED_DOMAINS = ['codeb.kr', 'workb.net'];
 const APP_SERVER_IP = '158.247.203.55';
 
 // ============================================================================
@@ -65,10 +66,31 @@ export function getProjectDomain(projectName: string, environment: Environment):
 }
 
 /**
- * Check if domain is a subdomain of codeb.kr
+ * Check if domain is a subdomain of supported domains (codeb.kr, workb.net)
  */
 export function isSubdomain(domain: string): boolean {
-  return domain.endsWith(`.${BASE_DOMAIN}`);
+  return SUPPORTED_DOMAINS.some(baseDomain => domain.endsWith(`.${baseDomain}`));
+}
+
+/**
+ * Get the base domain for a subdomain
+ */
+export function getBaseDomain(domain: string): string | null {
+  for (const baseDomain of SUPPORTED_DOMAINS) {
+    if (domain.endsWith(`.${baseDomain}`)) {
+      return baseDomain;
+    }
+  }
+  return null;
+}
+
+/**
+ * Get subdomain name from full domain
+ */
+export function getSubdomainName(domain: string): string | null {
+  const baseDomain = getBaseDomain(domain);
+  if (!baseDomain) return null;
+  return domain.replace(`.${baseDomain}`, '');
 }
 
 /**
@@ -438,4 +460,4 @@ export async function reloadCaddy(): Promise<void> {
   });
 }
 
-export { BASE_DOMAIN, APP_SERVER_IP, CADDY_SITES_DIR };
+export { BASE_DOMAIN, SUPPORTED_DOMAINS, APP_SERVER_IP, CADDY_SITES_DIR };
