@@ -47,8 +47,8 @@ echo ""
 # 2. 로컬 파일 버전 동기화
 echo -e "${BLUE}[1/5] Syncing local files...${NC}"
 
-# package.json 동기화
-for PKG in "mcp-server/package.json" "cli/package.json"; do
+# package.json 동기화 (루트 포함)
+for PKG in "package.json" "mcp-server/package.json" "cli/package.json"; do
   if [ -f "$PKG" ]; then
     jq --arg v "$NEW_VERSION" '.version = $v' "$PKG" > "$PKG.tmp" && mv "$PKG.tmp" "$PKG"
     echo "   ✅ $PKG"

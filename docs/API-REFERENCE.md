@@ -1,186 +1,216 @@
-# MCP HTTP API Reference
+# CodeB MCP API Reference
 
-> **버전: VERSION 파일 참조** | SSOT 기반 버전 관리
-
-## Overview
-
-CodeB v7.0 MCP Server는 Team-based API Key 인증을 사용하는 HTTP API를 제공합니다.
-Claude Code 2.1 통합으로 Skills, Hooks, Agent 기반 배포 자동화를 지원합니다.
-
-**Endpoints:**
-- **Primary:** `https://api.codeb.kr/api`
-- **Health:** `https://api.codeb.kr/health`
-- **Direct:** `http://app.codeb.kr:9101/api`
+> **문서 버전**: 8.0.0
+> **최종 업데이트**: 2026-02-06
 
 ---
 
-## Authentication (v6.0)
+## 목차
 
-### API Key 형식
+1. [개요](#1-개요)
+2. [인증](#2-인증)
+3. [엔드포인트](#3-엔드포인트)
+4. [도구 목록](#4-도구-목록)
+5. [도구 상세](#5-도구-상세)
+6. [에러 처리](#6-에러-처리)
+
+---
+
+## 1. 개요
+
+### 1.1 API 정보
+
+| 항목 | 값 |
+|------|-----|
+| Base URL | `https://api.codeb.kr` |
+| Tool Endpoint | `POST /api/tool` |
+| Health Check | `GET /health` |
+| Metrics | `GET /metrics` |
+| Log Stream | `GET /api/logs/stream` (SSE) |
+| Audit Logs | `GET /api/audit` |
+
+### 1.2 특징
+
+- Team 기반 인증 (Vercel 스타일)
+- Blue-Green 무중단 배포
+- Rate Limiting (분당 60회)
+- Audit Logging (PostgreSQL)
+- Prometheus 메트릭
+- 클라이언트 버전 자동 체크
+
+---
+
+## 2. 인증
+
+### 2.1 API Key 형식
 
 ```
-codeb_{teamId}_{role}_{randomToken}
+X-API-Key: codeb_{teamId}_{role}_{randomToken}
 
 예시:
 - codeb_default_admin_a1b2c3d4e5f6g7h8
 - codeb_myteam_member_x9y8z7w6v5u4t3s2
-- codeb_default_viewer_abcdefghijklmnop
 ```
 
-### 역할 계층 (Role Hierarchy)
+### 2.2 역할 권한
 
-| 역할 | 설명 | 권한 수준 |
-|------|------|----------|
-| **owner** | 팀 소유자 | 모든 권한 + 팀 삭제 |
-| **admin** | 관리자 | 멤버 관리, 토큰 관리, 슬롯 정리 |
-| **member** | 일반 멤버 | 배포, promote, rollback, ENV 설정 |
-| **viewer** | 뷰어 | 조회만 (상태, 로그, 메트릭) |
+| 역할 | 권한 |
+|------|------|
+| `owner` | 팀 삭제, 모든 작업 |
+| `admin` | 멤버 관리, 토큰 관리, 슬롯 정리 |
+| `member` | 배포, promote, rollback, ENV 설정 |
+| `viewer` | 조회만 (상태, 로그, 메트릭) |
 
-### 요청 헤더
+### 2.3 요청 예시
 
-```http
-X-API-Key: codeb_default_member_your_token_here
-Content-Type: application/json
+```bash
+curl -X POST "https://api.codeb.kr/api/tool" \
+  -H "Content-Type: application/json" \
+  -H "X-API-Key: codeb_team1_admin_xxxxx" \
+  -H "X-Client-Version: 8.0.0" \
+  -d '{"tool": "health_check", "params": {}}'
 ```
 
 ---
 
-## API 엔드포인트
+## 3. 엔드포인트
 
-### Health Check
+### 3.1 Health Check (인증 불필요)
 
-```http
+```bash
 GET /health
+GET /health?v=7.0.66  # 버전 체크 포함
 ```
-
-인증 불필요.
 
 **응답:**
 ```json
 {
-  "success": true,
   "status": "healthy",
-  "version": "6.0.5",
-  "timestamp": "2026-01-11T10:00:00Z",
-  "uptime": 86400
+  "version": "8.0.0",
+  "timestamp": "2026-02-06T12:00:00.000Z",
+  "uptime": 123456.789
 }
 ```
 
-### Tool 실행
+**클라이언트 버전이 낮은 경우:**
+```json
+{
+  "status": "healthy",
+  "version": "8.0.0",
+  "updateRequired": true,
+  "updateMessage": "CLI 업데이트 필요: 7.0.66 → 8.0.0\ncurl -sSL https://releases.codeb.kr/cli/install.sh | bash",
+  "latestVersion": "8.0.0",
+  "downloadUrl": "https://releases.codeb.kr/cli/install.sh"
+}
+```
 
-```http
+### 3.2 API Info (인증 불필요)
+
+```bash
+GET /api
+```
+
+**응답:**
+```json
+{
+  "name": "CodeB API",
+  "version": "8.0.0",
+  "tools": ["deploy", "promote", "rollback", ...],
+  "features": ["blue-green-deployment", "slot-management", "domain-management", "project-initialization"]
+}
+```
+
+### 3.3 Tool Execution (인증 필요)
+
+```bash
 POST /api/tool
 Content-Type: application/json
-X-API-Key: codeb_default_member_xxx
+X-API-Key: {api_key}
 
 {
-  "tool": "tool_name",
+  "tool": "도구명",
   "params": { ... }
 }
 ```
 
-### Tool 목록 조회
+---
 
-```http
-GET /api/tools
-X-API-Key: codeb_default_viewer_xxx
-```
+## 4. 도구 목록
+
+### 4.1 전체 도구 (20개)
+
+| 카테고리 | 도구 | 권한 | 설명 |
+|---------|------|------|------|
+| **배포** | `deploy` | deploy.create | 비활성 슬롯에 배포 |
+| **배포** | `deploy_project` | deploy.create | deploy 별칭 |
+| **배포** | `promote` | deploy.promote | 트래픽 전환 |
+| **배포** | `slot_promote` | deploy.promote | promote 별칭 |
+| **배포** | `rollback` | deploy.rollback | 즉시 롤백 |
+| **슬롯** | `slot_status` | slot.view | 슬롯 상태 조회 |
+| **슬롯** | `slot_cleanup` | slot.cleanup | 슬롯 정리 |
+| **슬롯** | `slot_list` | slot.view | 슬롯 목록 |
+| **도메인** | `domain_setup` | domain.setup | 도메인 설정 |
+| **도메인** | `domain_list` | domain.view | 도메인 목록 |
+| **도메인** | `domain_delete` | domain.delete | 도메인 삭제 |
+| **프로젝트** | `workflow_init` | deploy.create | 인프라 초기화 |
+| **프로젝트** | `workflow_scan` | project.view | 프로젝트 스캔 |
+| **프로젝트** | `workflow_generate` | project.view | GitHub Actions 생성 |
+| **환경변수** | `env_sync` | env.write | ENV 동기화 |
+| **환경변수** | `env_get` | env.read | ENV 조회 |
+| **환경변수** | `env_scan` | env.read | ENV 비교 |
+| **환경변수** | `env_restore` | env.write | ENV 복원 |
+| **유틸리티** | `health_check` | project.view | 인프라 상태 |
+| **유틸리티** | `scan` | project.view | workflow_scan 별칭 |
 
 ---
 
-## Tool 카테고리 (30개 총)
+## 5. 도구 상세
 
-### 1. Team Management (11개)
+### 5.1 Blue-Green 배포
 
-| Tool | 설명 | 최소 권한 |
-|------|------|----------|
-| `team_create` | 팀 생성 | owner |
-| `team_list` | 팀 목록 조회 | viewer |
-| `team_get` | 팀 상세 조회 | viewer |
-| `team_delete` | 팀 삭제 | owner |
-| `team_settings` | 팀 설정 변경 | admin |
-| `member_invite` | 멤버 초대 | admin |
-| `member_remove` | 멤버 제거 | admin |
-| `member_list` | 멤버 목록 | viewer |
-| `token_create` | API 토큰 생성 | admin |
-| `token_revoke` | API 토큰 폐기 | member |
-| `token_list` | 토큰 목록 조회 | member |
+#### deploy / deploy_project
 
-### 2. Blue-Green Deployment (6개)
+비활성 슬롯에 Docker 컨테이너 배포.
 
-| Tool | 설명 | 최소 권한 |
-|------|------|----------|
-| `deploy` / `deploy_project` | Blue-Green Slot 배포 | member |
-| `promote` / `slot_promote` | 트래픽 전환 | member |
-| `rollback` | 이전 버전으로 롤백 | member |
-| `slot_status` | Slot 상태 조회 | viewer |
-| `slot_cleanup` | Grace 만료 Slot 정리 | admin |
-| `slot_list` | 전체 Slot 목록 | viewer |
-
-### 3. Edge Functions (6개)
-
-| Tool | 설명 | 최소 권한 |
-|------|------|----------|
-| `edge_deploy` | Edge 함수 배포 | member |
-| `edge_list` | Edge 함수 목록 | viewer |
-| `edge_logs` | Edge 함수 로그 | viewer |
-| `edge_delete` | Edge 함수 삭제 | member |
-| `edge_invoke` | Edge 함수 테스트 호출 | member |
-| `edge_metrics` | Edge 함수 메트릭 | viewer |
-
-### 4. Analytics (5개)
-
-| Tool | 설명 | 최소 권한 |
-|------|------|----------|
-| `analytics_overview` | 트래픽 개요 | viewer |
-| `analytics_webvitals` | Web Vitals (LCP, FID, CLS) | viewer |
-| `analytics_deployments` | 배포별 성능 | viewer |
-| `analytics_realtime` | 실시간 메트릭 | viewer |
-| `analytics_speed_insights` | Speed Insights 점수 | viewer |
-
-### 5. Project & ENV Management
-
-| Tool | 설명 | 최소 권한 |
-|------|------|----------|
-| `workflow_init` | 프로젝트 초기화 | member |
-| `workflow_scan` | 프로젝트 스캔 | viewer |
-| `env_scan` | ENV 비교 (로컬/서버) | viewer |
-| `env_restore` | ENV 백업에서 복구 | member |
-
-### 6. Domain & Health
-
-| Tool | 설명 | 최소 권한 |
-|------|------|----------|
-| `domain_setup` | 도메인 설정 | member |
-| `domain_list` | 도메인 목록 | viewer |
-| `domain_delete` | 도메인 삭제 | member |
-| `health_check` | 시스템 헬스체크 | viewer |
-| `scan` | 프로젝트 배포 준비 스캔 | viewer |
-
----
-
-## Deployment Tools 상세
-
-### deploy / deploy_project
-
-비활성 Slot에 새 버전을 배포하고 Preview URL을 반환합니다.
-
-**Parameters:**
-| Name | Type | Required | Default | Description |
-|------|------|----------|---------|-------------|
-| projectName | string | Yes | - | 프로젝트명 |
-| environment | string | No | staging | staging, production |
-| image | string | No | auto | Docker 이미지 |
-| version | string | No | - | 버전 태그 |
-
-**요청:**
 ```json
 {
   "tool": "deploy",
   "params": {
     "projectName": "myapp",
-    "environment": "staging",
-    "version": "v1.2.3"
+    "environment": "production",
+    "image": "64.176.226.119:5000/myapp:latest"
+  }
+}
+```
+
+| 파라미터 | 타입 | 필수 | 설명 |
+|---------|------|------|------|
+| projectName | string | O | 프로젝트명 |
+| environment | string | X | staging / production (기본: staging) |
+| image | string | X | Docker 이미지 URL |
+| version | string | X | 버전 태그 |
+
+**응답:**
+```json
+{
+  "success": true,
+  "slot": "blue",
+  "port": 4001,
+  "previewUrl": "https://blue-myapp.codeb.kr",
+  "message": "Deployed to blue slot"
+}
+```
+
+#### promote / slot_promote
+
+트래픽을 새 슬롯으로 전환 (무중단).
+
+```json
+{
+  "tool": "slot_promote",
+  "params": {
+    "projectName": "myapp",
+    "environment": "production"
   }
 }
 ```
@@ -189,258 +219,96 @@ X-API-Key: codeb_default_viewer_xxx
 ```json
 {
   "success": true,
-  "tool": "deploy",
-  "result": {
+  "activeSlot": "blue",
+  "previousSlot": "green",
+  "domain": "myapp.codeb.kr",
+  "gracePeriod": {
     "slot": "green",
-    "port": 3001,
-    "previewUrl": "https://myapp-green.preview.codeb.kr",
-    "message": "Deployed to green slot. Run 'promote' to switch traffic.",
-    "duration": 45000
+    "endsAt": "2026-02-08T12:00:00Z",
+    "hoursRemaining": 48
   }
 }
 ```
 
----
+#### rollback
 
-### promote / slot_promote
+이전 버전(grace 슬롯)으로 즉시 롤백.
 
-비활성 Slot을 활성화하여 트래픽을 전환합니다 (무중단).
-
-**Parameters:**
-| Name | Type | Required | Default | Description |
-|------|------|----------|---------|-------------|
-| projectName | string | Yes | - | 프로젝트명 |
-| environment | string | No | staging | 환경 |
-
-**요청:**
-```json
-{
-  "tool": "promote",
-  "params": {
-    "projectName": "myapp",
-    "environment": "staging"
-  }
-}
-```
-
-**응답:**
-```json
-{
-  "success": true,
-  "tool": "promote",
-  "result": {
-    "activeSlot": "green",
-    "previousSlot": "blue",
-    "domain": "myapp-staging.codeb.kr",
-    "url": "https://myapp-staging.codeb.kr",
-    "gracePeriod": {
-      "slot": "blue",
-      "endsAt": "2026-01-13T10:00:00Z",
-      "hoursRemaining": 48
-    },
-    "message": "Traffic switched to green. Previous slot blue in grace period (48h)."
-  }
-}
-```
-
----
-
-### rollback
-
-이전 버전(Grace 상태 Slot)으로 즉시 롤백합니다.
-
-**Parameters:**
-| Name | Type | Required | Default | Description |
-|------|------|----------|---------|-------------|
-| projectName | string | Yes | - | 프로젝트명 |
-| environment | string | No | staging | 환경 |
-
-**요청:**
 ```json
 {
   "tool": "rollback",
   "params": {
     "projectName": "myapp",
-    "environment": "staging"
-  }
-}
-```
-
-**응답:**
-```json
-{
-  "success": true,
-  "tool": "rollback",
-  "result": {
-    "rolledBackTo": "blue",
-    "previousActive": "green",
-    "domain": "myapp-staging.codeb.kr",
-    "url": "https://myapp-staging.codeb.kr",
-    "message": "Rolled back to blue. Slot green is now in grace period."
+    "environment": "production"
   }
 }
 ```
 
 ---
 
-### slot_status
+### 5.2 슬롯 관리
 
-프로젝트의 Blue-Green Slot 상태를 조회합니다.
+#### slot_status
 
-**Parameters:**
-| Name | Type | Required | Default | Description |
-|------|------|----------|---------|-------------|
-| projectName | string | Yes | - | 프로젝트명 |
-| environment | string | No | staging | 환경 |
+```json
+{
+  "tool": "slot_status",
+  "params": {
+    "projectName": "myapp",
+    "environment": "production"
+  }
+}
+```
 
 **응답:**
 ```json
 {
   "success": true,
-  "result": {
-    "projectName": "myapp",
-    "environment": "staging",
+  "data": {
     "activeSlot": "blue",
     "blue": {
-      "name": "blue",
       "state": "active",
-      "port": 3000,
-      "version": "v1.2.3",
-      "deployedAt": "2026-01-10T10:00:00Z",
-      "healthStatus": "healthy"
+      "port": 4001,
+      "version": "8.0.0",
+      "deployedAt": "2026-02-06T10:00:00Z"
     },
     "green": {
-      "name": "green",
-      "state": "deployed",
-      "port": 3001,
-      "version": "v1.2.4",
-      "deployedAt": "2026-01-11T10:00:00Z",
-      "healthStatus": "healthy"
+      "state": "grace",
+      "port": 4002,
+      "version": "7.0.66",
+      "graceEndsAt": "2026-02-08T10:00:00Z"
     }
   }
 }
 ```
 
----
+#### slot_list
 
-## Edge Functions Tools 상세
-
-### edge_deploy
-
-Edge 함수를 배포합니다.
-
-**Parameters:**
-| Name | Type | Required | Description |
-|------|------|----------|-------------|
-| projectName | string | Yes | 프로젝트명 |
-| environment | string | No | production |
-| functions | array | Yes | Edge 함수 배열 |
-
-**함수 타입:**
-- `middleware` - 요청 전처리 (인증, 로깅)
-- `api` - API 엔드포인트
-- `rewrite` - URL 재작성
-- `redirect` - 리디렉션
-
-**요청:**
 ```json
 {
-  "tool": "edge_deploy",
+  "tool": "slot_list",
+  "params": {}
+}
+```
+
+#### slot_cleanup
+
+```json
+{
+  "tool": "slot_cleanup",
   "params": {
     "projectName": "myapp",
-    "environment": "production",
-    "functions": [{
-      "name": "auth-middleware",
-      "code": "export default function(req) { return req; }",
-      "routes": ["/api/*"],
-      "type": "middleware"
-    }]
-  }
-}
-```
-
-**응답:**
-```json
-{
-  "success": true,
-  "result": {
-    "deployed": ["auth-middleware"],
-    "region": "ap-northeast-2",
-    "url": "https://myapp.codeb.kr/api/*"
+    "environment": "production"
   }
 }
 ```
 
 ---
 
-## Analytics Tools 상세
+### 5.3 도메인 관리
 
-### analytics_webvitals
+#### domain_setup
 
-Web Vitals 메트릭을 조회합니다.
-
-**Parameters:**
-| Name | Type | Required | Default | Description |
-|------|------|----------|---------|-------------|
-| projectName | string | Yes | - | 프로젝트명 |
-| period | string | No | week | day, week, month |
-
-**응답:**
-```json
-{
-  "success": true,
-  "result": {
-    "projectName": "myapp",
-    "period": "week",
-    "metrics": {
-      "LCP": { "value": 2.1, "rating": "good", "target": 2.5 },
-      "FID": { "value": 45, "rating": "good", "target": 100 },
-      "CLS": { "value": 0.05, "rating": "good", "target": 0.1 },
-      "TTFB": { "value": 650, "rating": "good", "target": 800 },
-      "FCP": { "value": 1.5, "rating": "good", "target": 1.8 },
-      "INP": { "value": 150, "rating": "good", "target": 200 }
-    },
-    "overallScore": 92
-  }
-}
-```
-
-### analytics_speed_insights
-
-Speed Insights 점수를 조회합니다.
-
-**응답:**
-```json
-{
-  "success": true,
-  "result": {
-    "projectName": "myapp",
-    "score": 92,
-    "grade": "Good",
-    "recommendations": [
-      "이미지 최적화로 LCP 개선 가능",
-      "불필요한 JavaScript 제거 권장"
-    ]
-  }
-}
-```
-
----
-
-## Domain Tools 상세
-
-### domain_setup
-
-프로젝트에 도메인을 설정합니다 (DNS + SSL 자동).
-
-**Parameters:**
-| Name | Type | Required | Default | Description |
-|------|------|----------|---------|-------------|
-| projectName | string | Yes | - | 프로젝트명 |
-| domain | string | Yes | - | 도메인 (예: myapp.codeb.kr) |
-| environment | string | No | production | 환경 |
-
-**요청:**
 ```json
 {
   "tool": "domain_setup",
@@ -452,292 +320,214 @@ Speed Insights 점수를 조회합니다.
 }
 ```
 
-**응답:**
+**지원 도메인:**
+- `*.codeb.kr` - 자동 DNS (PowerDNS) + SSL (Caddy)
+- 커스텀 도메인 - 수동 DNS 설정 필요 (A: 158.247.203.55)
+
+#### domain_list
+
 ```json
 {
-  "success": true,
-  "result": {
-    "domain": "myapp.codeb.kr",
-    "ssl": true,
-    "dns": {
-      "type": "A",
-      "value": "158.247.203.55"
-    },
-    "url": "https://myapp.codeb.kr"
+  "tool": "domain_list",
+  "params": {
+    "projectName": "myapp"
+  }
+}
+```
+
+#### domain_delete
+
+```json
+{
+  "tool": "domain_delete",
+  "params": {
+    "projectName": "myapp",
+    "domain": "old.myapp.com"
   }
 }
 ```
 
 ---
 
-## Health & Scan Tools
+### 5.4 프로젝트 초기화
 
-### health_check
+#### workflow_init
 
-CodeB 인프라 상태를 확인합니다.
+새 프로젝트 인프라 초기화.
 
-**Parameters:**
-| Name | Type | Required | Default | Description |
-|------|------|----------|---------|-------------|
-| server | string | No | all | app, streaming, storage, backup, all |
-
-**응답:**
 ```json
 {
-  "success": true,
-  "result": {
-    "status": "healthy",
-    "servers": {
-      "app": {
-        "ip": "158.247.203.55",
-        "status": "healthy",
-        "services": ["caddy", "docker", "mcp-api"]
-      },
-      "streaming": {
-        "ip": "141.164.42.213",
-        "status": "healthy",
-        "services": ["centrifugo"]
-      },
-      "storage": {
-        "ip": "64.176.226.119",
-        "status": "healthy",
-        "services": ["postgresql", "redis"]
-      },
-      "backup": {
-        "ip": "141.164.37.63",
-        "status": "healthy",
-        "services": ["prometheus", "grafana"]
-      }
-    }
-  }
-}
-```
-
-### scan
-
-프로젝트 배포 준비 상태를 스캔합니다.
-
-**Parameters:**
-| Name | Type | Required | Description |
-|------|------|----------|-------------|
-| projectName | string | Yes | 프로젝트명 |
-
-**응답:**
-```json
-{
-  "success": true,
-  "result": {
-    "projectName": "myapp",
-    "ready": true,
-    "checks": {
-      "dockerfile": true,
-      "envFile": true,
-      "healthEndpoint": true,
-      "registry": true
-    },
-    "warnings": [],
-    "errors": []
-  }
-}
-```
-
----
-
-## Workflow Tools
-
-### workflow_init
-
-새 프로젝트를 초기화합니다.
-
-**Parameters:**
-| Name | Type | Required | Default | Description |
-|------|------|----------|---------|-------------|
-| projectName | string | Yes | - | 프로젝트명 |
-| type | string | No | nextjs | nextjs, remix, nodejs, python, go |
-| database | boolean | No | true | PostgreSQL 포함 |
-| redis | boolean | No | true | Redis 포함 |
-
-**응답:**
-```json
-{
-  "success": true,
-  "result": {
-    "projectName": "myapp",
+  "tool": "workflow_init",
+  "params": {
+    "projectName": "newapp",
     "type": "nextjs",
-    "files": [
-      ".github/workflows/deploy.yml",
-      "Dockerfile",
-      ".env.example"
-    ],
-    "database": {
-      "name": "myapp",
-      "host": "db.codeb.kr",
-      "port": 5432
-    },
-    "redis": {
-      "host": "db.codeb.kr",
-      "port": 6379,
-      "prefix": "myapp:"
-    },
-    "nextSteps": [
-      "1. .env 파일 설정",
-      "2. GitHub Secrets 설정 (CODEB_API_KEY, GHCR_PAT)",
-      "3. git push로 자동 배포"
-    ]
+    "database": true,
+    "redis": true
   }
 }
 ```
 
----
+| 파라미터 | 타입 | 필수 | 설명 |
+|---------|------|------|------|
+| projectName | string | O | 프로젝트명 |
+| type | string | X | nextjs / remix / nodejs / python / go |
+| database | boolean | X | PostgreSQL 포함 (기본: true) |
+| redis | boolean | X | Redis 포함 (기본: true) |
 
-## ENV Tools
+**생성되는 리소스:**
+- DB SSOT 등록 (projects 테이블)
+- Blue-Green 슬롯 (포트 자동 할당 3001~9999)
+- PostgreSQL DB/User
+- Redis DB 번호
+- ENV 파일 (/opt/codeb/env/{project})
+- Caddy 리버스 프록시
+- PowerDNS A 레코드 (*.codeb.kr)
 
-### env_scan
+#### workflow_scan
 
-로컬과 서버의 ENV 파일을 비교합니다.
-
-**응답:**
 ```json
 {
-  "success": true,
-  "result": {
+  "tool": "workflow_scan",
+  "params": {
+    "projectName": "myapp"
+  }
+}
+```
+
+#### workflow_generate
+
+```json
+{
+  "tool": "workflow_generate",
+  "params": {
     "projectName": "myapp",
-    "environment": "staging",
-    "comparison": {
-      "matching": ["DATABASE_URL", "REDIS_URL"],
-      "localOnly": ["DEBUG"],
-      "serverOnly": ["CODEB_VERSION"],
-      "different": [
-        { "key": "PORT", "local": "3000", "server": "3001" }
-      ]
-    }
+    "type": "nextjs"
   }
 }
 ```
 
-### env_restore
+---
 
-백업에서 ENV를 복구합니다.
+### 5.5 환경변수 관리
 
-**Parameters:**
-| Name | Type | Required | Default | Description |
-|------|------|----------|---------|-------------|
-| projectName | string | Yes | - | 프로젝트명 |
-| environment | string | No | production | 환경 |
-| version | string | No | master | master, current, 또는 타임스탬프 |
+#### env_sync
+
+```json
+{
+  "tool": "env_sync",
+  "params": {
+    "projectName": "myapp",
+    "environment": "production",
+    "envContent": "KEY=value\nOTHER=value2"
+  }
+}
+```
+
+#### env_get
+
+```json
+{
+  "tool": "env_get",
+  "params": {
+    "projectName": "myapp",
+    "environment": "production"
+  }
+}
+```
+
+#### env_scan
+
+```json
+{
+  "tool": "env_scan",
+  "params": {
+    "projectName": "myapp"
+  }
+}
+```
+
+#### env_restore
+
+```json
+{
+  "tool": "env_restore",
+  "params": {
+    "projectName": "myapp",
+    "environment": "production",
+    "version": "master"
+  }
+}
+```
+
+---
+
+### 5.6 유틸리티
+
+#### health_check
+
+전체 인프라 상태 확인.
+
+```json
+{
+  "tool": "health_check",
+  "params": {}
+}
+```
 
 **응답:**
 ```json
 {
   "success": true,
-  "result": {
-    "restoredFrom": "/opt/codeb/env-backup/myapp/production/master.env",
-    "variables": 15,
-    "message": "ENV restored from master"
+  "data": {
+    "api": {
+      "status": "healthy",
+      "version": "8.0.0",
+      "uptime": 123456
+    },
+    "containers": [
+      {"name": "workb-blue", "image": "workb", "status": "Up", "ports": "4001"}
+    ],
+    "slots": [
+      {"project": "workb", "activeSlot": "blue", "blue": {...}, "green": {...}}
+    ],
+    "images": [...],
+    "ports": [...]
   }
 }
 ```
 
 ---
 
-## Permission Matrix
+## 6. 에러 처리
 
-| Tool | owner | admin | member | viewer |
-|------|:-----:|:-----:|:------:|:------:|
-| team_create | O | X | X | X |
-| team_delete | O | X | X | X |
-| team_settings | O | O | X | X |
-| member_invite | O | O | X | X |
-| member_remove | O | O | X | X |
-| token_create | O | O | X | X |
-| token_revoke | O | O | O | X |
-| deploy | O | O | O | X |
-| promote | O | O | O | X |
-| rollback | O | O | O | X |
-| slot_cleanup | O | O | X | X |
-| edge_deploy | O | O | O | X |
-| edge_delete | O | O | O | X |
-| domain_setup | O | O | O | X |
-| domain_delete | O | O | O | X |
-| env_restore | O | O | O | X |
-| workflow_init | O | O | O | X |
-| slot_status | O | O | O | O |
-| slot_list | O | O | O | O |
-| team_list | O | O | O | O |
-| member_list | O | O | O | O |
-| token_list | O | O | O | X |
-| edge_list | O | O | O | O |
-| edge_logs | O | O | O | O |
-| analytics_* | O | O | O | O |
-| domain_list | O | O | O | O |
-| health_check | O | O | O | O |
-| scan | O | O | O | O |
-| env_scan | O | O | O | O |
-
----
-
-## Error Responses
-
-### 401 Unauthorized
+### 6.1 에러 응답 형식
 
 ```json
 {
   "success": false,
-  "error": "Invalid or missing API Key",
-  "hint": "Set X-API-Key header with codeb_{teamId}_{role}_{token} format"
+  "error": "에러 메시지",
+  "duration": 123,
+  "timestamp": "2026-02-06T12:00:00.000Z",
+  "correlationId": "abc-123-def"
 }
 ```
 
-### 403 Forbidden
+### 6.2 HTTP 상태 코드
 
-```json
-{
-  "success": false,
-  "error": "Permission denied: viewer cannot use deploy",
-  "requiredRole": "member"
-}
-```
+| 코드 | 의미 |
+|------|------|
+| 200 | 성공 |
+| 400 | 잘못된 요청 (도구명 누락 등) |
+| 401 | 인증 실패 (API 키 없음/유효하지 않음) |
+| 403 | 권한 없음 |
+| 404 | 도구 없음 |
+| 429 | Rate Limit 초과 |
+| 500 | 서버 에러 |
 
-### 404 Not Found
+### 6.3 Rate Limit
 
-```json
-{
-  "success": false,
-  "error": "Unknown tool: invalid_tool",
-  "available": ["deploy", "promote", "rollback", "..."]
-}
-```
-
-### 429 Too Many Requests
-
-```json
-{
-  "success": false,
-  "error": "Rate limit exceeded",
-  "retryAfter": 60
-}
-```
-
-### 500 Internal Server Error
-
-```json
-{
-  "success": false,
-  "error": "Internal server error",
-  "requestId": "req_abc123"
-}
-```
-
----
-
-## Rate Limits
-
-| Role | Requests/min | Burst |
-|------|-------------|-------|
-| owner | 1000 | 100 |
-| admin | 500 | 50 |
-| member | 200 | 20 |
-| viewer | 100 | 10 |
+- 분당 60회 제한
+- 헤더로 확인: `X-RateLimit-Remaining`, `X-RateLimit-Reset`
 
 ---
 
@@ -753,7 +543,8 @@ curl -X POST "https://api.codeb.kr/api/tool" \
     "tool": "deploy",
     "params": {
       "projectName": "myapp",
-      "environment": "staging"
+      "environment": "production",
+      "image": "64.176.226.119:5000/myapp:latest"
     }
   }'
 ```
@@ -764,13 +555,7 @@ curl -X POST "https://api.codeb.kr/api/tool" \
 curl -X POST "https://api.codeb.kr/api/tool" \
   -H "X-API-Key: codeb_default_member_YOUR_TOKEN" \
   -H "Content-Type: application/json" \
-  -d '{
-    "tool": "promote",
-    "params": {
-      "projectName": "myapp",
-      "environment": "staging"
-    }
-  }'
+  -d '{"tool": "promote", "params": {"projectName": "myapp"}}'
 ```
 
 ### 헬스체크
@@ -779,25 +564,11 @@ curl -X POST "https://api.codeb.kr/api/tool" \
 curl https://api.codeb.kr/health
 ```
 
-### Slot 상태 확인
-
-```bash
-curl -X POST "https://api.codeb.kr/api/tool" \
-  -H "X-API-Key: codeb_default_viewer_YOUR_TOKEN" \
-  -H "Content-Type: application/json" \
-  -d '{
-    "tool": "slot_status",
-    "params": {
-      "projectName": "myapp",
-      "environment": "staging"
-    }
-  }'
-```
-
 ---
 
-## 다음 단계
+## 관련 문서
 
-- [QUICK_START.md](./QUICK_START.md) - 빠른 시작 가이드
-- [DEPLOYMENT.md](./DEPLOYMENT.md) - Blue-Green 배포 상세 가이드
-- [ARCHITECTURE.md](./ARCHITECTURE.md) - 시스템 아키텍처
+- [SKILLS-GUIDE.md](./SKILLS-GUIDE.md) - Skills 사용 가이드
+- [deployment-guide.md](./deployment-guide.md) - 배포 가이드
+- [VERSION-MANAGEMENT.md](./VERSION-MANAGEMENT.md) - 버전 관리 가이드
+- [../CLAUDE.md](../CLAUDE.md) - Claude Code 규칙

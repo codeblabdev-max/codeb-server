@@ -1,43 +1,206 @@
 # CodeB v7.0 - 배포 플로우 가이드
 
 > Blue-Green 배포 시스템의 전체 흐름과 각 단계별 동작
+>
+> **문서 버전**: 8.0.0
+> **최종 업데이트**: 2026-02-06
 
 ---
 
-## 배포 흐름 개요
+## 목차
+
+1. [배포 방식 개요](#1-배포-방식-개요)
+2. [GitHub Actions CI/CD 플로우](#2-github-actions-cicd-플로우)
+3. [Blue-Green 배포 단계](#3-blue-green-배포-단계)
+4. [Slot 상태 관리](#4-slot-상태-관리)
+5. [포트 할당 전략](#5-포트-할당-전략)
+6. [데이터 흐름](#6-데이터-흐름)
+7. [에러 처리](#7-에러-처리)
+
+---
+
+## 1. 배포 방식 개요
+
+### 1.1 두 가지 배포 방식
 
 ```
 ┌─────────────────────────────────────────────────────────────────────────────┐
-│                         CodeB v7.0 배포 플로우                                │
+│                         CodeB v7.0 배포 방식                                  │
 ├─────────────────────────────────────────────────────────────────────────────┤
 │                                                                             │
-│   /we:deploy                /we:promote               /we:rollback          │
-│       │                         │                         │                 │
-│       ▼                         ▼                         ▼                 │
-│  ┌─────────┐              ┌─────────┐              ┌─────────┐             │
-│  │ Preview │    검증 후   │ Active  │   문제 시   │ Rollback│             │
-│  │   URL   │ ───────────▶ │  전환   │ ◀────────── │         │             │
-│  └─────────┘              └─────────┘              └─────────┘             │
+│  방식 1: GitHub Actions CI/CD (일반 프로젝트 - workb, heeling 등)           │
+│  ────────────────────────────────────────────────────────────────           │
+│                                                                             │
+│  [로컬] ──git push──→ [GitHub] ──trigger──→ [Self-Hosted Runner]           │
+│                                                    │                        │
+│                                      ┌─────────────┴─────────────┐          │
+│                                      │  Docker BuildKit          │          │
+│                                      │  + Minio S3 Cache         │          │
+│                                      └─────────────┬─────────────┘          │
+│                                                    │                        │
+│                                                    ▼                        │
+│                                      ┌─────────────────────────┐            │
+│                                      │  Private Registry Push  │            │
+│                                      │  64.176.226.119:5000    │            │
+│                                      └─────────────┬───────────┘            │
+│                                                    │                        │
+│                                                    ▼                        │
+│                                      ┌─────────────────────────┐            │
+│                                      │  MCP API 호출           │            │
+│                                      │  deploy_project(image)  │            │
+│                                      └─────────────────────────┘            │
+│                                                                             │
+│  방식 2: 수동 배포 (codeb-server 전용)                                       │
+│  ────────────────────────────────────────────────────────────────           │
+│                                                                             │
+│  [로컬] ──deploy-all.sh──→ [직접 빌드] ──SSH──→ [서버 배포]                 │
 │                                                                             │
 └─────────────────────────────────────────────────────────────────────────────┘
 ```
 
+### 1.2 배포 흐름 비교
+
+| 단계 | GitHub Actions (workb) | 수동 (codeb-server) |
+|------|------------------------|---------------------|
+| 트리거 | `git push` | `./deploy-all.sh` |
+| 빌드 위치 | Self-Hosted Runner | 로컬 |
+| 빌드 캐시 | Minio S3 | 없음 |
+| 이미지 저장 | Private Registry | 서버 직접 |
+| 배포 API | MCP API (image 파라미터) | SSH + Docker |
+
 ---
 
-## 1. 배포 단계 (`/we:deploy`)
+## 2. GitHub Actions CI/CD 플로우
 
-### 1.1 흐름도
+### 2.1 전체 흐름
+
+```
+┌─────────────────────────────────────────────────────────────────────────────┐
+│                    GitHub Actions CI/CD 플로우 (workb 방식)                   │
+├─────────────────────────────────────────────────────────────────────────────┤
+│                                                                             │
+│  ┌──────────────┐                                                           │
+│  │  git push    │                                                           │
+│  │  main branch │                                                           │
+│  └──────┬───────┘                                                           │
+│         │                                                                   │
+│         ▼                                                                   │
+│  ┌──────────────────────────────────────────────────────────────────────┐  │
+│  │  GitHub Actions Workflow                                              │  │
+│  │  runs-on: [self-hosted, docker]                                       │  │
+│  ├──────────────────────────────────────────────────────────────────────┤  │
+│  │                                                                       │  │
+│  │  1. Checkout                                                          │  │
+│  │     └─→ actions/checkout@v4                                          │  │
+│  │                                                                       │  │
+│  │  2. Setup Docker Buildx                                               │  │
+│  │     └─→ docker/setup-buildx-action@v3                                │  │
+│  │                                                                       │  │
+│  │  3. Build with Minio S3 Cache ⭐                                      │  │
+│  │     ┌────────────────────────────────────────────────────────────┐   │  │
+│  │     │  docker buildx build \                                      │   │  │
+│  │     │    --cache-from "type=s3,bucket=docker-cache,..."          │   │  │
+│  │     │    --cache-to "type=s3,bucket=docker-cache,mode=max,..."   │   │  │
+│  │     │    -t registry:5000/projectName:sha \                      │   │  │
+│  │     │    --push .                                                │   │  │
+│  │     └────────────────────────────────────────────────────────────┘   │  │
+│  │                                                                       │  │
+│  │  4. MCP API 호출 (Blue-Green 배포)                                    │  │
+│  │     ┌────────────────────────────────────────────────────────────┐   │  │
+│  │     │  curl -X POST "https://api.codeb.kr/api/tool" \             │   │  │
+│  │     │    -H "X-API-Key: $CODEB_API_KEY" \                        │   │  │
+│  │     │    -d '{                                                   │   │  │
+│  │     │      "tool": "deploy",                                     │   │  │
+│  │     │      "params": {                                           │   │  │
+│  │     │        "projectName": "workb",                             │   │  │
+│  │     │        "image": "64.176.226.119:5000/workb:sha"  ← 핵심!   │   │  │
+│  │     │      }                                                     │   │  │
+│  │     │    }'                                                      │   │  │
+│  │     └────────────────────────────────────────────────────────────┘   │  │
+│  │                                                                       │  │
+│  └──────────────────────────────────────────────────────────────────────┘  │
+│         │                                                                   │
+│         ▼                                                                   │
+│  ┌──────────────────┐                                                       │
+│  │  Preview URL     │  ← 비활성 슬롯에 배포됨                               │
+│  │  검증 후         │                                                       │
+│  │  /we:promote     │  ← 트래픽 전환                                        │
+│  └──────────────────┘                                                       │
+│                                                                             │
+└─────────────────────────────────────────────────────────────────────────────┘
+```
+
+### 2.2 Minio S3 캐시 구조
+
+```
+┌─────────────────────────────────────────────────────────────────┐
+│                    Minio S3 Docker 캐시                          │
+├─────────────────────────────────────────────────────────────────┤
+│                                                                 │
+│  Storage Server: 64.176.226.119:9000                            │
+│  Bucket: docker-cache                                           │
+│                                                                 │
+│  캐시 키 구조:                                                   │
+│  docker-cache/                                                  │
+│  ├── workb/                                                     │
+│  │   ├── blobs/                                                 │
+│  │   │   ├── sha256:abc123...  (레이어 캐시)                   │
+│  │   │   └── sha256:def456...                                  │
+│  │   └── manifests/                                             │
+│  └── heeling/                                                   │
+│      └── ...                                                    │
+│                                                                 │
+│  장점:                                                          │
+│  ✅ 레이어 캐시로 빌드 시간 80% 단축                            │
+│  ✅ Self-Hosted Runner와 같은 네트워크 (빠른 전송)              │
+│  ✅ 프로젝트별 독립 캐시                                        │
+│                                                                 │
+└─────────────────────────────────────────────────────────────────┘
+```
+
+### 2.3 Private Registry
+
+```
+┌─────────────────────────────────────────────────────────────────┐
+│                    Private Docker Registry                       │
+├─────────────────────────────────────────────────────────────────┤
+│                                                                 │
+│  주소: 64.176.226.119:5000                                      │
+│  프로토콜: HTTP (내부망, insecure-registries 설정 필요)         │
+│                                                                 │
+│  이미지 태그 규칙:                                               │
+│  ┌─────────────────────────────────────────────────────────┐    │
+│  │  64.176.226.119:5000/{projectName}:{tag}                │    │
+│  │                                                          │    │
+│  │  예시:                                                   │    │
+│  │  - 64.176.226.119:5000/workb:abc123def  (commit sha)    │    │
+│  │  - 64.176.226.119:5000/workb:latest     (최신)          │    │
+│  │  - 64.176.226.119:5000/heeling:v1.0.0   (태그)          │    │
+│  └─────────────────────────────────────────────────────────┘    │
+│                                                                 │
+│  확인 명령:                                                     │
+│  curl http://64.176.226.119:5000/v2/_catalog                   │
+│  curl http://64.176.226.119:5000/v2/workb/tags/list            │
+│                                                                 │
+└─────────────────────────────────────────────────────────────────┘
+```
+
+---
+
+## 3. Blue-Green 배포 단계
+
+### 3.1 배포 단계 (`/we:deploy` 또는 MCP API)
 
 ```
 ┌──────────────────┐
-│  /we:deploy      │
-│  projectName     │
+│  deploy_project  │
+│  (MCP API 호출)  │
 └────────┬─────────┘
          │
          ▼
 ┌──────────────────┐     실패
-│ 1. MCP 인증      │────────────▶ Access Denied
-│    (API Key)     │
+│ 1. API Key 인증  │────────────▶ Access Denied
+│    (X-API-Key)   │
 └────────┬─────────┘
          │ 성공
          ▼
@@ -55,9 +218,9 @@
          │                                 │
          └─────────────┬───────────────────┘
                        ▼
-         ┌──────────────────┐     실패
-         │ 4. Docker Pull   │────────────▶ 롤백
-         │    (이미지)      │
+         ┌──────────────────┐     실패 (이미지 없음)
+         │ 4. Docker Pull   │────────────▶ Error
+         │    (image 파라미터)│
          └────────┬─────────┘
                   │ 성공
                   ▼
@@ -93,37 +256,7 @@
          └──────────────────┘
 ```
 
-### 1.2 상세 설명
-
-| 단계 | 파일 | 함수 | 설명 |
-|------|------|------|------|
-| 1 | index.ts | authMiddleware | API Key 검증, 팀/프로젝트 권한 확인 |
-| 2 | slot.ts | getSlotRegistry | 파일 기반 slot registry 조회 |
-| 3 | deploy.ts | allocateBasePort | SSOT + Docker + ss 3중 확인 |
-| 4 | deploy.ts | executeDeploy | `docker pull` 실행 |
-| 5 | deploy.ts | executeDeploy | `docker stop/rm` 기존 컨테이너 |
-| 6 | deploy.ts | executeDeploy | `docker run` 새 컨테이너 |
-| 7 | deploy.ts | waitForHealthy | 3단계 헬스체크 |
-| 8 | slot.ts | updateSlotRegistry | 파일 + PostgreSQL 동기화 |
-
-### 1.3 헬스체크 순서
-
-```
-1. Docker healthcheck 상태 확인 (가장 신뢰성 있음)
-   docker inspect --format '{{.State.Health.Status}}'
-
-2. 컨테이너 내부 curl (네트워크 우회)
-   docker exec {container} curl -sf http://localhost:3000/health
-
-3. 호스트에서 직접 curl (fallback)
-   curl -sf http://localhost:{port}/health
-```
-
----
-
-## 2. 프로모트 단계 (`/we:promote`)
-
-### 2.1 흐름도
+### 3.2 프로모트 단계 (`/we:promote`)
 
 ```
 ┌──────────────────┐
@@ -153,7 +286,6 @@
 ┌──────────────────┐
 │ 4. Caddy 설정    │
 │    생성          │
-│  (caddy.ts)      │
 └────────┬─────────┘
          │
          ▼
@@ -177,38 +309,7 @@
 └──────────────────┘
 ```
 
-### 2.2 Caddy 설정 구조
-
-```caddyfile
-# /etc/caddy/sites/{projectName}-{environment}.caddy
-
-project.codeb.kr {
-  reverse_proxy localhost:4100 localhost:4101 {
-    lb_policy first       # 첫 번째 포트 우선 (active)
-    fail_duration 10s     # 실패 시 10초간 두 번째로 전환
-    health_uri /health
-    health_interval 10s
-    health_timeout 5s
-  }
-  encode gzip
-  header {
-    X-CodeB-Project {projectName}
-    X-CodeB-Version {version}
-    X-CodeB-Slot {activeSlot}
-    X-CodeB-Environment {environment}
-    -Server
-  }
-  log {
-    output file /var/log/caddy/{projectName}.log
-  }
-}
-```
-
----
-
-## 3. 롤백 단계 (`/we:rollback`)
-
-### 3.1 흐름도
+### 3.3 롤백 단계 (`/we:rollback`)
 
 ```
 ┌──────────────────┐
@@ -251,17 +352,44 @@ project.codeb.kr {
 
 ---
 
-## 4. 포트 할당 전략
+## 4. Slot 상태 관리
 
-### 4.1 포트 범위
+### 4.1 Slot 상태 전이
 
-| 환경 | 범위 | 예시 |
-|------|------|------|
-| Production | 4100-4499 | blue: 4100, green: 4101 |
-| Staging | 4500-4999 | blue: 4500, green: 4501 |
-| Preview | 5000-5499 | blue: 5000, green: 5001 |
+```
+┌─────────┐     deploy      ┌──────────┐    promote     ┌────────┐
+│  empty  │ ───────────────▶│ deployed │ ──────────────▶│ active │
+└─────────┘                 └──────────┘                └────────┘
+     ▲                                                       │
+     │                                                       │
+     │                    ┌─────────┐                        │
+     │    cleanup         │  grace  │◀───────────────────────┘
+     └────────────────────│(48시간) │       promote (다른 슬롯)
+                          └─────────┘
+```
 
-### 4.2 SSOT 구조
+### 4.2 상태별 의미
+
+| 상태 | 설명 | 전이 조건 |
+|------|------|----------|
+| empty | 빈 슬롯 | cleanup 완료 |
+| deployed | 배포됨 (대기) | deploy 성공, Preview URL 사용 가능 |
+| active | 프로덕션 트래픽 | promote 성공 |
+| grace | 롤백 대기 (48h) | 다른 슬롯 promote, 롤백 가능 |
+
+---
+
+## 5. 포트 할당 전략
+
+### 5.1 포트 범위
+
+| 환경 | 범위 | Blue | Green |
+|------|------|------|-------|
+| Production | 4100-4499 | 짝수 (4100) | 홀수 (4101) |
+| Staging | 4500-4999 | 짝수 (4500) | 홀수 (4501) |
+| Preview | 5000-5499 | 짝수 (5000) | 홀수 (5001) |
+
+### 5.2 SSOT 구조
 
 ```json
 // /opt/codeb/registry/ssot.json
@@ -278,7 +406,7 @@ project.codeb.kr {
 }
 ```
 
-### 4.3 포트 할당 로직
+### 5.3 포트 할당 로직
 
 ```
 1. SSOT 파일에서 등록된 포트 조회
@@ -290,30 +418,9 @@ project.codeb.kr {
 
 ---
 
-## 5. Slot 상태 전이
-
-```
-┌─────────┐     deploy      ┌──────────┐    promote     ┌────────┐
-│  empty  │ ───────────────▶│ deployed │ ──────────────▶│ active │
-└─────────┘                 └──────────┘                └────────┘
-     ▲                                                       │
-     │                                                       │
-     │                    ┌─────────┐                        │
-     │    cleanup         │  grace  │◀───────────────────────┘
-     └────────────────────│(48시간) │       promote (다른 슬롯)
-                          └─────────┘
-```
-
-| 상태 | 설명 | 전이 조건 |
-|------|------|----------|
-| empty | 빈 슬롯 | cleanup 완료 |
-| deployed | 배포됨 (대기) | deploy 성공 |
-| active | 프로덕션 트래픽 | promote 성공 |
-| grace | 롤백 대기 (48h) | 다른 슬롯 promote |
-
----
-
 ## 6. 데이터 흐름
+
+### 6.1 저장소 구조
 
 ```
 ┌─────────────────────────────────────────────────────────────────────────┐
@@ -335,7 +442,7 @@ project.codeb.kr {
 └─────────────────────────────────────────────────────────────────────────┘
 ```
 
-### 6.1 동기화 전략
+### 6.2 동기화 전략
 
 - **Write**: 파일 먼저 → DB 동기화 (실패해도 계속)
 - **Read**: 파일 기반 (Primary Source)
@@ -343,31 +450,24 @@ project.codeb.kr {
 
 ---
 
-## 7. 관련 파일
+## 7. 에러 처리
 
-| 파일 | 역할 |
-|------|------|
-| `mcp-server/src/tools/deploy.ts` | 배포 실행 |
-| `mcp-server/src/tools/promote.ts` | 트래픽 전환 |
-| `mcp-server/src/tools/rollback.ts` | 롤백 실행 |
-| `mcp-server/src/tools/slot.ts` | Slot 레지스트리 관리 |
-| `mcp-server/src/lib/caddy.ts` | Caddy 설정 통합 관리 |
-| `mcp-server/src/lib/database.ts` | PostgreSQL 연동 |
-| `mcp-server/src/lib/ssh.ts` | SSH 연결 관리 |
-
----
-
-## 8. 에러 처리
-
-### 8.1 배포 실패 시
+### 7.1 배포 실패 시
 
 ```
-1. Docker 이미지 pull 실패 → 즉시 종료, 이전 상태 유지
-2. 컨테이너 시작 실패 → 컨테이너 정리, 이전 상태 유지
-3. 헬스체크 실패 → 컨테이너 정리, 이전 상태 유지
+1. Docker 이미지 pull 실패
+   └─→ "Image not found" 에러
+   └─→ GitHub Actions가 빌드하지 않았으면 이미지 없음!
+   └─→ 해결: git push로 빌드 트리거
+
+2. 컨테이너 시작 실패
+   └─→ 컨테이너 정리, 이전 상태 유지
+
+3. 헬스체크 실패
+   └─→ 컨테이너 정리, 이전 상태 유지
 ```
 
-### 8.2 프로모트 실패 시
+### 7.2 프로모트 실패 시
 
 ```
 1. 슬롯 상태 불일치 → "Run deploy first" 반환
@@ -377,7 +477,24 @@ project.codeb.kr {
 
 ---
 
-## 버전
+## 관련 파일
 
-- **문서 버전**: v7.0.54
-- **최종 업데이트**: 2026-01-15
+| 파일 | 역할 |
+|------|------|
+| `mcp-server/src/tools/deploy.ts` | 배포 실행 |
+| `mcp-server/src/tools/promote.ts` | 트래픽 전환 |
+| `mcp-server/src/tools/rollback.ts` | 롤백 실행 |
+| `mcp-server/src/tools/slot.ts` | Slot 레지스트리 관리 |
+| `mcp-server/src/tools/project.ts` | 프로젝트 초기화 (workflow_init) |
+| `mcp-server/src/tools/domain.ts` | 도메인 관리 |
+| `mcp-server/src/lib/caddy.ts` | Caddy 설정 통합 관리 |
+| `mcp-server/src/lib/database.ts` | PostgreSQL 연동 |
+| `mcp-server/src/lib/ssh.ts` | SSH 연결 관리 |
+
+---
+
+## 관련 문서
+
+- [KNOWN-ISSUES.md](./KNOWN-ISSUES.md) - 알려진 문제점 및 해결 방안
+- [deployment-guide.md](./deployment-guide.md) - 배포 가이드
+- [PRIVATE-REGISTRY.md](./PRIVATE-REGISTRY.md) - Private Registry 가이드

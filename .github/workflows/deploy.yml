@@ -1,0 +1,283 @@
+# codeb-server CI/CD Pipeline
+# Self-Hosted Runner + Minio S3 Cache
+# 자동 배포: git push → API + CLI 배포
+#
+# Updated: 2026-02-06
+
+name: codeb-server CI/CD
+
+on:
+  push:
+    branches: [main]
+  workflow_dispatch:
+    inputs:
+      version:
+        description: 'Version (optional, uses VERSION file if empty)'
+        required: false
+        type: string
+
+env:
+  MINIO_ENDPOINT: http://64.176.226.119:9000
+  MINIO_BUCKET: docker-cache
+  API_SERVER: 158.247.203.55
+  STORAGE_SERVER: 64.176.226.119
+
+concurrency:
+  group: ${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  deploy:
+    name: Build & Deploy (API + CLI)
+    runs-on: [self-hosted, docker]
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Get Version
+        id: version
+        run: |
+          if [ -n "${{ github.event.inputs.version }}" ]; then
+            VERSION="${{ github.event.inputs.version }}"
+            echo "$VERSION" > VERSION
+          else
+            VERSION=$(cat VERSION | tr -d '\n')
+          fi
+          echo "version=$VERSION" >> $GITHUB_OUTPUT
+          echo "📦 Version: $VERSION"
+
+      - name: Sync Version to package.json files
+        run: |
+          VERSION=${{ steps.version.outputs.version }}
+          for PKG in "package.json" "mcp-server/package.json" "cli/package.json"; do
+            if [ -f "$PKG" ]; then
+              jq --arg v "$VERSION" '.version = $v' "$PKG" > "$PKG.tmp" && mv "$PKG.tmp" "$PKG"
+              echo "✅ $PKG → $VERSION"
+            fi
+          done
+
+      - name: Sync Version to CLAUDE.md files
+        run: |
+          VERSION=${{ steps.version.outputs.version }}
+          for CLAUDE_FILE in "CLAUDE.md" "cli/rules/CLAUDE.md"; do
+            if [ -f "$CLAUDE_FILE" ]; then
+              sed -i "s/CLAUDE.md v[0-9.]*[ -]/CLAUDE.md v${VERSION} -/g" "$CLAUDE_FILE"
+              echo "✅ $CLAUDE_FILE"
+            fi
+          done
+
+      # ============================================
+      # API Server 배포
+      # ============================================
+      - name: Build API Server (TypeScript)
+        run: |
+          cd mcp-server
+          npm ci
+          npm run build
+          cp ../VERSION ./
+          echo "✅ TypeScript build completed"
+
+      - name: Create API tarball
+        run: |
+          cd mcp-server
+          tar -czf /tmp/mcp-server-deploy.tar.gz dist package.json package-lock.json VERSION
+          echo "✅ API tarball created"
+
+      - name: Deploy API Server
+        run: |
+          VERSION=${{ steps.version.outputs.version }}
+
+          # tarball 전송
+          scp /tmp/mcp-server-deploy.tar.gz root@${{ env.API_SERVER }}:/tmp/
+
+          # 서버에서 배포
+          ssh root@${{ env.API_SERVER }} "
+            cd /tmp
+            rm -rf /tmp/mcp-deploy && mkdir -p /tmp/mcp-deploy
+            tar -xzf mcp-server-deploy.tar.gz -C /tmp/mcp-deploy
+            cd /tmp/mcp-deploy
+            npm ci --omit=dev
+
+            # Docker 이미지 빌드
+            cat > Dockerfile.prod <<'DOCKERFILE'
+          FROM node:20-alpine
+          RUN addgroup -g 1001 -S nodejs && adduser -S codeb -u 1001 -G nodejs
+          WORKDIR /app
+          COPY --chown=codeb:nodejs dist ./dist
+          COPY --chown=codeb:nodejs node_modules ./node_modules
+          COPY --chown=codeb:nodejs package.json ./
+          COPY --chown=codeb:nodejs VERSION ./
+          RUN mkdir -p /app/logs && chown codeb:nodejs /app/logs
+          ENV NODE_ENV=production PORT=9101
+          USER codeb
+          EXPOSE 9101
+          CMD [\"node\", \"dist/index.js\"]
+          DOCKERFILE
+
+            docker build -t codeb-mcp-api:latest -f Dockerfile.prod .
+            docker build -t codeb-mcp-api:$VERSION -f Dockerfile.prod .
+
+            # 정리
+            rm -rf /tmp/mcp-deploy /tmp/mcp-server-deploy.tar.gz
+          "
+
+          # systemd 재시작
+          ssh root@${{ env.API_SERVER }} "systemctl stop codeb-mcp-api || true"
+          sleep 2
+          ssh root@${{ env.API_SERVER }} "systemctl start codeb-mcp-api"
+          sleep 3
+
+          echo "✅ API Server deployed"
+
+      - name: Verify API Health
+        run: |
+          VERSION=${{ steps.version.outputs.version }}
+          sleep 5
+          API_VERSION=$(curl -sf https://api.codeb.kr/health | jq -r '.version')
+          if [ "$API_VERSION" = "$VERSION" ]; then
+            echo "✅ API Server: $API_VERSION"
+          else
+            echo "❌ API Version mismatch: $API_VERSION (expected $VERSION)"
+            exit 1
+          fi
+
+      # ============================================
+      # CLI Package 배포 (Minio)
+      # ============================================
+      - name: Create CLI tarball
+        run: |
+          VERSION=${{ steps.version.outputs.version }}
+          rm -rf /tmp/codeb-release
+          mkdir -p /tmp/codeb-release
+
+          cp -r cli/bin /tmp/codeb-release/
+          cp -r cli/src /tmp/codeb-release/
+          cp -r cli/commands /tmp/codeb-release/
+          cp -r cli/rules /tmp/codeb-release/
+          cp -r cli/scripts /tmp/codeb-release/
+          cp -r cli/skills /tmp/codeb-release/
+          cp -r cli/templates /tmp/codeb-release/
+          cp cli/package.json /tmp/codeb-release/
+          cp cli/package-lock.json /tmp/codeb-release/
+          cp VERSION /tmp/codeb-release/
+
+          cd /tmp && tar -czf codeb-cli-${VERSION}.tar.gz codeb-release
+          echo "✅ CLI tarball created: codeb-cli-${VERSION}.tar.gz"
+
+      - name: Upload CLI to Minio
+        run: |
+          VERSION=${{ steps.version.outputs.version }}
+
+          # version.json 생성
+          echo "{\"version\": \"${VERSION}\", \"updated\": \"$(date -u +%Y-%m-%dT%H:%M:%SZ)\"}" > /tmp/version.json
+
+          # Storage 서버로 전송
+          scp /tmp/codeb-cli-${VERSION}.tar.gz root@${{ env.STORAGE_SERVER }}:/tmp/
+          scp /tmp/version.json root@${{ env.STORAGE_SERVER }}:/tmp/
+          scp cli/scripts/minio-install.sh root@${{ env.STORAGE_SERVER }}:/tmp/
+          scp cli/scripts/project-update.sh root@${{ env.STORAGE_SERVER }}:/tmp/
+
+          # Minio 업로드
+          ssh root@${{ env.STORAGE_SERVER }} "
+            VERSION=$VERSION
+
+            # 파일을 Minio 컨테이너로 복사
+            docker cp /tmp/codeb-cli-\${VERSION}.tar.gz videopick-minio:/tmp/
+            docker cp /tmp/codeb-cli-\${VERSION}.tar.gz videopick-minio:/tmp/codeb-cli-latest.tar.gz
+            docker cp /tmp/version.json videopick-minio:/tmp/
+            docker cp /tmp/minio-install.sh videopick-minio:/tmp/
+            docker cp /tmp/project-update.sh videopick-minio:/tmp/
+
+            # Minio 버킷에 업로드
+            docker exec videopick-minio mc cp /tmp/codeb-cli-\${VERSION}.tar.gz local/releases/cli/codeb-cli-\${VERSION}.tar.gz
+            docker exec videopick-minio mc cp /tmp/codeb-cli-latest.tar.gz local/releases/cli/codeb-cli-latest.tar.gz
+            docker exec videopick-minio mc cp /tmp/version.json local/releases/cli/version.json
+            docker exec videopick-minio mc cp /tmp/minio-install.sh local/releases/cli/install.sh
+            docker exec videopick-minio mc cp /tmp/project-update.sh local/releases/cli/project-update.sh
+
+            # 정리
+            rm -f /tmp/codeb-cli-*.tar.gz /tmp/version.json /tmp/minio-install.sh /tmp/project-update.sh
+            docker exec videopick-minio rm -f /tmp/codeb-cli-*.tar.gz /tmp/version.json /tmp/minio-install.sh /tmp/project-update.sh
+          "
+
+          echo "✅ CLI uploaded to Minio"
+
+      - name: Verify CLI Version
+        run: |
+          VERSION=${{ steps.version.outputs.version }}
+          CLI_VERSION=$(curl -sf https://releases.codeb.kr/cli/version.json | jq -r '.version')
+          if [ "$CLI_VERSION" = "$VERSION" ]; then
+            echo "✅ CLI Package: $CLI_VERSION"
+          else
+            echo "❌ CLI Version mismatch: $CLI_VERSION (expected $VERSION)"
+            exit 1
+          fi
+
+      # ============================================
+      # SSOT Registry 업데이트
+      # ============================================
+      - name: Update SSOT Registry
+        run: |
+          VERSION=${{ steps.version.outputs.version }}
+
+          ssh root@${{ env.API_SERVER }} "
+            mkdir -p /opt/codeb/registry
+            cat > /opt/codeb/registry/versions.json <<EOF
+          {
+            \"ssot_version\": \"$VERSION\",
+            \"updated\": \"\$(date -u +%Y-%m-%dT%H:%M:%SZ)\",
+            \"components\": {
+              \"api\": {
+                \"version\": \"$VERSION\",
+                \"endpoint\": \"https://api.codeb.kr\",
+                \"health\": \"https://api.codeb.kr/health\"
+              },
+              \"cli\": {
+                \"version\": \"$VERSION\",
+                \"download\": \"https://releases.codeb.kr/cli/install.sh\",
+                \"tarball\": \"https://releases.codeb.kr/cli/codeb-cli-latest.tar.gz\"
+              },
+              \"git\": {
+                \"version\": \"$VERSION\",
+                \"repo\": \"https://github.com/codeblabdev-max/codeb-server\"
+              }
+            }
+          }
+          EOF
+          "
+
+          echo "✅ SSOT Registry updated"
+
+      # ============================================
+      # 최종 요약
+      # ============================================
+      - name: Deployment Summary
+        run: |
+          VERSION=${{ steps.version.outputs.version }}
+          API_VER=$(curl -sf https://api.codeb.kr/health | jq -r '.version')
+          CLI_VER=$(curl -sf https://releases.codeb.kr/cli/version.json | jq -r '.version')
+
+          echo ""
+          echo "═══════════════════════════════════════════════"
+          echo "       CodeB v$VERSION Deployment Complete"
+          echo "═══════════════════════════════════════════════"
+          echo ""
+          echo "📦 Target Version: $VERSION"
+          echo ""
+          echo "   API Server:    $API_VER"
+          echo "   CLI Package:   $CLI_VER"
+          echo ""
+
+          if [ "$API_VER" = "$VERSION" ] && [ "$CLI_VER" = "$VERSION" ]; then
+            echo "✅ All components synced to v$VERSION"
+          else
+            echo "❌ Version mismatch detected!"
+            exit 1
+          fi
+
+      - name: Cleanup
+        if: always()
+        run: |
+          rm -rf /tmp/codeb-release /tmp/codeb-cli-*.tar.gz /tmp/mcp-server-deploy.tar.gz
+          docker image prune -f 2>/dev/null || true
