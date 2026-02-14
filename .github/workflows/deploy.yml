@@ -9,6 +9,9 @@ name: codeb-server CI/CD
 on:
   push:
     branches: [main]
+    paths-ignore:
+      - 'v2/**'
+      - '.github/workflows/deploy-v2.yml'
   workflow_dispatch:
     inputs:
       version:

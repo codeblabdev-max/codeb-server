@@ -1,4 +1,4 @@
-# CLAUDE.md v8.0.0 - CodeB Project Rules
+# CLAUDE.md v8.0.0 -- CodeB Project Rules
 
 > 버전은 VERSION 파일에서 관리됩니다 (SSOT)
 
@@ -6,188 +6,264 @@
 
 ---
 
-## v8.0 변경사항
+## v7.0 Overview
 
 ```
 ┌─────────────────────────────────────────────────────────────────┐
-│                    v8.0.0 주요 변경사항                           │
+│                  CodeB v7.0 vs Vercel 비교                       │
 ├─────────────────────────────────────────────────────────────────┤
 │                                                                 │
-│  1. GitHub Actions 자동 배포 도입                                │
-│     └─→ git push → 자동 빌드 & 배포                             │
-│     └─→ Self-Hosted Runner + Minio S3 Cache                    │
-│     └─→ 해외 경유 없음 (로컬 네트워크만 사용)                   │
-│                                                                 │
-│  2. 버전 관리 통합                                               │
-│     └─→ VERSION 파일이 SSOT (Single Source of Truth)           │
-│     └─→ 모든 package.json, CLAUDE.md 자동 동기화               │
-│     └─→ API + CLI + Registry 동시 업데이트                     │
-│                                                                 │
-│  3. 문서 정리                                                    │
-│     └─→ VERSION-MANAGEMENT.md 신규                             │
-│     └─→ API-REFERENCE.md 20개 도구 문서화                      │
-│     └─→ KNOWN-ISSUES.md 업데이트                               │
-│                                                                 │
-│  4. 클라이언트 버전 체크                                         │
-│     └─→ API가 자동으로 CLI 버전 확인                           │
-│     └─→ 버전 낮으면 업데이트 안내 반환                          │
+│  Feature              │ Vercel │ CodeB v7.0 │ Rating            │
+│  ─────────────────────┼────────┼────────────┼─────────────────  │
+│  Blue-Green Deploy    │   ✅   │     ✅     │ ⭐⭐⭐⭐⭐        │
+│  Zero-Downtime        │   ✅   │     ✅     │ ⭐⭐⭐⭐⭐        │
+│  Instant Rollback     │   ✅   │     ✅     │ ⭐⭐⭐⭐⭐        │
+│  Team RBAC            │   ✅   │     ✅     │ ⭐⭐⭐⭐⭐        │
+│  Preview URL          │   ✅   │     ✅     │ ⭐⭐⭐⭐⭐        │
+│  Edge Functions       │   ✅   │     ✅     │ ⭐⭐⭐⭐⭐        │
+│  Analytics/Vitals     │   ✅   │     ✅     │ ⭐⭐⭐⭐⭐        │
+│  CLI DX               │   ✅   │     ✅     │ ⭐⭐⭐⭐⭐        │
+│  Claude Code 2.1      │   ❌   │     ✅     │ ⭐⭐⭐⭐⭐        │
+│  Skills System        │   ❌   │     ✅     │ ⭐⭐⭐⭐⭐        │
+│  Advanced Hooks       │   ❌   │     ✅     │ ⭐⭐⭐⭐⭐        │
 │                                                                 │
 └─────────────────────────────────────────────────────────────────┘
 ```
 
 ---
 
-## 프로젝트별 배포 방식
+## v7.0 주요 변경사항
 
 ```
 ┌─────────────────────────────────────────────────────────────────┐
-│                    올바른 배포 방식 선택                           │
+│                    CodeB v7.0 New Features                       │
 ├─────────────────────────────────────────────────────────────────┤
 │                                                                 │
-│  codeb-server (본 프로젝트) - v8.0 변경                          │
-│  ───────────────────────────────────────────────────────────    │
-│  ✅ git push origin main → GitHub Actions 자동 배포             │
-│  ✅ 또는 ./scripts/deploy-all.sh (수동 백업용)                  │
-│  ❌ /we:deploy 사용 금지 (인프라 자체라 불가)                   │
+│  1. Claude Code 2.1 100% Integration                            │
+│     └─→ Skills System (Hot Reload 지원)                        │
+│     └─→ PostToolUse / Stop / Agent Hooks                       │
+│     └─→ context: fork (독립 컨텍스트 실행)                      │
+│     └─→ once: true (세션당 1회 실행)                            │
+│     └─→ Wildcard Bash Permissions                              │
 │                                                                 │
-│  workb, heeling 등 (일반 프로젝트)                               │
-│  ───────────────────────────────────────────────────────────    │
-│  ✅ git push origin main → GitHub Actions 자동 배포             │
-│  ✅ /we:promote → 트래픽 전환                                   │
-│  ✅ /we:rollback → 문제 시 롤백                                 │
+│  2. Skills 시스템 (Commands 대체)                               │
+│     └─→ .claude/skills/ 폴더 구조                              │
+│     └─→ agent 필드로 실행 에이전트 지정                         │
+│     └─→ Hook 연동 (PreToolUse, PostToolUse, Stop)              │
+│     └─→ Hot Reload - 파일 수정 시 즉시 반영                     │
 │                                                                 │
-│  신규 프로젝트                                                   │
-│  ───────────────────────────────────────────────────────────    │
-│  ✅ /we:init → 서버 리소스 생성                                 │
-│  ✅ /we:workflow → GitHub Actions 워크플로우 생성               │
-│  ✅ git push → 자동 배포                                        │
+│  3. Advanced Hook System                                        │
+│     └─→ pre-deploy.py - 배포 전 검증                           │
+│     └─→ post-deploy.py - 배포 후 알림/메트릭                   │
+│     └─→ post-promote.py - 트래픽 전환 후 알림                  │
+│     └─→ post-rollback.py - 롤백 후 알림                        │
+│     └─→ session-summary.py - 세션 종료 요약 (once)             │
+│     └─→ agent-audit.py - 에이전트 감사 로깅                    │
+│                                                                 │
+│  4. Timeout 연장 (2.1 지원)                                     │
+│     └─→ Hook timeout: 60초 → 600초 (10분)                      │
+│     └─→ 대용량 출력 디스크 저장 (절단 없음)                     │
+│                                                                 │
+│  5. 언어 설정                                                   │
+│     └─→ "language": "ko" - 한글 응답 기본                      │
 │                                                                 │
 └─────────────────────────────────────────────────────────────────┘
 ```
 
 ---
 
-## GitHub Actions CI/CD (workb 방식)
+## Skills System (Claude Code 2.1)
 
-### 아키텍처
+### Skills 폴더 구조
 
 ```
-┌─────────────────────────────────────────────────────────────────┐
-│               일반 프로젝트 GitHub Actions CI/CD                  │
-├─────────────────────────────────────────────────────────────────┤
-│                                                                 │
-│  [로컬] ──git push──→ [GitHub Actions]                          │
-│                            │                                    │
-│                            │ runs-on: [self-hosted, docker]     │
-│                            ▼                                    │
-│                    [Self-Hosted Runner]                         │
-│                            │                                    │
-│                 ┌──────────┴──────────┐                        │
-│                 │ Docker BuildKit     │                        │
-│                 │ + Minio S3 Cache    │                        │
-│                 └──────────┬──────────┘                        │
-│                            │                                    │
-│                            ▼                                    │
-│              ┌─────────────────────────────┐                   │
-│              │ Private Registry Push       │                   │
-│              │ 64.176.226.119:5000         │                   │
-│              └─────────────┬───────────────┘                   │
-│                            │                                    │
-│                            ▼                                    │
-│              ┌─────────────────────────────┐                   │
-│              │ MCP API 호출                │                   │
-│              │ deploy_project(image=...)   │                   │
-│              └─────────────┬───────────────┘                   │
-│                            │                                    │
-│                            ▼                                    │
-│              Preview URL 반환 → /we:promote                    │
-│                                                                 │
-└─────────────────────────────────────────────────────────────────┘
+.claude/skills/
+├── deploy/
+│   ├── deploy.md         # /we:deploy
+│   ├── promote.md        # /we:promote
+│   └── rollback.md       # /we:rollback
+├── monitoring/
+│   ├── health.md         # /we:health
+│   └── monitor.md        # /we:monitor
+└── infrastructure/
+    ├── domain.md         # /we:domain
+    └── workflow.md       # /we:workflow
 ```
+
+### Skill 파일 형식 (v7.0)
+
+```yaml
+---
+name: deploy
+description: "Blue-Green 배포"
+agent: Bash                    # 실행 에이전트 지정
+context: fork                  # 독립 컨텍스트
+allowed-tools:
+  - mcp__codeb-deploy__*
+hooks:
+  PreToolUse:
+    - matcher: mcp__codeb-deploy__deploy_project
+      hooks:
+        - type: command
+          command: "python3 .claude/hooks/pre-deploy.py"
+  PostToolUse:
+    - matcher: mcp__codeb-deploy__deploy_project
+      hooks:
+        - type: command
+          command: "python3 .claude/hooks/post-deploy.py"
+---
+
+# Skill 내용...
+```
+
+### Hot Reload
+
+Skills 파일 수정 시 Claude Code 재시작 없이 즉시 반영됩니다.
+
+```
+09:00 - /we:deploy myapp (버전 1)
+09:05 - skills/deploy/deploy.md 수정
+09:06 - Claude Code 로그: "Skill 'deploy' reloaded"
+09:07 - /we:deploy myapp (버전 2, 변경사항 적용됨)
+```
+
+---
+
+## Hook System (Claude Code 2.1)
+
+### Hook 구조
+
+```
+.claude/hooks/
+├── pre-bash.py           # PreToolUse - 보안 검증
+├── pre-deploy.py         # PreToolUse - 배포 전 검증
+├── post-deploy.py        # PostToolUse - 배포 후 알림
+├── post-promote.py       # PostToolUse - 프로모트 후 알림
+├── post-rollback.py      # PostToolUse - 롤백 후 알림
+├── session-summary.py    # Stop (once: true) - 세션 종료 요약
+└── agent-audit.py        # Agent Hook - 에이전트 감사
+```
+
+### settings.local.json (v7.0)
+
+```json
+{
+  "language": "ko",
+  "permissions": {
+    "allow": [
+      "Bash(we *)",
+      "Bash(docker *)",
+      "Bash(git *)",
+      "Bash(npm *)",
+      "mcp__codeb-deploy__*"
+    ],
+    "deny": [
+      "Bash(docker system prune -a *)",
+      "Bash(docker volume prune -a *)",
+      "Bash(rm -rf /opt/codeb *)"
+    ]
+  },
+  "hooks": {
+    "PreToolUse": [
+      {
+        "matcher": "Bash",
+        "hooks": [{
+          "type": "command",
+          "command": "python3 .claude/hooks/pre-bash.py",
+          "timeout": 600
+        }]
+      }
+    ],
+    "PostToolUse": [
+      {
+        "matcher": "mcp__codeb-deploy__deploy_project",
+        "hooks": [{
+          "type": "command",
+          "command": "python3 .claude/hooks/post-deploy.py",
+          "timeout": 60
+        }]
+      }
+    ],
+    "Stop": [
+      {
+        "hooks": [{
+          "type": "command",
+          "command": "python3 .claude/hooks/session-summary.py",
+          "once": true
+        }]
+      }
+    ]
+  }
+}
+```
+
+---
+
+## Blue-Green 배포
 
 ### 배포 흐름
 
-```bash
-# 1. 코드 수정 후 커밋 & 푸시 (자동 배포)
-git add -A && git commit -m "feat: 새로운 기능" && git push
-
-# GitHub Actions가 자동으로:
-# - Self-Hosted Runner에서 Docker 빌드 (Minio S3 캐시)
-# - Private Registry에 이미지 푸시
-# - MCP API 호출 → 비활성 슬롯에 배포
-# - Preview URL 반환
-
-# 2. Preview URL 확인 후 트래픽 전환
-/we:promote workb
-
-# 3. 문제 발생 시 즉시 롤백
-/we:rollback workb
-```
-
----
-
-## codeb-server 배포 (수동)
-
-### 아키텍처
-
 ```
 ┌─────────────────────────────────────────────────────────────────┐
-│                 codeb-server 수동 배포 시스템                     │
+│                    CodeB v7.0 배포 흐름                          │
 ├─────────────────────────────────────────────────────────────────┤
 │                                                                 │
-│  [로컬] ──./scripts/deploy-all.sh──→ [App Server + Storage]    │
+│  1. /we:deploy myapp                                            │
+│     └─→ PreToolUse Hook → pre-deploy.py 실행                   │
+│     └─→ 비활성 Slot에 배포 → Preview URL 반환                   │
+│     └─→ PostToolUse Hook → post-deploy.py (알림, 메트릭)       │
 │                                                                 │
-│  배포 대상:                                                     │
-│  ├── [1/5] 로컬 파일 버전 동기화 (package.json, CLAUDE.md)     │
-│  ├── [2/5] Git 커밋 & 푸시 (백업용)                            │
-│  ├── [3/5] API Server (Docker → Systemd)                       │
-│  ├── [4/5] CLI Package (tarball → Minio)                       │
-│  └── [5/5] SSOT Registry 업데이트                              │
+│  2. /we:promote myapp                                           │
+│     └─→ Caddy 설정만 변경 → 무중단 트래픽 전환                   │
+│     └─→ PostToolUse Hook → post-promote.py                     │
+│     └─→ 이전 Slot → grace 상태 (48시간 유지)                    │
 │                                                                 │
-│  ⚠️ GitHub Actions 워크플로우 추가 금지!                        │
+│  3. /we:rollback myapp                                          │
+│     └─→ 즉시 이전 버전으로 롤백 (grace Slot 활성화)             │
+│     └─→ PostToolUse Hook → post-rollback.py                    │
 │                                                                 │
 └─────────────────────────────────────────────────────────────────┘
 ```
 
-### 배포 명령
+### Slot 상태 다이어그램
 
-```bash
-# 전체 배포 (Git + API + CLI)
-./scripts/deploy-all.sh [version]
-
-# 버전 확인
-cat VERSION
-curl -s https://api.codeb.kr/health | jq '.version'
+```
+┌──────────┐    deploy    ┌──────────┐   promote   ┌──────────┐
+│  empty   │ ──────────→  │ deployed │ ─────────→  │  active  │
+└──────────┘              └──────────┘             └──────────┘
+                                                        │
+                                                        │ promote (다른 slot)
+                                                        ▼
+                                                  ┌──────────┐
+                                                  │  grace   │
+                                                  │ (48시간) │
+                                                  └──────────┘
 ```
 
 ---
 
-## Skills 사용 가이드
+## CLI Quick Reference (v7.0)
 
-### 사용 가능한 Skills
+```bash
+# 배포 (git push 기반 — deploy_project MCP 직접 호출 금지)
+/we:deploy                     # git commit & push → Actions 모니터링
+/we:deploy myapp               # 특정 프로젝트 배포
 
-| Skill | 용도 | 주의사항 |
-|-------|------|----------|
-| `/we:init` | 신규 프로젝트 초기화 | workflow_init이 도메인까지 처리 |
-| `/we:quick` | One-Shot 설정 | domain_setup 단계 오류 있음 |
-| `/we:deploy` | 배포 | GitHub Actions 있는 프로젝트는 사용 금지 |
-| `/we:promote` | 트래픽 전환 | 모든 프로젝트에서 사용 가능 |
-| `/we:rollback` | 즉시 롤백 | 모든 프로젝트에서 사용 가능 |
-| `/we:domain` | 도메인 관리 | 배포 후에만 사용 가능 |
-| `/we:health` | 헬스체크 | 모든 프로젝트에서 사용 가능 |
-| `/we:workflow` | CI/CD 생성 | 신규 프로젝트에서 사용 |
+# 트래픽 전환 & 롤백 (MCP 직접 호출 OK)
+/we:promote myapp              # 트래픽 전환 (무중단)
+/we:rollback myapp             # 즉시 롤백
 
-### Skills 위치
+# 모니터링
+/we:health                     # 전체 시스템 헬스체크
+/we:monitor myapp              # 실시간 모니터링
 
-```
-cli/skills/we/
-├── init.md       # /we:init - 프로젝트 초기화
-├── quick.md      # /we:quick - One-Shot 설정
-├── deploy.md     # /we:deploy - 배포
-├── domain.md     # /we:domain - 도메인 관리
-├── rollback.md   # /we:rollback - 롤백
-├── health.md     # /we:health - 헬스체크
-└── workflow.md   # /we:workflow - CI/CD 워크플로우
+# 인프라
+/we:domain setup myapp.codeb.kr   # 도메인 설정
+/we:workflow init myapp           # CI/CD 워크플로우 생성 (Minio S3 캐시)
+
+# 분석
+/we:analyze                    # 전체 프로젝트 분석
+/we:optimize                   # 프로젝트 최적화
 ```
 
 ---
@@ -206,9 +282,8 @@ cli/skills/we/
 │  │             │     │             │     │             │       │
 │  │ • MCP API   │     │ • Centri-   │     │ • Postgres  │       │
 │  │ • Caddy     │     │   fugo      │     │ • Redis     │       │
-│  │ • Docker    │     │ • WebSocket │     │ • Minio     │       │
-│  │ • Self-Host │     │             │     │ • Registry  │       │
-│  │   Runner    │     │             │     │   :5000     │       │
+│  │ • Docker    │     │ • WebSocket │     │             │       │
+│  │ • Edge RT   │     │             │     │             │       │
 │  └─────────────┘     └─────────────┘     └─────────────┘       │
 │         │                   │                   │               │
 │         └───────────────────┼───────────────────┘               │
@@ -226,9 +301,9 @@ cli/skills/we/
 
 | 역할 | IP | 도메인 | 서비스 |
 |------|-----|--------|--------|
-| **App** | 158.247.203.55 | api.codeb.kr | MCP API, Caddy, Docker, Self-Hosted Runner |
+| **App** | 158.247.203.55 | api.codeb.kr | MCP API v7.0, Caddy, Docker |
 | **Streaming** | 141.164.42.213 | ws.codeb.kr | Centrifugo (WebSocket) |
-| **Storage** | 64.176.226.119 | db.codeb.kr | PostgreSQL, Redis, Minio, Private Registry |
+| **Storage** | 64.176.226.119 | db.codeb.kr | PostgreSQL, Redis |
 | **Backup** | 141.164.37.63 | backup.codeb.kr | Prometheus, Grafana |
 
 ---
@@ -255,14 +330,18 @@ member - 배포, promote, rollback
 viewer - 조회만
 ```
 
-### Tool 목록 (16개)
+### Tool 목록 (33개)
 
 | 카테고리 | Tool | 설명 |
 |---------|------|------|
 | **Deploy** | deploy, deploy_project, promote, slot_promote, rollback | Blue-Green 배포 |
 | **Slot** | slot_status, slot_cleanup, slot_list | Slot 관리 |
-| **Domain** | domain_setup, domain_list, domain_delete | 도메인 관리 |
-| **Project** | workflow_init, workflow_scan, scan | 프로젝트 초기화 |
+| **Domain** | domain_setup, domain_list, domain_delete, domain_verify, ssl_status | 도메인 + DNS + SSL |
+| **Project** | workflow_init, workflow_scan, workflow_generate, scan | 프로젝트 초기화 |
+| **ENV** | env_sync, env_get, env_scan, env_restore | 환경변수 관리 |
+| **Team** | team_create, team_list, team_get, team_delete, team_settings | 팀 관리 |
+| **Member** | member_invite, member_remove, member_list | 멤버 관리 |
+| **Token** | token_create, token_revoke, token_list | API 토큰 관리 |
 | **Utility** | health_check | 인프라 상태
 
 ---
@@ -279,32 +358,126 @@ rm -rf /opt/codeb/*            # 프로젝트 폴더 삭제
 rm -rf /var/lib/docker/*       # Docker 데이터 삭제
 ```
 
-### Vultr CLI 안전 규칙
-
-> **경고**: Vultr CLI는 인프라 관리 권한이 있습니다.
+### 올바른 CLI 명령어
 
 ```bash
-# ⛔ 절대 금지 (복구 불가능)
-vultr-cli instance delete *           # 서버 삭제
-vultr-cli instance reinstall *        # 서버 초기화
-vultr-cli firewall group delete *     # 방화벽 그룹 삭제
-vultr-cli snapshot delete *           # 스냅샷 삭제
+# Blue-Green 배포
+/we:deploy <project>           # 비활성 Slot에 배포
+/we:promote <project>          # 트래픽 전환
+/we:rollback <project>         # 즉시 롤백
 
-# ✅ 허용되는 작업
-vultr-cli instance list               # 서버 목록 조회
-vultr-cli instance get <id>           # 서버 상세 정보
-vultr-cli firewall rule list <id>     # 방화벽 규칙 조회
-vultr-cli snapshot list               # 스냅샷 목록 조회
+# 상태 확인
+/we:health                     # 전체 시스템 헬스체크
 ```
 
-### 서버 정보 (삭제/초기화 금지)
+---
 
-| 역할 | Instance ID | IP |
-|------|-------------|-----|
-| App | `00bad969-1751-4ff7-b0ba-26e9359c0d88` | 158.247.203.55 |
-| Streaming | `56797584-ce45-4d5c-bb0f-6e47db0d2ed4` | 141.164.42.213 |
-| Storage | `5b3c19bf-a6ac-4b36-8e3a-bbef72b2c8d1` | 64.176.226.119 |
-| Backup | `27f996e9-7bb7-4354-b3b5-6f6234f713d1` | 141.164.37.63 |
+## CI/CD 배포 시스템 (GitHub Actions + Minio S3 캐시)
+
+### 아키텍처
+
+```
+┌─────────────────────────────────────────────────────────────────┐
+│          GitHub Actions CI/CD (Minio S3 Cache)                   │
+├─────────────────────────────────────────────────────────────────┤
+│                                                                 │
+│  [로컬] ──git push──→ [GitHub Actions] ──→ [Self-Hosted Runner] │
+│                                                    │            │
+│                                             ┌──────┴──────┐     │
+│                                             │   Docker    │     │
+│                                             │   Buildx    │     │
+│                                             └──────┬──────┘     │
+│                                                    │            │
+│                                     ┌──────────────┼──────────┐ │
+│                                     │ Minio S3     │ Private  │ │
+│                                     │ Cache        │ Registry │ │
+│                                     │ :9000        │ :5000    │ │
+│                                     └──────────────┼──────────┘ │
+│                                                    │            │
+│                                                    ▼            │
+│                              ┌─────────────────────────────┐    │
+│                              │ curl MCP API → Blue-Green   │    │
+│                              │ Deploy (커밋 SHA 이미지)     │    │
+│                              └─────────────────────────────┘    │
+│                                                                 │
+└─────────────────────────────────────────────────────────────────┘
+```
+
+### 핵심 원칙
+
+- **배포 = git push**. `deploy_project` MCP를 직접 호출하지 않는다.
+- GHCR이 아닌 **Private Registry** (64.176.226.119:5000)
+- 빌드 캐시는 **Minio S3** (64.176.226.119:9000)
+
+### 배포 방법 (Git Push = 자동 배포)
+
+```bash
+# 코드 수정 후 커밋 & 푸시 (자동 배포)
+git add <파일> && git commit -m "feat: 새로운 기능" && git push
+
+# GitHub Actions가 자동으로:
+# 1. Docker Buildx + Minio S3 캐시로 빌드
+# 2. Private Registry (64.176.226.119:5000)에 푸시
+# 3. curl MCP API → Blue-Green 배포 (커밋 SHA 태그)
+# 4. Preview URL 반환 → promote 대기
+```
+
+### Minio S3 캐시 전략
+
+```
+┌─────────────────────────────────────────────────────────────────┐
+│                    Minio S3 캐시 빌드                            │
+├─────────────────────────────────────────────────────────────────┤
+│                                                                 │
+│  docker buildx build                                            │
+│    --cache-from type=s3,bucket=docker-cache,name=<프로젝트>     │
+│    --cache-to type=s3,bucket=docker-cache,name=<프로젝트>,max   │
+│    -t 64.176.226.119:5000/<프로젝트>:<커밋SHA>                  │
+│    -t 64.176.226.119:5000/<프로젝트>:latest                     │
+│    --push                                                       │
+│                                                                 │
+│  Minio S3: 64.176.226.119:9000 (bucket: docker-cache)          │
+│  Registry: 64.176.226.119:5000 (HTTP, insecure)                │
+│                                                                 │
+└─────────────────────────────────────────────────────────────────┘
+```
+
+### 워크플로우 생성
+
+```bash
+# /we:workflow 명령으로 자동 생성
+/we:workflow init <project-name>
+
+# 생성되는 파일:
+# .github/workflows/deploy.yml (Minio S3 캐시 포함)
+```
+
+### 워크플로우 액션
+
+| 액션 | 트리거 | 설명 |
+|------|--------|------|
+| **deploy** | git push / workflow_dispatch | Docker Buildx → Registry Push → 비활성 Slot 배포 |
+| **promote** | workflow_dispatch / MCP 직접호출 | 트래픽 전환 |
+| **rollback** | workflow_dispatch / MCP 직접호출 | 즉시 롤백 |
+
+### 수동 트리거
+
+```bash
+# GitHub CLI로 수동 배포
+gh workflow run deploy.yml -f action=deploy
+
+# promote / rollback
+gh workflow run deploy.yml -f action=promote
+gh workflow run deploy.yml -f action=rollback
+```
+
+### 필수 GitHub Secrets
+
+| Secret | 설명 |
+|--------|------|
+| `CODEB_API_KEY` | MCP API 키 |
+| `MINIO_ACCESS_KEY` | Minio S3 Access Key |
+| `MINIO_SECRET_KEY` | Minio S3 Secret Key |
 
 ---
 
@@ -328,28 +501,23 @@ curl -s https://api.codeb.kr/health | jq '.version'
 ### 프로젝트 구조
 
 ```
-codeb-server/
-├── VERSION                    # SSOT (Single Source of Truth)
-├── mcp-server/                # TypeScript MCP API Server
-├── cli/                       # we CLI
-│   └── skills/we/             # Skills 시스템
-└── scripts/                   # 배포 스크립트 (deploy-all.sh)
-    # 주의: .github/workflows/ 사용하지 않음 (수동 배포만)
+your-project/
+├── .github/
+│   └── workflows/
+│       └── deploy.yml         # GitHub Actions CI/CD
+├── src/                       # 소스코드
+├── Dockerfile                 # Docker 빌드 설정
+└── package.json
 
-docs/
-├── KNOWN-ISSUES.md            # 알려진 문제점 ⭐
-├── deployment-guide.md        # 배포 가이드
-├── DEPLOY-FLOW.md             # 배포 플로우
-└── SKILLS-GUIDE.md            # Skills 사용 가이드
+.claude/
+├── settings.local.json        # v7.0 설정 (Docker 기반)
+├── skills/                    # Skills 시스템
+│   ├── deploy/
+│   ├── monitoring/
+│   ├── infrastructure/
+│   └── analysis/
+└── hooks/                     # Hook 시스템
+    └── pre-bash.py            # 보안 검증
 ```
-
----
-
-## 관련 문서
-
-- [docs/KNOWN-ISSUES.md](docs/KNOWN-ISSUES.md) - 알려진 문제점 및 해결 방안
-- [docs/deployment-guide.md](docs/deployment-guide.md) - 배포 가이드
-- [docs/DEPLOY-FLOW.md](docs/DEPLOY-FLOW.md) - 배포 플로우 상세
-- [docs/SKILLS-GUIDE.md](docs/SKILLS-GUIDE.md) - Skills 사용 가이드
 
 > 이 파일은 CLI 설치/업데이트 시 자동으로 최신 버전으로 교체됩니다.

@@ -1,0 +1,22 @@
+{
+  "name": "@codeb/feature-project",
+  "version": "0.0.0",
+  "type": "module",
+  "main": "dist/index.js",
+  "types": "dist/index.d.ts",
+  "scripts": {
+    "build": "tsc",
+    "dev": "tsc --watch",
+    "clean": "rm -rf dist",
+    "typecheck": "tsc --noEmit"
+  },
+  "dependencies": {
+    "@codeb/shared": "workspace:*",
+    "@codeb/db": "workspace:*",
+    "@codeb/ssh": "workspace:*",
+    "@codeb/logger": "workspace:*"
+  },
+  "devDependencies": {
+    "typescript": "^5.7.0"
+  }
+}

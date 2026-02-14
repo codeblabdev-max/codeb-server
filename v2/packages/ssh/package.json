@@ -1,0 +1,28 @@
+{
+  "name": "@codeb/ssh",
+  "version": "0.0.0",
+  "type": "module",
+  "main": "dist/index.js",
+  "types": "dist/index.d.ts",
+  "exports": {
+    ".": {
+      "import": "./dist/index.js",
+      "types": "./dist/index.d.ts"
+    }
+  },
+  "scripts": {
+    "build": "tsc",
+    "dev": "tsc --watch",
+    "clean": "rm -rf dist",
+    "typecheck": "tsc --noEmit"
+  },
+  "dependencies": {
+    "ssh2": "^1.16.0",
+    "@codeb/shared": "workspace:*",
+    "@codeb/logger": "workspace:*"
+  },
+  "devDependencies": {
+    "@types/ssh2": "^1.15.0",
+    "typescript": "^5.7.0"
+  }
+}

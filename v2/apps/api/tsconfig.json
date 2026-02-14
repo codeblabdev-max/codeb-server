@@ -1,0 +1,22 @@
+{
+  "extends": "../../tsconfig.base.json",
+  "compilerOptions": {
+    "composite": true,
+    "outDir": "dist",
+    "rootDir": "src"
+  },
+  "references": [
+    { "path": "../../packages/shared" },
+    { "path": "../../packages/db" },
+    { "path": "../../packages/ssh" },
+    { "path": "../../packages/auth" },
+    { "path": "../../packages/logger" },
+    { "path": "../../features/deployment" },
+    { "path": "../../features/domain" },
+    { "path": "../../features/environment" },
+    { "path": "../../features/project" },
+    { "path": "../../features/team" },
+    { "path": "../../features/monitoring" }
+  ],
+  "include": ["src"]
+}

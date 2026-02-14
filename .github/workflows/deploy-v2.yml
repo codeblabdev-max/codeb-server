@@ -1,0 +1,336 @@
+# =============================================================================
+# CodeB v2 Monorepo CI/CD Pipeline
+# =============================================================================
+# pnpm + turbo + esbuild bundle -> Minio + API Docker deploy
+#
+# Trigger: push to main (v2/** or VERSION), workflow_dispatch
+# Runner: self-hosted on App server (158.247.203.55)
+# =============================================================================
+
+name: CodeB v2 Deploy
+
+on:
+  push:
+    branches: [main]
+    paths:
+      - 'v2/**'
+      - 'VERSION'
+      - '.claude/skills/we/**'
+      - '.github/workflows/deploy-v2.yml'
+  workflow_dispatch:
+    inputs:
+      version:
+        description: 'Version override (uses VERSION file if empty)'
+        required: false
+        type: string
+      skip_api:
+        description: 'Skip API server deployment'
+        required: false
+        type: boolean
+        default: false
+      skip_cli:
+        description: 'Skip CLI tarball upload'
+        required: false
+        type: boolean
+        default: false
+
+env:
+  STORAGE_SERVER: 64.176.226.119
+  API_SERVER: 158.247.203.55
+  MINIO_ENDPOINT: http://64.176.226.119:9000
+  MINIO_BUCKET: docker-cache
+  NODE_VERSION: '20'
+
+concurrency:
+  group: deploy-v2-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  # =========================================================================
+  # Build & Bundle
+  # =========================================================================
+  build:
+    name: Build & Bundle
+    runs-on: [self-hosted, codeb]
+
+    outputs:
+      version: ${{ steps.version.outputs.version }}
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Setup Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: ${{ env.NODE_VERSION }}
+
+      - name: Setup pnpm
+        run: |
+          corepack enable
+          corepack prepare pnpm@9.15.4 --activate
+
+      - name: Get Version
+        id: version
+        run: |
+          if [ -n "${{ github.event.inputs.version }}" ]; then
+            VERSION="${{ github.event.inputs.version }}"
+            echo "$VERSION" > VERSION
+          else
+            VERSION=$(cat VERSION | tr -d '\n')
+          fi
+          echo "version=$VERSION" >> $GITHUB_OUTPUT
+          echo "Version: $VERSION"
+
+      - name: Install Dependencies
+        working-directory: v2
+        run: pnpm install --frozen-lockfile
+
+      - name: TypeScript Build
+        working-directory: v2
+        run: pnpm build
+
+      - name: esbuild Bundle
+        working-directory: v2
+        run: node scripts/bundle.mjs
+
+      - name: Verify Bundles
+        working-directory: v2
+        run: |
+          for BUNDLE in dist/bundle/we.js dist/bundle/codeb-mcp.js; do
+            if [ ! -f "$BUNDLE" ]; then
+              echo "ERROR: $BUNDLE not found"
+              exit 1
+            fi
+            HEAD=$(head -c 21 "$BUNDLE")
+            if [[ "$HEAD" != "#!/usr/bin/env node"* ]]; then
+              echo "ERROR: $BUNDLE missing shebang"
+              exit 1
+            fi
+            SIZE=$(wc -c < "$BUNDLE" | tr -d ' ')
+            echo "$BUNDLE: ${SIZE} bytes"
+          done
+
+      - name: Create Tarball
+        working-directory: v2
+        run: bash scripts/create-tarball.sh
+
+      - name: Upload Tarball Artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: codeb-cli-${{ steps.version.outputs.version }}
+          path: /tmp/codeb-cli-${{ steps.version.outputs.version }}.tar.gz
+          retention-days: 30
+
+  # =========================================================================
+  # Deploy CLI to Minio
+  # =========================================================================
+  deploy-cli:
+    name: Deploy CLI (Minio)
+    needs: build
+    if: ${{ github.event.inputs.skip_cli != 'true' }}
+    runs-on: [self-hosted, codeb]
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+        with:
+          sparse-checkout: |
+            v2/scripts/install.sh
+            VERSION
+
+      - name: Download Tarball Artifact
+        uses: actions/download-artifact@v4
+        with:
+          name: codeb-cli-${{ needs.build.outputs.version }}
+          path: /tmp
+
+      - name: Upload to Minio
+        env:
+          VERSION: ${{ needs.build.outputs.version }}
+        run: |
+          TARBALL="/tmp/codeb-cli-${VERSION}.tar.gz"
+
+          if [ ! -f "$TARBALL" ]; then
+            echo "ERROR: Tarball not found at $TARBALL"
+            exit 1
+          fi
+
+          echo "Uploading CodeB CLI v${VERSION} to Minio..."
+
+          # Create version.json
+          cat > /tmp/version.json << EOF
+          {
+            "version": "${VERSION}",
+            "updated": "$(date -u +%Y-%m-%dT%H:%M:%SZ)",
+            "commit": "$(git rev-parse --short HEAD)"
+          }
+          EOF
+
+          # Create latest copy
+          cp "$TARBALL" "/tmp/codeb-cli-latest.tar.gz"
+
+          # Transfer to Storage server
+          scp "$TARBALL" root@${{ env.STORAGE_SERVER }}:/tmp/
+          scp /tmp/codeb-cli-latest.tar.gz root@${{ env.STORAGE_SERVER }}:/tmp/
+          scp /tmp/version.json root@${{ env.STORAGE_SERVER }}:/tmp/
+          scp v2/scripts/install.sh root@${{ env.STORAGE_SERVER }}:/tmp/codeb-install.sh
+
+          # Upload to Minio via docker exec
+          ssh root@${{ env.STORAGE_SERVER }} "
+            # Copy files into Minio container
+            docker cp /tmp/codeb-cli-${VERSION}.tar.gz videopick-minio:/tmp/
+            docker cp /tmp/codeb-cli-latest.tar.gz videopick-minio:/tmp/
+            docker cp /tmp/version.json videopick-minio:/tmp/
+            docker cp /tmp/codeb-install.sh videopick-minio:/tmp/install.sh
+
+            # Upload to Minio bucket
+            docker exec videopick-minio mc cp /tmp/codeb-cli-${VERSION}.tar.gz local/releases/cli/
+            docker exec videopick-minio mc cp /tmp/codeb-cli-latest.tar.gz local/releases/cli/
+            docker exec videopick-minio mc cp /tmp/version.json local/releases/cli/
+            docker exec videopick-minio mc cp /tmp/install.sh local/releases/cli/
+
+            # Cleanup
+            rm -f /tmp/codeb-cli-*.tar.gz /tmp/codeb-cli-latest.tar.gz /tmp/version.json /tmp/codeb-install.sh
+            docker exec videopick-minio rm -f /tmp/codeb-cli-*.tar.gz /tmp/codeb-cli-latest.tar.gz /tmp/version.json /tmp/install.sh
+          "
+
+          echo "CLI v${VERSION} uploaded to Minio"
+
+      - name: Verify CLI
+        env:
+          VERSION: ${{ needs.build.outputs.version }}
+        run: |
+          sleep 2
+          CLI_VERSION=$(curl -sf https://releases.codeb.kr/cli/version.json | jq -r '.version' 2>/dev/null || echo "")
+          if [ "$CLI_VERSION" = "$VERSION" ]; then
+            echo "CLI verified: v$CLI_VERSION"
+            echo "Download: https://releases.codeb.kr/cli/codeb-cli-${VERSION}.tar.gz"
+            echo "Install:  curl -sSL https://releases.codeb.kr/cli/install.sh | bash"
+          else
+            echo "ERROR: CLI version mismatch: got '$CLI_VERSION', expected '$VERSION'"
+            exit 1
+          fi
+
+  # =========================================================================
+  # Deploy API Server (Docker)
+  # =========================================================================
+  deploy-api:
+    name: Deploy API Server
+    needs: build
+    if: ${{ github.event.inputs.skip_api != 'true' }}
+    runs-on: [self-hosted, codeb]
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Resolve VERSION symlink
+        run: |
+          # v2/VERSION is a symlink to ../VERSION
+          # Docker build context needs actual file
+          cp VERSION v2/VERSION 2>/dev/null || true
+
+      - name: Build API Docker Image
+        env:
+          VERSION: ${{ needs.build.outputs.version }}
+        run: |
+          cd v2
+          docker buildx build \
+            --cache-from type=s3,endpoint_url=${{ env.MINIO_ENDPOINT }},bucket=${{ env.MINIO_BUCKET }},name=codeb-api,access_key_id=${{ secrets.MINIO_ACCESS_KEY }},secret_access_key=${{ secrets.MINIO_SECRET_KEY }},region=us-east-1 \
+            --cache-to type=s3,endpoint_url=${{ env.MINIO_ENDPOINT }},bucket=${{ env.MINIO_BUCKET }},name=codeb-api,mode=max,access_key_id=${{ secrets.MINIO_ACCESS_KEY }},secret_access_key=${{ secrets.MINIO_SECRET_KEY }},region=us-east-1 \
+            -f apps/api/Dockerfile \
+            -t codeb-mcp-api:${VERSION} \
+            -t codeb-mcp-api:latest \
+            --load \
+            .
+          echo "Docker image built: codeb-mcp-api:${VERSION}"
+
+      - name: Deploy API
+        run: |
+          systemctl stop codeb-mcp-api || true
+          sleep 2
+          systemctl start codeb-mcp-api
+          sleep 5
+          echo "API server restarted"
+
+      - name: Verify API Health
+        env:
+          VERSION: ${{ needs.build.outputs.version }}
+        run: |
+          for i in $(seq 1 10); do
+            API_VERSION=$(curl -sf https://api.codeb.kr/health | jq -r '.version' 2>/dev/null || echo "")
+            if [ "$API_VERSION" = "$VERSION" ]; then
+              echo "API verified: v$API_VERSION"
+              exit 0
+            fi
+            echo "Attempt $i/10: got '$API_VERSION', waiting..."
+            sleep 3
+          done
+          echo "ERROR: API health check failed after 10 attempts"
+          exit 1
+
+  # =========================================================================
+  # Finalize
+  # =========================================================================
+  finalize:
+    name: Finalize
+    needs: [build, deploy-cli, deploy-api]
+    if: always() && needs.build.result == 'success'
+    runs-on: [self-hosted, codeb]
+
+    steps:
+      - name: Update SSOT Registry
+        if: needs.deploy-api.result == 'success'
+        env:
+          VERSION: ${{ needs.build.outputs.version }}
+        run: |
+          mkdir -p /opt/codeb/registry
+          cat > /opt/codeb/registry/versions.json << EOF
+          {
+            "ssot_version": "$VERSION",
+            "updated": "$(date -u +%Y-%m-%dT%H:%M:%SZ)",
+            "commit": "$(git rev-parse --short HEAD 2>/dev/null || echo 'unknown')",
+            "components": {
+              "api": {
+                "version": "$VERSION",
+                "endpoint": "https://api.codeb.kr",
+                "health": "https://api.codeb.kr/health"
+              },
+              "cli": {
+                "version": "$VERSION",
+                "download": "https://releases.codeb.kr/cli/install.sh",
+                "tarball": "https://releases.codeb.kr/cli/codeb-cli-latest.tar.gz"
+              }
+            }
+          }
+          EOF
+          echo "SSOT Registry updated: v$VERSION"
+
+      - name: Deployment Summary
+        env:
+          VERSION: ${{ needs.build.outputs.version }}
+        run: |
+          API_RESULT="${{ needs.deploy-api.result }}"
+          CLI_RESULT="${{ needs.deploy-cli.result }}"
+
+          echo ""
+          echo "================================================="
+          echo "  CodeB v${VERSION} Deployment Summary"
+          echo "================================================="
+          echo ""
+          echo "  API Server:  ${API_RESULT}"
+          echo "  CLI Package: ${CLI_RESULT}"
+          echo ""
+          echo "  Install: curl -sSL https://releases.codeb.kr/cli/install.sh | bash"
+          echo "  Health:  curl -s https://api.codeb.kr/health | jq ."
+          echo ""
+
+          if [ "$API_RESULT" = "success" ] && [ "$CLI_RESULT" = "success" ]; then
+            echo "All components deployed successfully."
+          elif [ "$API_RESULT" = "skipped" ] || [ "$CLI_RESULT" = "skipped" ]; then
+            echo "Some components were skipped (by request)."
+          else
+            echo "WARNING: Some components had issues."
+            exit 1
+          fi

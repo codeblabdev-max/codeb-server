@@ -1,0 +1,36 @@
+{
+  "name": "@codeb/api",
+  "version": "0.0.0",
+  "type": "module",
+  "main": "dist/index.js",
+  "types": "dist/index.d.ts",
+  "scripts": {
+    "build": "tsc",
+    "dev": "tsx watch src/index.ts",
+    "start": "node dist/index.js",
+    "clean": "rm -rf dist",
+    "typecheck": "tsc --noEmit"
+  },
+  "dependencies": {
+    "@codeb/shared": "workspace:*",
+    "@codeb/db": "workspace:*",
+    "@codeb/ssh": "workspace:*",
+    "@codeb/auth": "workspace:*",
+    "@codeb/logger": "workspace:*",
+    "@codeb/feature-deployment": "workspace:*",
+    "@codeb/feature-domain": "workspace:*",
+    "@codeb/feature-env": "workspace:*",
+    "@codeb/feature-project": "workspace:*",
+    "@codeb/feature-team": "workspace:*",
+    "@codeb/feature-monitoring": "workspace:*",
+    "express": "^4.21.0",
+    "cors": "^2.8.5",
+    "helmet": "^8.0.0"
+  },
+  "devDependencies": {
+    "@types/express": "^5.0.0",
+    "@types/cors": "^2.8.17",
+    "tsx": "^4.19.0",
+    "typescript": "^5.7.0"
+  }
+}

@@ -1,0 +1,129 @@
+/**
+ * @codeb/shared - Server Configuration Constants
+ * Based on mcp-server/src/lib/servers.ts
+ */
+
+import { randomBytes } from 'node:crypto';
+import type { ServerConfig } from '../types/server.js';
+
+// ============================================================================
+// 4-Server Infrastructure
+// ============================================================================
+
+export const SERVERS: Record<string, ServerConfig> = {
+  app: {
+    name: 'App Server',
+    ip: '158.247.203.55',
+    domain: 'app.codeb.kr',
+    role: 'app',
+    services: ['nextjs', 'mcp-api', 'caddy', 'docker', 'runner'],
+    ports: {
+      http: 80,
+      https: 443,
+      mcpApi: 9101,
+      stagingStart: 4500,
+      stagingEnd: 4999,
+      productionStart: 4100,
+      productionEnd: 4499,
+      previewStart: 5000,
+      previewEnd: 5499,
+    },
+  },
+  streaming: {
+    name: 'Streaming Server',
+    ip: '141.164.42.213',
+    domain: 'ws.codeb.kr',
+    role: 'streaming',
+    services: ['centrifugo'],
+    ports: {
+      centrifugo: 8000,
+      centrifugoApi: 8000,
+    },
+  },
+  storage: {
+    name: 'Storage Server',
+    ip: '64.176.226.119',
+    domain: 'db.codeb.kr',
+    role: 'storage',
+    services: ['postgresql', 'redis'],
+    ports: {
+      postgresql: 5432,
+      redis: 6379,
+    },
+  },
+  backup: {
+    name: 'Backup Server',
+    ip: '141.164.37.63',
+    domain: 'backup.codeb.kr',
+    role: 'backup',
+    services: ['env-backup', 'prometheus', 'grafana'],
+    ports: {
+      prometheus: 9090,
+      grafana: 3000,
+      nodeExporter: 9100,
+    },
+  },
+};
+
+// ============================================================================
+// Port Ranges for Blue-Green Slots
+// ============================================================================
+
+export const PORT_RANGES = {
+  staging: {
+    app: { start: 4500, end: 4999 },
+    db: { start: 5432, end: 5449 },
+    redis: { start: 6379, end: 6399 },
+  },
+  production: {
+    app: { start: 4100, end: 4499 },
+    db: { start: 5450, end: 5469 },
+    redis: { start: 6400, end: 6419 },
+  },
+  preview: {
+    app: { start: 5000, end: 5499 },
+  },
+} as const;
+
+// ============================================================================
+// Helpers
+// ============================================================================
+
+/** Get Blue/Green ports for a project based on base port */
+export function getSlotPorts(basePort: number): { blue: number; green: number } {
+  return {
+    blue: basePort,
+    green: basePort + 1,
+  };
+}
+
+/** Get server config by role */
+export function getServer(role: ServerConfig['role']): ServerConfig {
+  const server = Object.values(SERVERS).find(s => s.role === role);
+  if (!server) throw new Error(`Server not found for role: ${role}`);
+  return server;
+}
+
+/** Generate a cryptographically secure password */
+export function generateSecurePassword(length: number = 32): string {
+  return randomBytes(length).toString('base64url').slice(0, length);
+}
+
+/** Generate connection strings for a project environment */
+export function generateConnectionStrings(projectName: string, environment: string) {
+  const storage = SERVERS.storage;
+  const streaming = SERVERS.streaming;
+  const dbName = `${projectName}_${environment}`;
+  const dbUser = `${projectName}_user`;
+  const dbPassword = generateSecurePassword();
+  const redisPassword = generateSecurePassword();
+
+  return {
+    DATABASE_URL: `postgresql://${dbUser}:${dbPassword}@${storage.domain}:${storage.ports.postgresql}/${dbName}?schema=public`,
+    REDIS_URL: `redis://:${redisPassword}@${storage.domain}:${storage.ports.redis}/0`,
+    CENTRIFUGO_URL: `wss://${streaming.domain}/connection/websocket`,
+    CENTRIFUGO_API_URL: `http://${streaming.domain}:${streaming.ports.centrifugoApi}/api`,
+    CENTRIFUGO_API_KEY: generateSecurePassword(32),
+    CENTRIFUGO_SECRET: generateSecurePassword(32),
+  };
+}

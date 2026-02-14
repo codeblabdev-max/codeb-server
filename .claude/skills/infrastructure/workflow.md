@@ -1,6 +1,6 @@
 ---
 name: workflow
-description: "Docker 및 GitHub Actions CI/CD 워크플로우 생성"
+description: "CI/CD 워크플로우 생성 (Minio S3 캐시 + Private Registry)"
 agent: Bash
 context: fork
 allowed-tools:
@@ -8,45 +8,61 @@ allowed-tools:
   - Write
   - Edit
   - Bash
+  - Glob
   - mcp__codeb-deploy__workflow_init
   - mcp__codeb-deploy__workflow_scan
 ---
 
-# /we:workflow - CI/CD 워크플로우
+# /we:workflow - CI/CD 워크플로우 생성
 
 ## 목적
-프로젝트의 Docker 컨테이너 설정 및 GitHub Actions 워크플로우를 생성합니다.
+Minio S3 캐시 + Private Registry (64.176.226.119:5000) 기반의
+GitHub Actions CI/CD 워크플로우를 생성합니다.
 
-## 중요 규칙
+## 핵심 원칙
 - **모든 응답은 한글로 작성**
+- GHCR이 아닌 **Private Registry** (64.176.226.119:5000) 사용
+- 빌드 캐시는 **Minio S3** (64.176.226.119:9000) 사용
+- Runner는 **self-hosted** ([self-hosted, docker])
 - 기존 설정이 있으면 백업 후 업데이트
-- Quadlet + GitHub Actions 조합 사용
+
+## CI/CD 파이프라인
+```
+git push main
+  → GitHub Actions (self-hosted runner)
+  → Docker Buildx + Minio S3 캐시
+  → Private Registry Push (커밋 SHA 태그)
+  → curl MCP API /api/tool (deploy)
+  → Blue-Green 배포 → Preview URL
+```
 
 ## 자동 실행 플로우
 
-### 워크플로우 초기화 (init)
-```
-mcp__codeb-deploy__workflow_init 호출
-- projectName: 프로젝트명
-- type: nextjs | remix | nodejs | python | go (기본값: nextjs)
-- database: true/false (기본값: true)
-- redis: true/false (기본값: true)
-```
-
 ### 워크플로우 스캔 (scan)
 ```
-mcp__codeb-deploy__workflow_scan 호출
-- projectName: 프로젝트명
+mcp__codeb-deploy__workflow_scan { "projectName": "프로젝트명" }
+```
+
+### 워크플로우 초기화 (init)
+```
+mcp__codeb-deploy__workflow_init {
+  "projectName": "프로젝트명",
+  "type": "nextjs",
+  "database": true,
+  "redis": true
+}
 ```
 
 ## 생성 파일
-
-### Docker 파일
 - `Dockerfile` - 컨테이너 이미지 정의
-- `docker-compose.yml` - 서비스 구성
+- `.github/workflows/deploy.yml` - Minio S3 캐시 기반 CI/CD
 
-### GitHub Actions
-- `.github/workflows/deploy.yml` - CI/CD 파이프라인
+## 필수 GitHub Secrets
+| Secret | 설명 |
+|--------|------|
+| `CODEB_API_KEY` | MCP API 키 |
+| `MINIO_ACCESS_KEY` | Minio S3 Access Key |
+| `MINIO_SECRET_KEY` | Minio S3 Secret Key |
 
 ## 사용법
 ```
@@ -59,14 +75,12 @@ mcp__codeb-deploy__workflow_scan 호출
 - `--no-database` - PostgreSQL 제외
 - `--no-redis` - Redis 제외
 
-## 예제
-```
-/we:workflow init myapp                    # 기본 설정 (Next.js + DB + Redis)
-/we:workflow init myapp --type nodejs      # Node.js 프로젝트
-/we:workflow init myapp --no-redis         # Redis 없이
-/we:workflow scan myapp                    # 기존 설정 스캔
-```
+## 서버 정보
+- **App 서버**: 158.247.203.55 (Self-Hosted Runner)
+- **Private Registry**: 64.176.226.119:5000
+- **Minio S3**: 64.176.226.119:9000 (bucket: docker-cache)
 
 ## 관련 명령어
-- `/we:deploy` - 프로젝트 배포
+- `/we:deploy` - Git Push 기반 배포
 - `/we:init` - 신규 프로젝트 초기화
+- `/we:domain` - 도메인 설정
