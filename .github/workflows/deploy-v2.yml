@@ -236,13 +236,10 @@ jobs:
           VERSION: ${{ needs.build.outputs.version }}
         run: |
           cd v2
-          docker buildx build \
-            --cache-from type=s3,endpoint_url=${{ env.MINIO_ENDPOINT }},bucket=${{ env.MINIO_BUCKET }},name=codeb-api,access_key_id=${{ secrets.MINIO_ACCESS_KEY }},secret_access_key=${{ secrets.MINIO_SECRET_KEY }},region=us-east-1 \
-            --cache-to type=s3,endpoint_url=${{ env.MINIO_ENDPOINT }},bucket=${{ env.MINIO_BUCKET }},name=codeb-api,mode=max,access_key_id=${{ secrets.MINIO_ACCESS_KEY }},secret_access_key=${{ secrets.MINIO_SECRET_KEY }},region=us-east-1 \
+          docker build \
             -f apps/api/Dockerfile \
             -t codeb-mcp-api:${VERSION} \
             -t codeb-mcp-api:latest \
-            --load \
             .
           echo "Docker image built: codeb-mcp-api:${VERSION}"
 
