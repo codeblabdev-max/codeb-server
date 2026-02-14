@@ -228,8 +228,9 @@ jobs:
       - name: Resolve VERSION symlink
         run: |
           # v2/VERSION is a symlink to ../VERSION
-          # Docker build context needs actual file
-          cp VERSION v2/VERSION 2>/dev/null || true
+          # Docker build context needs actual file (not symlink)
+          rm -f v2/VERSION
+          cp VERSION v2/VERSION
 
       - name: Build API Docker Image
         env:

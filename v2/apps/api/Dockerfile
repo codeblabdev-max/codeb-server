@@ -36,6 +36,7 @@ RUN pnpm install --frozen-lockfile
 COPY packages/ packages/
 COPY features/ features/
 COPY apps/api/ apps/api/
+COPY VERSION ./VERSION
 
 # Build all packages in dependency order
 RUN pnpm --filter @codeb/api... build
@@ -71,8 +72,8 @@ COPY --from=builder --chown=codeb:nodejs /app/features/team/dist features/team/d
 COPY --from=builder --chown=codeb:nodejs /app/features/monitoring/dist features/monitoring/dist
 COPY --from=builder --chown=codeb:nodejs /app/apps/api/dist apps/api/dist
 
-# Copy VERSION file
-COPY --chown=codeb:nodejs VERSION ./VERSION
+# Copy VERSION file (from builder stage, since build context symlink may not resolve)
+COPY --from=builder --chown=codeb:nodejs /app/VERSION ./VERSION
 
 # Create logs directory
 RUN mkdir -p /app/logs && chown codeb:nodejs /app/logs
