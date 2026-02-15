@@ -50,8 +50,9 @@ export class SSHClientWrapper {
     const { timeout = 60000 } = options;
     const startTime = Date.now();
 
+    // Auto-connect if not yet connected
     if (!this.client) {
-      throw new Error('SSH not connected. Call connect() first.');
+      await this.connect();
     }
 
     return new Promise((resolve, reject) => {
