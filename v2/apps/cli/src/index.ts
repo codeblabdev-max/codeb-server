@@ -22,6 +22,7 @@ import { createInitCommand } from './commands/init.cmd.js';
 import { createWorkflowCommand } from './commands/workflow.cmd.js';
 import { createEnvCommand } from './commands/env.cmd.js';
 import { createDomainCommand } from './commands/domain.cmd.js';
+import { createUpdateCommand } from './commands/update.cmd.js';
 
 // ============================================================================
 // Version (SSOT from @codeb/shared → VERSION file)
@@ -41,7 +42,7 @@ export function createCLI(): Command {
   if (!isMcpServe) {
     console.log(chalk.cyan.bold('\n+===============================================+'));
     console.log(chalk.cyan.bold(`|   /we: Web Deploy CLI v${VERSION}                 |`));
-    console.log(chalk.cyan.bold('|   deploy > health > env (5 commands)          |'));
+    console.log(chalk.cyan.bold('|   deploy > health > env (7 commands)          |'));
     console.log(chalk.cyan.bold('+===============================================+\n'));
   }
 
@@ -81,6 +82,11 @@ export function createCLI(): Command {
   program.addCommand(createDomainCommand());
 
   // ========================================================================
+  // 7. UPDATE - Download latest CLAUDE.md, skills, hooks
+  // ========================================================================
+  program.addCommand(createUpdateCommand());
+
+  // ========================================================================
   // Custom Help
   // ========================================================================
   program.on('--help', () => {
@@ -114,6 +120,11 @@ export function createCLI(): Command {
     console.log(chalk.gray('              we domain setup <domain>'));
     console.log(chalk.gray('              we domain list'));
     console.log(chalk.gray('              we domain delete <domain>'));
+    console.log('');
+    console.log(chalk.cyan('  update') + chalk.gray('    - Download latest Claude files'));
+    console.log(chalk.gray('              we update'));
+    console.log(chalk.gray('              we update --project-only'));
+    console.log(chalk.gray('              we update --global-only'));
     console.log('');
     console.log(chalk.cyan('Documentation: https://codeb.io/docs/cli'));
     console.log('');

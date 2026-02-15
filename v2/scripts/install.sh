@@ -165,6 +165,8 @@ if [ -f "$EXTRACT_DIR/CLAUDE.md" ]; then
   while IFS= read -r proj_claude; do
     # Only update files that contain "CodeB Project Rules" (our signature)
     if grep -q "CodeB Project Rules" "$proj_claude" 2>/dev/null; then
+      # Backup existing before overwriting
+      cp "$proj_claude" "${proj_claude}.bak"
       cp "$EXTRACT_DIR/CLAUDE.md" "$proj_claude"
       PROJECT_UPDATE_COUNT=$((PROJECT_UPDATE_COUNT + 1))
     fi
@@ -176,7 +178,7 @@ if [ -f "$EXTRACT_DIR/CLAUDE.md" ]; then
     2>/dev/null)
 
   if [ "$PROJECT_UPDATE_COUNT" -gt 0 ]; then
-    echo -e "  ${GREEN}Projects:${NC} $PROJECT_UPDATE_COUNT project CLAUDE.md files updated"
+    echo -e "  ${GREEN}Projects:${NC} $PROJECT_UPDATE_COUNT CLAUDE.md updated (backups: .bak)"
   fi
 fi
 
