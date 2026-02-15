@@ -79,7 +79,7 @@ const buildMcp = args.length === 0 || args.includes('--mcp');
 const builds = [];
 
 if (buildCli) {
-  const outfile = join(ROOT, 'dist/bundle/we.js');
+  const outfile = join(ROOT, 'dist/bundle/we.cjs');
   builds.push(
     build({
       ...commonOptions,
@@ -88,13 +88,13 @@ if (buildCli) {
     }).then(() => {
       postProcess(outfile);
       const size = readFileSync(outfile).length;
-      console.log(`  CLI  -> dist/bundle/we.js (${(size / 1024).toFixed(0)} KB)`);
+      console.log(`  CLI  -> dist/bundle/we.cjs (${(size / 1024).toFixed(0)} KB)`);
     }),
   );
 }
 
 if (buildMcp) {
-  const outfile = join(ROOT, 'dist/bundle/codeb-mcp.js');
+  const outfile = join(ROOT, 'dist/bundle/codeb-mcp.cjs');
   builds.push(
     build({
       ...commonOptions,
@@ -103,7 +103,7 @@ if (buildMcp) {
     }).then(() => {
       postProcess(outfile);
       const size = readFileSync(outfile).length;
-      console.log(`  MCP  -> dist/bundle/codeb-mcp.js (${(size / 1024).toFixed(0)} KB)`);
+      console.log(`  MCP  -> dist/bundle/codeb-mcp.cjs (${(size / 1024).toFixed(0)} KB)`);
     }),
   );
 }

@@ -7,9 +7,9 @@
 #   curl -sSL https://releases.codeb.kr/cli/install.sh | bash -s -- <API_KEY>
 #
 # What this installs:
-#   ~/.codeb/bin/we.js           CLI (esbuild single-file bundle)
-#   ~/.codeb/bin/codeb-mcp.js    MCP server (esbuild single-file bundle)
-#   ~/.codeb/package.json        ESM module type marker
+#   ~/.codeb/bin/we.cjs           CLI (esbuild single-file bundle)
+#   ~/.codeb/bin/codeb-mcp.cjs    MCP server (esbuild single-file bundle)
+#   ~/.codeb/package.json        Metadata
 #   ~/.claude/skills/we/         Skills for Claude Code
 #   ~/.claude/hooks/pre-bash.py  Security hook
 #   ~/.claude/CLAUDE.md          Global rules
@@ -105,26 +105,26 @@ echo -e "${BOLD}[1/4] Installing binaries...${NC}"
 mkdir -p "$CODEB_DIR/bin"
 
 # Copy bundles + metadata
-cp "$EXTRACT_DIR/bin/we.js" "$CODEB_DIR/bin/we.js"
-cp "$EXTRACT_DIR/bin/codeb-mcp.js" "$CODEB_DIR/bin/codeb-mcp.js"
+cp "$EXTRACT_DIR/bin/we.cjs" "$CODEB_DIR/bin/we.cjs"
+cp "$EXTRACT_DIR/bin/codeb-mcp.cjs" "$CODEB_DIR/bin/codeb-mcp.cjs"
 cp "$EXTRACT_DIR/package.json" "$CODEB_DIR/package.json"
 cp "$EXTRACT_DIR/version.json" "$CODEB_DIR/version.json"
 cp "$EXTRACT_DIR/VERSION" "$CODEB_DIR/VERSION"
 
-chmod +x "$CODEB_DIR/bin/we.js"
-chmod +x "$CODEB_DIR/bin/codeb-mcp.js"
+chmod +x "$CODEB_DIR/bin/we.cjs"
+chmod +x "$CODEB_DIR/bin/codeb-mcp.cjs"
 
 # Create symlinks
 mkdir -p "$HOME/.local/bin"
-ln -sf "$CODEB_DIR/bin/we.js" "$HOME/.local/bin/we"
-ln -sf "$CODEB_DIR/bin/codeb-mcp.js" "$HOME/.local/bin/codeb-mcp"
+ln -sf "$CODEB_DIR/bin/we.cjs" "$HOME/.local/bin/we"
+ln -sf "$CODEB_DIR/bin/codeb-mcp.cjs" "$HOME/.local/bin/codeb-mcp"
 
 LINK_TARGETS="~/.local/bin"
 
 # macOS Homebrew bin (higher PATH priority)
 if [ -d "/opt/homebrew/bin" ] && [ -w "/opt/homebrew/bin" ]; then
-  ln -sf "$CODEB_DIR/bin/we.js" "/opt/homebrew/bin/we"
-  ln -sf "$CODEB_DIR/bin/codeb-mcp.js" "/opt/homebrew/bin/codeb-mcp"
+  ln -sf "$CODEB_DIR/bin/we.cjs" "/opt/homebrew/bin/we"
+  ln -sf "$CODEB_DIR/bin/codeb-mcp.cjs" "/opt/homebrew/bin/codeb-mcp"
   LINK_TARGETS="$LINK_TARGETS + /opt/homebrew/bin"
 fi
 
@@ -222,7 +222,7 @@ fi
 echo ""
 echo -e "${BOLD}[4/4] Configuring MCP server...${NC}"
 
-MCP_SCRIPT="$CODEB_DIR/bin/codeb-mcp.js"
+MCP_SCRIPT="$CODEB_DIR/bin/codeb-mcp.cjs"
 NEED_MANUAL_MCP=false
 
 # Try 'claude mcp add' first

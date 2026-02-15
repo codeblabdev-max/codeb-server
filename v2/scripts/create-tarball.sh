@@ -27,22 +27,22 @@ mkdir -p "$STAGING_DIR/skills/we"
 mkdir -p "$STAGING_DIR/hooks"
 
 # 1. Copy esbuild bundles
-if [ ! -f "$V2_ROOT/dist/bundle/we.js" ]; then
-  echo "ERROR: dist/bundle/we.js not found. Run 'pnpm bundle' first."
+if [ ! -f "$V2_ROOT/dist/bundle/we.cjs" ]; then
+  echo "ERROR: dist/bundle/we.cjs not found. Run 'pnpm bundle' first."
   exit 1
 fi
-if [ ! -f "$V2_ROOT/dist/bundle/codeb-mcp.js" ]; then
-  echo "ERROR: dist/bundle/codeb-mcp.js not found. Run 'pnpm bundle' first."
+if [ ! -f "$V2_ROOT/dist/bundle/codeb-mcp.cjs" ]; then
+  echo "ERROR: dist/bundle/codeb-mcp.cjs not found. Run 'pnpm bundle' first."
   exit 1
 fi
 
-cp "$V2_ROOT/dist/bundle/we.js" "$STAGING_DIR/bin/we.js"
-cp "$V2_ROOT/dist/bundle/codeb-mcp.js" "$STAGING_DIR/bin/codeb-mcp.js"
-chmod +x "$STAGING_DIR/bin/we.js"
-chmod +x "$STAGING_DIR/bin/codeb-mcp.js"
+cp "$V2_ROOT/dist/bundle/we.cjs" "$STAGING_DIR/bin/we.cjs"
+cp "$V2_ROOT/dist/bundle/codeb-mcp.cjs" "$STAGING_DIR/bin/codeb-mcp.cjs"
+chmod +x "$STAGING_DIR/bin/we.cjs"
+chmod +x "$STAGING_DIR/bin/codeb-mcp.cjs"
 
-echo "  bin/we.js              ($(wc -c < "$STAGING_DIR/bin/we.js" | tr -d ' ') bytes)"
-echo "  bin/codeb-mcp.js       ($(wc -c < "$STAGING_DIR/bin/codeb-mcp.js" | tr -d ' ') bytes)"
+echo "  bin/we.cjs             ($(wc -c < "$STAGING_DIR/bin/we.cjs" | tr -d ' ') bytes)"
+echo "  bin/codeb-mcp.cjs      ($(wc -c < "$STAGING_DIR/bin/codeb-mcp.cjs" | tr -d ' ') bytes)"
 
 # 2. Copy skills
 # Check multiple potential skill locations
@@ -98,9 +98,9 @@ echo "  version.json"
 
 # 7. Generate minimal package.json for ESM module resolution
 cat > "$STAGING_DIR/package.json" <<EOF
-{"type": "module", "name": "@codeb/cli", "version": "${VERSION}"}
+{"name": "@codeb/cli", "version": "${VERSION}"}
 EOF
-echo "  package.json           (ESM type marker)"
+echo "  package.json           (metadata)"
 
 # 8. Copy install.sh into tarball (self-contained distribution)
 if [ -f "$V2_ROOT/scripts/install.sh" ]; then

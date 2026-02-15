@@ -97,7 +97,7 @@ jobs:
       - name: Verify Bundles
         working-directory: v2
         run: |
-          for BUNDLE in dist/bundle/we.js dist/bundle/codeb-mcp.js; do
+          for BUNDLE in dist/bundle/we.cjs dist/bundle/codeb-mcp.cjs; do
             if [ ! -f "$BUNDLE" ]; then
               echo "ERROR: $BUNDLE not found"
               exit 1
