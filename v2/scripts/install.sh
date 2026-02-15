@@ -159,6 +159,25 @@ fi
 if [ -f "$EXTRACT_DIR/CLAUDE.md" ]; then
   cp "$EXTRACT_DIR/CLAUDE.md" "$CLAUDE_DIR/CLAUDE.md"
   echo -e "  ${GREEN}Rules:${NC}   CLAUDE.md -> ~/.claude/"
+
+  # Update project-level CLAUDE.md files (CodeB-managed only)
+  PROJECT_UPDATE_COUNT=0
+  while IFS= read -r proj_claude; do
+    # Only update files that contain "CodeB Project Rules" (our signature)
+    if grep -q "CodeB Project Rules" "$proj_claude" 2>/dev/null; then
+      cp "$EXTRACT_DIR/CLAUDE.md" "$proj_claude"
+      PROJECT_UPDATE_COUNT=$((PROJECT_UPDATE_COUNT + 1))
+    fi
+  done < <(find "$HOME" -maxdepth 4 -name "CLAUDE.md" \
+    -not -path "*/node_modules/*" \
+    -not -path "*/.claude/*" \
+    -not -path "*/.taskmaster/*" \
+    -not -path "*/codeb-server/CLAUDE.md" \
+    2>/dev/null)
+
+  if [ "$PROJECT_UPDATE_COUNT" -gt 0 ]; then
+    echo -e "  ${GREEN}Projects:${NC} $PROJECT_UPDATE_COUNT project CLAUDE.md files updated"
+  fi
 fi
 
 # =========================================================================
