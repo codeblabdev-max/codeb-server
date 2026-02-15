@@ -11,7 +11,6 @@ import {
   CallToolRequestSchema,
   ListToolsRequestSchema,
 } from '@modelcontextprotocol/sdk/types.js';
-import { fileURLToPath } from 'node:url';
 import { getVersion, checkServerVersion } from '@codeb/shared';
 
 import { callApi } from './api-client.js';
@@ -92,10 +91,5 @@ export async function startMcpServer(): Promise<void> {
   console.error(`CodeB MCP Server v${VERSION} running on stdio (server: v${check.serverVersion})`);
 }
 
-// Run if called directly
-if (process.argv[1] === fileURLToPath(import.meta.url)) {
-  startMcpServer().catch((error: Error) => {
-    console.error('Fatal error:', error.message);
-    process.exit(1);
-  });
-}
+// Note: Direct execution handled by bin/codeb-mcp.ts entrypoint.
+// Removed import.meta.url guard (incompatible with CJS bundle).
