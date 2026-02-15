@@ -6,6 +6,7 @@
  */
 
 import type { SSHClientWrapper } from '@codeb/ssh';
+import { getVersion } from '@codeb/shared';
 
 interface LoggerLike {
   debug(message: string, meta?: Record<string, unknown>): void;
@@ -42,6 +43,7 @@ export interface InfraStatusResult {
     slots: SlotInfo[];
     images: Array<{ repository: string; tag: string; size: string; created: string }>;
     ports: Array<{ port: string; process: string }>;
+    error?: string;
   };
   timestamp: string;
 }
@@ -54,7 +56,7 @@ export class HealthService {
   constructor(
     private readonly ssh: SSHClientWrapper,
     private readonly logger: LoggerLike,
-    private readonly version: string = '8.0.1',
+    private readonly version: string = getVersion(),
   ) {}
 
   /**
@@ -169,13 +171,14 @@ export class HealthService {
       });
 
       return {
-        success: false,
+        success: true,
         data: {
           api: { status: 'healthy', version: this.version, uptime: process.uptime() },
           containers: [],
           slots: [],
           images: [],
           ports: [],
+          error: error instanceof Error ? error.message : String(error),
         },
         timestamp: new Date().toISOString(),
       };
