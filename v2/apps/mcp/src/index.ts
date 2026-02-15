@@ -44,7 +44,7 @@ server.setRequestHandler(CallToolRequestSchema, async (request) => {
     const apiTool = API_TOOL_MAP[name] || name;
     const result = await callApi(apiTool, args as Record<string, unknown>);
 
-    if (!result.success) {
+    if (!result.success && !result.data) {
       return {
         content: [{ type: 'text' as const, text: `Error: ${result.error || 'Unknown error'}` }],
         isError: true,
