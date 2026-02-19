@@ -410,7 +410,7 @@ export class DomainService {
     await this.ssh.exec(`mkdir -p /etc/caddy/sites`);
     const base64 = Buffer.from(caddyContent).toString('base64');
     await this.ssh.exec(`echo "${base64}" | base64 -d > ${caddyPath}`);
-    await this.ssh.exec('systemctl reload caddy');
+    await this.ssh.exec('systemctl restart caddy');
   }
 
   private async addCustomDomainToCaddy(
@@ -439,7 +439,7 @@ export class DomainService {
 
     const base64 = Buffer.from(caddyContent).toString('base64');
     await this.ssh.exec(`echo "${base64}" | base64 -d > ${caddyPath}`);
-    await this.ssh.exec('systemctl reload caddy');
+    await this.ssh.exec('systemctl restart caddy');
   }
 
   private async removeCustomDomainFromCaddy(
@@ -468,7 +468,7 @@ export class DomainService {
 
     const base64 = Buffer.from(caddyContent).toString('base64');
     await this.ssh.exec(`echo "${base64}" | base64 -d > ${caddyPath}`);
-    await this.ssh.exec('systemctl reload caddy');
+    await this.ssh.exec('systemctl restart caddy');
   }
 
   private async parseCustomDomainsFromCaddy(
@@ -567,13 +567,13 @@ export class DomainService {
       ? `reverse_proxy localhost:${config.activePort} localhost:${config.standbyPort} {
     lb_policy first
     fail_duration 10s
-    health_uri /health
-    health_interval 10s
+    health_uri /
+    health_interval 30s
     health_timeout 5s
   }`
       : `reverse_proxy localhost:${config.activePort} {
-    health_uri /health
-    health_interval 10s
+    health_uri /
+    health_interval 30s
     health_timeout 5s
   }`;
 
