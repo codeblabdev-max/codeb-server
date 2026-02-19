@@ -1,8 +1,8 @@
 /**
  * DomainService - Unified domain management
  *
- * PowerDNS A record + Caddy config + SSL automation.
- * Refactored from mcp-server/src/tools/domain.ts
+ * Cloudflare DNS + Caddy config + SSL automation.
+ * Migrated from PowerDNS to Cloudflare (2026-02-20).
  */
 
 import type { DomainRepo, SlotRepo } from '@codeb/db';
@@ -19,7 +19,7 @@ interface LoggerLike {
 import { DnsService } from './dns.service.js';
 import { SslService } from './ssl.service.js';
 
-const SUPPORTED_DOMAINS = ['codeb.kr', 'workb.net'];
+const SUPPORTED_DOMAINS = ['codeb.kr', 'workb.net', 'wdot.kr', 'w-w-w.kr', 'vsvs.kr', 'workb.xyz', 'da-rak.kr', 'vsvs.co.kr', 'di-tto.com', 'staronpick.com'];
 const BASE_DOMAIN = 'codeb.kr';
 const APP_SERVER_IP = '158.247.203.55';
 
@@ -54,7 +54,7 @@ export class DomainService {
     private readonly slotRepo: typeof SlotRepo,
     private readonly ssh: SSHClientWrapper,
     private readonly logger: LoggerLike,
-    dnsConfig?: { apiUrl?: string; apiKey?: string },
+    dnsConfig?: { apiToken?: string },
   ) {
     this.dns = new DnsService(logger, dnsConfig);
     this.ssl = new SslService(ssh, logger);
