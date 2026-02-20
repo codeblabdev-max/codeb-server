@@ -396,6 +396,38 @@ PROJEOF
     fi
   fi
 
+  # GitHub Secrets auto-registration (CODEB_API_KEY + MINIO keys)
+  if command -v gh &>/dev/null && [ -n "$API_KEY" ]; then
+    # Check if this is a GitHub repo
+    GH_REPO=$(cd "$PROJECT_DIR" && gh repo view --json nameWithOwner -q '.nameWithOwner' 2>/dev/null || echo "")
+    if [ -n "$GH_REPO" ]; then
+      SECRETS_SET=0
+
+      # CODEB_API_KEY
+      if echo "$API_KEY" | gh secret set CODEB_API_KEY --repo "$GH_REPO" 2>/dev/null; then
+        SECRETS_SET=$((SECRETS_SET + 1))
+      fi
+
+      # MINIO_ACCESS_KEY / MINIO_SECRET_KEY (shared infra)
+      if echo "videopick" | gh secret set MINIO_ACCESS_KEY --repo "$GH_REPO" 2>/dev/null; then
+        SECRETS_SET=$((SECRETS_SET + 1))
+      fi
+      if echo "secure_minio_password" | gh secret set MINIO_SECRET_KEY --repo "$GH_REPO" 2>/dev/null; then
+        SECRETS_SET=$((SECRETS_SET + 1))
+      fi
+
+      if [ "$SECRETS_SET" -gt 0 ]; then
+        echo -e "  ${GREEN}Secrets${NC}    -> $GH_REPO ($SECRETS_SET secrets set)"
+        PROJECT_SETUP=true
+      else
+        echo -e "  ${YELLOW}Secrets${NC}    -> Failed (check gh auth status)"
+      fi
+    fi
+  elif [ -n "$API_KEY" ] && ! command -v gh &>/dev/null; then
+    echo -e "  ${YELLOW}Secrets${NC}    -> gh CLI not found (install: brew install gh)"
+    echo -e "  ${GRAY}Manual: gh secret set CODEB_API_KEY --body \"$API_KEY\"${NC}"
+  fi
+
   if [ "$PROJECT_SETUP" = true ]; then
     echo -e "  ${GREEN}Project:${NC}   $(basename "$PROJECT_DIR")"
   fi
@@ -428,6 +460,7 @@ if [ "$PROJECT_SETUP" = true ]; then
   echo -e "    Settings   $PROJECT_CLAUDE_DIR/settings.local.json"
   echo -e "    Commands   $PROJECT_CLAUDE_DIR/commands/we/"
   echo -e "    Skills     $PROJECT_CLAUDE_DIR/skills/we/"
+  echo -e "    Secrets    CODEB_API_KEY, MINIO_ACCESS_KEY, MINIO_SECRET_KEY"
 fi
 echo ""
 echo -e "  ${BOLD}No node_modules needed! (esbuild bundle)${NC}"
