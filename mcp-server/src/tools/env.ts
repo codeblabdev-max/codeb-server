@@ -24,8 +24,11 @@ const APP_SERVER = SERVERS.app.ip;
 export const envSyncInputSchema = z.object({
   projectName: z.string().min(1).max(50),
   environment: z.enum(['staging', 'production']).default('production'),
-  envContent: z.string().min(1), // .env 파일 내용 전체
+  content: z.string().min(1).optional(),      // MCP 파라미터명 (content)
+  envContent: z.string().min(1).optional(),    // 레거시 파라미터명
   merge: z.boolean().default(true), // true: 기존 값과 병합, false: 덮어쓰기
+}).refine(data => !!(data.content || data.envContent), {
+  message: 'content 또는 envContent 필수',
 });
 
 export const envGetInputSchema = z.object({
@@ -64,8 +67,9 @@ interface EnvGetResult {
 /**
  * .env 파일 내용을 파싱하여 key=value 객체로 변환
  */
-function parseEnvContent(content: string): Record<string, string> {
+function parseEnvContent(content: string | undefined | null): Record<string, string> {
   const result: Record<string, string> = {};
+  if (!content) return result;
   const lines = content.split('\n');
 
   for (const line of lines) {
@@ -137,7 +141,9 @@ export const envSyncTool = {
     params: z.infer<typeof envSyncInputSchema>,
     _auth: AuthContext
   ): Promise<EnvSyncResult> {
-    const { projectName, environment, envContent, merge } = params;
+    const { projectName, environment, merge } = params;
+    // MCP는 'content', 레거시는 'envContent' 파라미터 사용
+    const envContent = params.content || params.envContent || '';
     const envPath = `/opt/codeb/projects/${projectName}/.env.${environment}`;
 
     try {
