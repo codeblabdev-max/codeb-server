@@ -521,3 +521,106 @@ your-project/
 ```
 
 > 이 파일은 CLI 설치/업데이트 시 자동으로 최신 버전으로 교체됩니다.
+
+---
+
+## 팀원 온보딩 (Git + Claude Code + MCP)
+
+### Git 협업 규칙
+
+> **main 브랜치에 직접 push 불가 (브랜치 보호 규칙 적용됨)**
+> 반드시 **feature 브랜치 -> PR -> Merge** 순서로 진행
+> 상세 가이드: [CONTRIBUTING.md](CONTRIBUTING.md)
+
+```bash
+# 작업 순서
+git checkout main && git pull                    # 최신 코드
+git checkout -b feature/이름-작업내용            # 브랜치 생성
+# ... 코드 수정 ...
+git commit -m "[이름] feat: 작업 내용"           # 커밋
+git push -u origin feature/이름-작업내용         # 푸시
+# GitHub에서 PR 생성 -> Merge
+```
+
+### 커밋 메시지 형식
+
+```
+[이름] type: 설명
+
+type: feat | fix | refactor | style | docs | chore | test
+```
+
+### Claude Code CLI 설치
+
+```bash
+# Step 1: Claude Code 설치
+npm install -g @anthropic-ai/claude-code
+
+# Step 2: CodeB CLI + MCP 서버 설치
+npm install -g @codeblabdev-max/we-cli
+
+# Step 3: MCP 서버 글로벌 등록
+claude mcp add codeb-deploy \
+  --command node \
+  --args "/opt/homebrew/lib/node_modules/@codeblabdev-max/we-cli/bin/codeb-mcp.js" \
+  --env CODEB_API_URL=https://api.codeb.kr
+
+# Step 4: API 키 설정 (팀 리드에게 발급받기)
+# ~/.claude/settings.json 또는 환경변수로 설정
+export CODEB_API_KEY=codeb_팀ID_역할_토큰
+
+# Step 5: 확인
+claude              # Claude Code 실행
+/we:health          # MCP 연결 테스트
+```
+
+### MCP 서버 설정 (수동)
+
+`~/.claude/settings.json`에 아래 내용 추가:
+
+```json
+{
+  "mcpServers": {
+    "codeb-deploy": {
+      "command": "node",
+      "args": ["/opt/homebrew/lib/node_modules/@codeblabdev-max/we-cli/bin/codeb-mcp.js"],
+      "env": {
+        "CODEB_API_URL": "https://api.codeb.kr"
+      }
+    }
+  }
+}
+```
+
+### 팀원 CLI 명령어 (Quick Reference)
+
+```bash
+# 배포 (git push 기반)
+/we:deploy                     # 현재 프로젝트 배포
+/we:deploy myapp               # 특정 프로젝트 배포
+
+# 운영
+/we:promote myapp              # 트래픽 전환 (무중단)
+/we:rollback myapp             # 즉시 롤백
+/we:health                     # 시스템 상태 확인
+
+# 도메인
+/we:domain setup myapp.codeb.kr
+
+# 분석
+/cb-analyze                    # 코드 분석
+/cb-optimize                   # 최적화
+```
+
+### API 키 발급 (팀 리드)
+
+```bash
+# 팀원 초대 (관리자가 실행)
+# MCP tool: member_invite
+# 역할: admin | member | viewer
+
+# API 토큰 생성
+# MCP tool: token_create
+# name: "팀원이름-dev"
+# role: member
+```
