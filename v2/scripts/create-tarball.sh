@@ -24,6 +24,7 @@ echo ""
 rm -rf "$STAGING_DIR" "$TARBALL"
 mkdir -p "$STAGING_DIR/bin"
 mkdir -p "$STAGING_DIR/skills/we"
+mkdir -p "$STAGING_DIR/commands/we"
 mkdir -p "$STAGING_DIR/hooks"
 
 # 1. Copy esbuild bundles
@@ -65,7 +66,26 @@ else
   echo "  skills/we/             (WARN: no skill files found)"
 fi
 
-# 3. Copy hooks
+# 3. Copy commands (slash commands: /we:deploy, /we:health, etc.)
+COMMANDS_FOUND=false
+for COMMANDS_SRC in \
+  "$REPO_ROOT/.claude/commands/we" \
+  "$V2_ROOT/.claude/commands/we"; do
+  if [ -d "$COMMANDS_SRC" ] && ls "$COMMANDS_SRC"/*.md >/dev/null 2>&1; then
+    cp "$COMMANDS_SRC"/*.md "$STAGING_DIR/commands/we/"
+    COMMANDS_FOUND=true
+    break
+  fi
+done
+
+if [ "$COMMANDS_FOUND" = true ]; then
+  CMD_COUNT=$(ls -1 "$STAGING_DIR/commands/we/"*.md 2>/dev/null | wc -l | tr -d ' ')
+  echo "  commands/we/           (${CMD_COUNT} files)"
+else
+  echo "  commands/we/           (WARN: no command files found)"
+fi
+
+# 4. Copy hooks
 for HOOKS_SRC in \
   "$REPO_ROOT/.claude/hooks" \
   "$V2_ROOT/.claude/hooks"; do
@@ -76,17 +96,17 @@ for HOOKS_SRC in \
   fi
 done
 
-# 4. Copy CLAUDE.md (global rules)
+# 5. Copy CLAUDE.md (global rules)
 if [ -f "$REPO_ROOT/CLAUDE.md" ]; then
   cp "$REPO_ROOT/CLAUDE.md" "$STAGING_DIR/CLAUDE.md"
   echo "  CLAUDE.md"
 fi
 
-# 5. Copy VERSION
+# 6. Copy VERSION
 cp "$REPO_ROOT/VERSION" "$STAGING_DIR/VERSION"
 echo "  VERSION                ($VERSION)"
 
-# 6. Generate version.json
+# 7. Generate version.json
 cat > "$STAGING_DIR/version.json" <<EOF
 {
   "version": "${VERSION}",
@@ -96,19 +116,19 @@ cat > "$STAGING_DIR/version.json" <<EOF
 EOF
 echo "  version.json"
 
-# 7. Generate minimal package.json for ESM module resolution
+# 8. Generate minimal package.json for ESM module resolution
 cat > "$STAGING_DIR/package.json" <<EOF
 {"name": "@codeb/cli", "version": "${VERSION}"}
 EOF
 echo "  package.json           (metadata)"
 
-# 8. Copy install.sh into tarball (self-contained distribution)
+# 9. Copy install.sh into tarball (self-contained distribution)
 if [ -f "$V2_ROOT/scripts/install.sh" ]; then
   cp "$V2_ROOT/scripts/install.sh" "$STAGING_DIR/install.sh"
   echo "  install.sh"
 fi
 
-# 9. Create tarball
+# 10. Create tarball
 echo ""
 echo "Packing..."
 cd /tmp

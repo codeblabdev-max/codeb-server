@@ -10,10 +10,14 @@
 #   ~/.codeb/bin/we.cjs           CLI (esbuild single-file bundle)
 #   ~/.codeb/bin/codeb-mcp.cjs    MCP server (esbuild single-file bundle)
 #   ~/.codeb/package.json        Metadata
-#   ~/.claude/skills/we/         Skills for Claude Code
+#   ~/.claude/commands/we/       Slash commands (/we:deploy, /we:health, ...)
+#   ~/.claude/skills/we/         Skills for Claude Code (auto-activate)
 #   ~/.claude/hooks/pre-bash.py  Security hook
 #   ~/.claude/CLAUDE.md          Global rules
 #   ~/.claude/settings.json      MCP server registration (merge)
+#   .claude/commands/we/         Project-level slash commands
+#   .claude/skills/we/           Project-level skills
+#   .claude/settings.local.json  Project-level MCP config
 #
 # No node_modules needed! (esbuild single-file bundles)
 # =============================================================================
@@ -100,7 +104,7 @@ fi
 # PART 1: Install CLI + MCP binaries (~/.codeb/)
 # =========================================================================
 echo ""
-echo -e "${BOLD}[1/4] Installing binaries...${NC}"
+echo -e "${BOLD}[1/5] Installing binaries...${NC}"
 
 mkdir -p "$CODEB_DIR/bin"
 
@@ -134,19 +138,30 @@ echo -e "  ${GREEN}Binaries${NC} -> ~/.codeb/bin/ (linked: $LINK_TARGETS)"
 # PART 2: Install Skills + Hooks (~/.claude/)
 # =========================================================================
 echo ""
-echo -e "${BOLD}[2/4] Installing skills and hooks...${NC}"
+echo -e "${BOLD}[2/5] Installing commands, skills and hooks...${NC}"
 
+mkdir -p "$CLAUDE_DIR/commands/we"
 mkdir -p "$CLAUDE_DIR/skills/we"
 mkdir -p "$CLAUDE_DIR/hooks"
 
-# Skills
+# Commands (slash commands: /we:deploy, /we:health, etc.)
+if [ -d "$EXTRACT_DIR/commands/we" ] && ls "$EXTRACT_DIR/commands/we/"*.md >/dev/null 2>&1; then
+  rm -f "$CLAUDE_DIR/commands/we/"*.md 2>/dev/null || true
+  cp "$EXTRACT_DIR/commands/we/"*.md "$CLAUDE_DIR/commands/we/"
+  CMD_COUNT=$(ls -1 "$CLAUDE_DIR/commands/we/"*.md 2>/dev/null | wc -l | tr -d ' ')
+  echo -e "  ${GREEN}Commands:${NC} $CMD_COUNT files -> ~/.claude/commands/we/ (/we:deploy, etc.)"
+else
+  echo -e "  ${YELLOW}Commands:${NC} (no command files in tarball)"
+fi
+
+# Skills (auto-activate by keyword matching)
 if [ -d "$EXTRACT_DIR/skills/we" ] && ls "$EXTRACT_DIR/skills/we/"*.md >/dev/null 2>&1; then
   rm -f "$CLAUDE_DIR/skills/we/"*.md 2>/dev/null || true
   cp "$EXTRACT_DIR/skills/we/"*.md "$CLAUDE_DIR/skills/we/"
   SKILL_COUNT=$(ls -1 "$CLAUDE_DIR/skills/we/"*.md 2>/dev/null | wc -l | tr -d ' ')
-  echo -e "  ${GREEN}Skills:${NC}  $SKILL_COUNT files -> ~/.claude/skills/we/"
+  echo -e "  ${GREEN}Skills:${NC}   $SKILL_COUNT files -> ~/.claude/skills/we/"
 else
-  echo -e "  ${YELLOW}Skills:${NC}  (no skill files in tarball)"
+  echo -e "  ${YELLOW}Skills:${NC}   (no skill files in tarball)"
 fi
 
 # Hooks
@@ -186,7 +201,7 @@ fi
 # PART 3: API Key Configuration
 # =========================================================================
 echo ""
-echo -e "${BOLD}[3/4] API Key configuration...${NC}"
+echo -e "${BOLD}[3/5] API Key configuration...${NC}"
 
 API_KEY="${1:-${CODEB_API_KEY:-}}"
 
@@ -220,7 +235,7 @@ fi
 # PART 4: MCP Server Registration
 # =========================================================================
 echo ""
-echo -e "${BOLD}[4/4] Configuring MCP server...${NC}"
+echo -e "${BOLD}[4/5] Configuring MCP server...${NC}"
 
 MCP_SCRIPT="$CODEB_DIR/bin/codeb-mcp.cjs"
 NEED_MANUAL_MCP=false
@@ -351,6 +366,16 @@ PROJEOF
     PROJECT_SETUP=true
   fi
 
+  # Commands (project-level slash commands)
+  if [ -d "$EXTRACT_DIR/commands/we" ] && ls "$EXTRACT_DIR/commands/we/"*.md >/dev/null 2>&1; then
+    mkdir -p "$PROJECT_CLAUDE_DIR/commands/we"
+    rm -f "$PROJECT_CLAUDE_DIR/commands/we/"*.md 2>/dev/null || true
+    cp "$EXTRACT_DIR/commands/we/"*.md "$PROJECT_CLAUDE_DIR/commands/we/"
+    PROJ_CMD_COUNT=$(ls -1 "$PROJECT_CLAUDE_DIR/commands/we/"*.md 2>/dev/null | wc -l | tr -d ' ')
+    echo -e "  ${GREEN}Commands${NC}   -> $PROJECT_CLAUDE_DIR/commands/we/ ($PROJ_CMD_COUNT files)"
+    PROJECT_SETUP=true
+  fi
+
   # Skills (project-level)
   if [ -d "$EXTRACT_DIR/skills/we" ] && ls "$EXTRACT_DIR/skills/we/"*.md >/dev/null 2>&1; then
     mkdir -p "$PROJECT_CLAUDE_DIR/skills/we"
@@ -391,6 +416,7 @@ echo -e "${BLUE}${BOLD}=================================================${NC}"
 echo ""
 echo -e "  ${GREEN}Global:${NC}"
 echo -e "    Binaries   ~/.codeb/bin/ (we, codeb-mcp)"
+echo -e "    Commands   ~/.claude/commands/we/ (/we:deploy, /we:health, ...)"
 echo -e "    Skills     ~/.claude/skills/we/"
 echo -e "    Hooks      ~/.claude/hooks/"
 echo -e "    Rules      ~/.claude/CLAUDE.md"
@@ -400,6 +426,7 @@ if [ "$PROJECT_SETUP" = true ]; then
   echo -e "  ${GREEN}Project ($(basename "$PROJECT_DIR")):${NC}"
   echo -e "    CLAUDE.md  $PROJECT_DIR/CLAUDE.md"
   echo -e "    Settings   $PROJECT_CLAUDE_DIR/settings.local.json"
+  echo -e "    Commands   $PROJECT_CLAUDE_DIR/commands/we/"
   echo -e "    Skills     $PROJECT_CLAUDE_DIR/skills/we/"
 fi
 echo ""
