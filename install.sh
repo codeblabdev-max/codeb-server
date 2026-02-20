@@ -161,12 +161,53 @@ fi
 
 # ─── GitHub Secrets 설정 (gh CLI 사용 가능한 경우) ───
 if command -v gh &> /dev/null && [ -n "$PROJECT_DIR" ]; then
+  cd "$PROJECT_DIR"
   REPO=$(gh repo view --json nameWithOwner -q .nameWithOwner 2>/dev/null || echo "")
   if [ -n "$REPO" ]; then
     echo ""
-    read -p "  GitHub Secrets 자동 등록? ($REPO) [y/N]: " SETUP_SECRETS
+    echo "  GitHub Secrets 설정 ($REPO)"
+    echo "  CI/CD 배포에 필요한 3개 Secret을 등록합니다."
+    echo ""
+    read -p "  GitHub Secrets 자동 등록? [y/N]: " SETUP_SECRETS
     if [[ "$SETUP_SECRETS" =~ ^[yY]$ ]]; then
-      echo "$API_KEY" | gh secret set CODEB_API_KEY 2>/dev/null && echo "    CODEB_API_KEY 등록됨" || echo "    CODEB_API_KEY 등록 실패"
+      # 1. CODEB_API_KEY
+      echo "$API_KEY" | gh secret set CODEB_API_KEY 2>/dev/null \
+        && echo "    CODEB_API_KEY 등록됨" \
+        || echo "    CODEB_API_KEY 등록 실패"
+
+      # 2. MINIO 키 - MCP API에서 자동 조회 시도
+      echo "  Minio S3 캐시 키 설정 중..."
+      MINIO_SECRETS=$(curl -sf -H "X-API-Key: $API_KEY" "https://api.codeb.kr/api/setup/secrets" 2>/dev/null || echo "")
+
+      if [ -n "$MINIO_SECRETS" ] && echo "$MINIO_SECRETS" | jq -e '.minio_access_key' &>/dev/null; then
+        # API에서 자동 조회 성공
+        MINIO_AK=$(echo "$MINIO_SECRETS" | jq -r '.minio_access_key')
+        MINIO_SK=$(echo "$MINIO_SECRETS" | jq -r '.minio_secret_key')
+        echo "    Minio 키 자동 조회 완료"
+      else
+        # API 조회 실패 시 수동 입력
+        echo "    자동 조회 실패 - 수동 입력 (팀 리드에게 문의)"
+        echo ""
+        read -p "    MINIO_ACCESS_KEY: " MINIO_AK
+        read -p "    MINIO_SECRET_KEY: " MINIO_SK
+      fi
+
+      if [ -n "$MINIO_AK" ] && [ -n "$MINIO_SK" ]; then
+        echo "$MINIO_AK" | gh secret set MINIO_ACCESS_KEY 2>/dev/null \
+          && echo "    MINIO_ACCESS_KEY 등록됨" \
+          || echo "    MINIO_ACCESS_KEY 등록 실패"
+        echo "$MINIO_SK" | gh secret set MINIO_SECRET_KEY 2>/dev/null \
+          && echo "    MINIO_SECRET_KEY 등록됨" \
+          || echo "    MINIO_SECRET_KEY 등록 실패"
+      else
+        echo "    Minio 키 미입력 - 나중에 수동 등록 필요"
+        echo "    gh secret set MINIO_ACCESS_KEY"
+        echo "    gh secret set MINIO_SECRET_KEY"
+      fi
+
+      echo ""
+      echo "  GitHub Secrets 등록 완료"
+      gh secret list 2>/dev/null | head -5
     fi
   fi
 fi

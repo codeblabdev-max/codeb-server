@@ -676,6 +676,31 @@ app.get('/api/audit', authMiddleware, async (req: AuthenticatedRequest, res) => 
   }
 });
 
+// Setup secrets endpoint - for install.sh GitHub Secrets registration
+app.get('/api/setup/secrets', authMiddleware, async (req: AuthenticatedRequest, res) => {
+  const authContext = req.auth!;
+
+  // member 이상 권한 필요
+  if (!auth.checkPermission(authContext, 'deploy.create')) {
+    res.status(403).json({ success: false, error: 'Permission denied' });
+    return;
+  }
+
+  try {
+    res.json({
+      success: true,
+      minio_access_key: process.env.MINIO_ACCESS_KEY || '',
+      minio_secret_key: process.env.MINIO_SECRET_KEY || '',
+      registry_url: process.env.REGISTRY_URL || '64.176.226.119:5000',
+    });
+  } catch (error) {
+    res.status(500).json({
+      success: false,
+      error: error instanceof Error ? error.message : String(error),
+    });
+  }
+});
+
 // ============================================================================
 // Error Handler
 // ============================================================================
