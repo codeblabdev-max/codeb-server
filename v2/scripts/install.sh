@@ -282,6 +282,104 @@ MCPEOF
 fi
 
 # =========================================================================
+# PART 5: Project-level installation (current directory)
+# =========================================================================
+echo ""
+echo -e "${BOLD}[5/5] Project-level setup...${NC}"
+
+PROJECT_DIR=""
+PROJECT_SETUP=false
+
+# Detect project root (git root or cwd)
+if git rev-parse --show-toplevel &>/dev/null; then
+  PROJECT_DIR="$(git rev-parse --show-toplevel)"
+elif [ -f "package.json" ] || [ -f "Dockerfile" ]; then
+  PROJECT_DIR="$(pwd)"
+fi
+
+if [ -n "$PROJECT_DIR" ] && [ "$PROJECT_DIR" != "$HOME" ]; then
+  PROJECT_CLAUDE_DIR="$PROJECT_DIR/.claude"
+  mkdir -p "$PROJECT_CLAUDE_DIR"
+
+  # CLAUDE.md at project root
+  if [ -f "$EXTRACT_DIR/CLAUDE.md" ]; then
+    if [ -f "$PROJECT_DIR/CLAUDE.md" ]; then
+      cp "$PROJECT_DIR/CLAUDE.md" "$PROJECT_DIR/CLAUDE.md.bak"
+    fi
+    cp "$EXTRACT_DIR/CLAUDE.md" "$PROJECT_DIR/CLAUDE.md"
+    echo -e "  ${GREEN}CLAUDE.md${NC}  -> $PROJECT_DIR/"
+    PROJECT_SETUP=true
+  fi
+
+  # .claude/settings.local.json (project-level MCP + permissions)
+  PROJ_SETTINGS="$PROJECT_CLAUDE_DIR/settings.local.json"
+  ENV_BLOCK='{"CODEB_API_URL":"https://api.codeb.kr"}'
+  if [ -n "$API_KEY" ]; then
+    ENV_BLOCK="{\"CODEB_API_URL\":\"https://api.codeb.kr\",\"CODEB_API_KEY\":\"$API_KEY\"}"
+  fi
+
+  if command -v jq &>/dev/null; then
+    if [ -f "$PROJ_SETTINGS" ]; then
+      # Merge MCP into existing settings
+      TMP_PROJ=$(mktemp)
+      jq --arg script "$MCP_SCRIPT" --argjson env "$ENV_BLOCK" '
+        .mcpServers["codeb-deploy"] = {
+          "command": "node",
+          "args": [$script],
+          "env": $env
+        }
+      ' "$PROJ_SETTINGS" > "$TMP_PROJ" && mv "$TMP_PROJ" "$PROJ_SETTINGS"
+    else
+      cat > "$PROJ_SETTINGS" << PROJEOF
+{
+  "mcpServers": {
+    "codeb-deploy": {
+      "command": "node",
+      "args": ["$MCP_SCRIPT"],
+      "env": $ENV_BLOCK
+    }
+  },
+  "permissions": {
+    "allow": [
+      "mcp__codeb-deploy__*"
+    ]
+  }
+}
+PROJEOF
+    fi
+    echo -e "  ${GREEN}Settings${NC}   -> $PROJECT_CLAUDE_DIR/settings.local.json"
+    PROJECT_SETUP=true
+  fi
+
+  # Skills (project-level)
+  if [ -d "$EXTRACT_DIR/skills/we" ] && ls "$EXTRACT_DIR/skills/we/"*.md >/dev/null 2>&1; then
+    mkdir -p "$PROJECT_CLAUDE_DIR/skills/we"
+    rm -f "$PROJECT_CLAUDE_DIR/skills/we/"*.md 2>/dev/null || true
+    cp "$EXTRACT_DIR/skills/we/"*.md "$PROJECT_CLAUDE_DIR/skills/we/"
+    PROJ_SKILL_COUNT=$(ls -1 "$PROJECT_CLAUDE_DIR/skills/we/"*.md 2>/dev/null | wc -l | tr -d ' ')
+    echo -e "  ${GREEN}Skills${NC}     -> $PROJECT_CLAUDE_DIR/skills/we/ ($PROJ_SKILL_COUNT files)"
+    PROJECT_SETUP=true
+  fi
+
+  # Ensure .gitignore includes .claude/settings.local.json
+  if [ -f "$PROJECT_DIR/.gitignore" ]; then
+    if ! grep -q "settings.local.json" "$PROJECT_DIR/.gitignore" 2>/dev/null; then
+      echo "" >> "$PROJECT_DIR/.gitignore"
+      echo "# CodeB local settings (contains API keys)" >> "$PROJECT_DIR/.gitignore"
+      echo ".claude/settings.local.json" >> "$PROJECT_DIR/.gitignore"
+      echo -e "  ${GREEN}.gitignore${NC} updated (settings.local.json excluded)"
+    fi
+  fi
+
+  if [ "$PROJECT_SETUP" = true ]; then
+    echo -e "  ${GREEN}Project:${NC}   $(basename "$PROJECT_DIR")"
+  fi
+else
+  echo -e "  ${GRAY}No project detected in current directory. Skipped.${NC}"
+  echo -e "  ${GRAY}Run install.sh from your project folder to set up project-level config.${NC}"
+fi
+
+# =========================================================================
 # Cleanup + Summary
 # =========================================================================
 rm -rf "$EXTRACT_DIR" /tmp/codeb-cli.tar.gz /tmp/codeb-cli-latest.tar.gz
@@ -291,11 +389,19 @@ echo -e "${BLUE}${BOLD}=================================================${NC}"
 echo -e "${BLUE}${BOLD}  Installation Complete - CodeB CLI v${VERSION}${NC}"
 echo -e "${BLUE}${BOLD}=================================================${NC}"
 echo ""
-echo -e "  ${GREEN}Binaries:${NC}  ~/.codeb/bin/ (we, codeb-mcp)"
-echo -e "  ${GREEN}Skills:${NC}    ~/.claude/skills/we/"
-echo -e "  ${GREEN}Hooks:${NC}     ~/.claude/hooks/"
-echo -e "  ${GREEN}Rules:${NC}     ~/.claude/CLAUDE.md"
-echo -e "  ${GREEN}MCP:${NC}       codeb-deploy (settings.json)"
+echo -e "  ${GREEN}Global:${NC}"
+echo -e "    Binaries   ~/.codeb/bin/ (we, codeb-mcp)"
+echo -e "    Skills     ~/.claude/skills/we/"
+echo -e "    Hooks      ~/.claude/hooks/"
+echo -e "    Rules      ~/.claude/CLAUDE.md"
+echo -e "    MCP        codeb-deploy (settings.json)"
+if [ "$PROJECT_SETUP" = true ]; then
+  echo ""
+  echo -e "  ${GREEN}Project ($(basename "$PROJECT_DIR")):${NC}"
+  echo -e "    CLAUDE.md  $PROJECT_DIR/CLAUDE.md"
+  echo -e "    Settings   $PROJECT_CLAUDE_DIR/settings.local.json"
+  echo -e "    Skills     $PROJECT_CLAUDE_DIR/skills/we/"
+fi
 echo ""
 echo -e "  ${BOLD}No node_modules needed! (esbuild bundle)${NC}"
 echo ""
