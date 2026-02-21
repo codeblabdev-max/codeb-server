@@ -62,6 +62,15 @@ import {
   envRestoreTool,
 } from './tools/env.js';
 
+// Tools - Git/PR Management (v8.1.0)
+import {
+  prListTool,
+  prReviewTool,
+  prMergeTool,
+  prCreateTool,
+  gitSyncTool,
+} from './tools/git.js';
+
 // SSH for infrastructure status
 import { withSSH } from './lib/ssh.js';
 import { SERVERS } from './lib/servers.js';
@@ -268,6 +277,13 @@ const TOOLS: Record<string, {
   env_get: { handler: (p, a) => envGetTool.execute(p, a), permission: 'env.read' },
   env_scan: { handler: (p, a) => envScanTool.execute(p, a), permission: 'env.read' },
   env_restore: { handler: (p, a) => envRestoreTool.execute(p, a), permission: 'env.write' },
+
+  // Git/PR Management (v8.1.0)
+  pr_list: { handler: (p, a) => prListTool.execute(p, a), permission: 'git.view' },
+  pr_review: { handler: (p, a) => prReviewTool.execute(p, a), permission: 'git.write' },
+  pr_merge: { handler: (p, a) => prMergeTool.execute(p, a), permission: 'git.write' },
+  pr_create: { handler: (p, a) => prCreateTool.execute(p, a), permission: 'git.write' },
+  git_sync: { handler: (p, a) => gitSyncTool.execute(p, a), permission: 'git.view' },
 
   // Utility
   health_check: { handler: executeInfraStatus, permission: 'project.view' },

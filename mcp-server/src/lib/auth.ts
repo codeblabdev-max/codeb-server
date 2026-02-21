@@ -76,6 +76,10 @@ const PERMISSIONS: Record<string, TeamRole> = {
   // SSH access (Admin only)
   'ssh.access': 'admin',
 
+  // Git/PR Management
+  'git.view': 'viewer',
+  'git.write': 'member',
+
   // Monitoring
   'logs.view': 'viewer',
   'health.check': 'viewer',
