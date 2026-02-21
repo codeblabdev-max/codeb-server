@@ -348,6 +348,22 @@ viewer - 조회만
 
 ## Critical Rules
 
+### Git 협업 규칙 (필수)
+
+```bash
+# 커밋 전 반드시 최신 코드 동기화
+git pull origin main             # 항상 커밋 전에 실행
+
+# 커밋 & 푸시 순서
+git pull origin main             # 1. 최신 코드 받기
+git add <파일>                   # 2. 변경 파일 스테이징
+git commit -m "[이름] type: 설명" # 3. 커밋
+git push origin main             # 4. 푸시
+```
+
+> **Claude Code는 커밋 요청 시 반드시 `git pull origin main`을 먼저 실행한다.**
+> 충돌 발생 시 사용자에게 알리고 해결 후 커밋한다.
+
 ### 절대 금지 명령어
 
 ```bash
