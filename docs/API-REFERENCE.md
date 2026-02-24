@@ -1,7 +1,7 @@
 # CodeB MCP API Reference
 
-> **문서 버전**: 8.0.0
-> **최종 업데이트**: 2026-02-06
+> **버전**: VERSION 파일 참조 (SSOT)
+> **최종 업데이트**: 2026-02-25
 
 ---
 
@@ -33,7 +33,7 @@
 
 - Team 기반 인증 (Vercel 스타일)
 - Blue-Green 무중단 배포
-- Rate Limiting (분당 60회)
+- Rate Limiting (분당 100회)
 - Audit Logging (PostgreSQL)
 - Prometheus 메트릭
 - 클라이언트 버전 자동 체크
@@ -67,7 +67,7 @@ X-API-Key: codeb_{teamId}_{role}_{randomToken}
 curl -X POST "https://api.codeb.kr/api/tool" \
   -H "Content-Type: application/json" \
   -H "X-API-Key: codeb_team1_admin_xxxxx" \
-  -H "X-Client-Version: 8.0.0" \
+  -H "X-Client-Version: 9.0.0" \
   -d '{"tool": "health_check", "params": {}}'
 ```
 
@@ -79,15 +79,15 @@ curl -X POST "https://api.codeb.kr/api/tool" \
 
 ```bash
 GET /health
-GET /health?v=7.0.66  # 버전 체크 포함
+GET /health?v=9.0.0   # 버전 체크 포함
 ```
 
 **응답:**
 ```json
 {
   "status": "healthy",
-  "version": "8.0.0",
-  "timestamp": "2026-02-06T12:00:00.000Z",
+  "version": "9.0.0",
+  "timestamp": "2026-02-25T12:00:00.000Z",
   "uptime": 123456.789
 }
 ```
@@ -96,10 +96,10 @@ GET /health?v=7.0.66  # 버전 체크 포함
 ```json
 {
   "status": "healthy",
-  "version": "8.0.0",
+  "version": "9.0.0",
   "updateRequired": true,
-  "updateMessage": "CLI 업데이트 필요: 7.0.66 → 8.0.0\ncurl -sSL https://releases.codeb.kr/cli/install.sh | bash",
-  "latestVersion": "8.0.0",
+  "updateMessage": "CLI 업데이트 필요: npm i -g @codeblabdev-max/we-cli",
+  "latestVersion": "9.0.0",
   "downloadUrl": "https://releases.codeb.kr/cli/install.sh"
 }
 ```
@@ -114,7 +114,7 @@ GET /api
 ```json
 {
   "name": "CodeB API",
-  "version": "8.0.0",
+  "version": "9.0.0",
   "tools": ["deploy", "promote", "rollback", ...],
   "features": ["blue-green-deployment", "slot-management", "domain-management", "project-initialization"]
 }
@@ -137,30 +137,49 @@ X-API-Key: {api_key}
 
 ## 4. 도구 목록
 
-### 4.1 전체 도구 (20개)
+### 4.1 전체 도구 (38개)
 
-| 카테고리 | 도구 | 권한 | 설명 |
-|---------|------|------|------|
-| **배포** | `deploy` | deploy.create | 비활성 슬롯에 배포 |
-| **배포** | `deploy_project` | deploy.create | deploy 별칭 |
-| **배포** | `promote` | deploy.promote | 트래픽 전환 |
-| **배포** | `slot_promote` | deploy.promote | promote 별칭 |
-| **배포** | `rollback` | deploy.rollback | 즉시 롤백 |
-| **슬롯** | `slot_status` | slot.view | 슬롯 상태 조회 |
-| **슬롯** | `slot_cleanup` | slot.cleanup | 슬롯 정리 |
-| **슬롯** | `slot_list` | slot.view | 슬롯 목록 |
-| **도메인** | `domain_setup` | domain.setup | 도메인 설정 |
-| **도메인** | `domain_list` | domain.view | 도메인 목록 |
-| **도메인** | `domain_delete` | domain.delete | 도메인 삭제 |
-| **프로젝트** | `workflow_init` | deploy.create | 인프라 초기화 |
-| **프로젝트** | `workflow_scan` | project.view | 프로젝트 스캔 |
-| **프로젝트** | `workflow_generate` | project.view | GitHub Actions 생성 |
-| **환경변수** | `env_sync` | env.write | ENV 동기화 |
-| **환경변수** | `env_get` | env.read | ENV 조회 |
-| **환경변수** | `env_scan` | env.read | ENV 비교 |
-| **환경변수** | `env_restore` | env.write | ENV 복원 |
-| **유틸리티** | `health_check` | project.view | 인프라 상태 |
-| **유틸리티** | `scan` | project.view | workflow_scan 별칭 |
+| 카테고리 | 도구 | 최소 역할 | 설명 |
+|---------|------|----------|------|
+| **배포** | `deploy` / `deploy_project` | member | 비활성 슬롯에 배포 |
+| **배포** | `promote` / `slot_promote` | member | 트래픽 전환 (무중단) |
+| **배포** | `rollback` | member | 즉시 롤백 |
+| **슬롯** | `slot_status` | viewer | 슬롯 상태 조회 |
+| **슬롯** | `slot_cleanup` | admin | 만료 슬롯 정리 |
+| **슬롯** | `slot_list` | viewer | 전체 슬롯 목록 |
+| **도메인** | `domain_setup` | member | DNS + Caddy + SSL 자동 설정 |
+| **도메인** | `domain_list` | viewer | 도메인 목록 |
+| **도메인** | `domain_delete` | admin | 도메인 삭제 |
+| **프로젝트** | `workflow_init` | member | 인프라 초기화 (DB/Redis/포트/ENV) |
+| **프로젝트** | `workflow_scan` | viewer | 프로젝트 구성 스캔 |
+| **프로젝트** | `workflow_generate` | member | GitHub Actions deploy.yml 생성 |
+| **프로젝트** | `scan` | viewer | 배포 준비 상태 점검 |
+| **환경변수** | `env_sync` | member | ENV 동기화 (DB ↔ 파일) |
+| **환경변수** | `env_get` | viewer | ENV 조회 (민감값 마스킹) |
+| **환경변수** | `env_scan` | viewer | 로컬 vs 서버 ENV 비교 |
+| **환경변수** | `env_restore` | member | 백업에서 ENV 복원 |
+| **Git/PR** | `pr_list` | viewer | PR 목록 조회 |
+| **Git/PR** | `pr_review` | member | PR 리뷰 |
+| **Git/PR** | `pr_merge` | member | PR 머지 |
+| **Git/PR** | `pr_create` | member | PR 생성 |
+| **Git/PR** | `git_sync` | viewer | Git 동기화 상태 |
+| **작업** | `task_create` | member | 작업 생성 |
+| **작업** | `task_list` | viewer | 작업 목록 |
+| **작업** | `task_get` | viewer | 작업 상세 |
+| **작업** | `task_update` | member | 작업 업데이트 |
+| **작업** | `task_check` | viewer | 파일 잠금 충돌 확인 |
+| **작업** | `task_complete` | member | 작업 완료 |
+| **팀** | `team_create` | owner | 팀 생성 |
+| **팀** | `team_list` | viewer | 팀 목록 |
+| **팀** | `team_get` | viewer | 팀 상세 |
+| **팀** | `team_settings` | admin | 팀 설정 변경 |
+| **멤버** | `member_invite` | admin | 멤버 초대 |
+| **멤버** | `member_remove` | admin | 멤버 제거 |
+| **멤버** | `member_list` | viewer | 멤버 목록 |
+| **토큰** | `token_create` | member | API 토큰 생성 |
+| **토큰** | `token_revoke` | member | API 토큰 폐기 |
+| **토큰** | `token_list` | member | 토큰 목록 |
+| **유틸리티** | `health_check` | viewer | 인프라 상태 점검 |
 
 ---
 
@@ -269,14 +288,14 @@ X-API-Key: {api_key}
     "blue": {
       "state": "active",
       "port": 4001,
-      "version": "8.0.0",
-      "deployedAt": "2026-02-06T10:00:00Z"
+      "version": "9.0.0",
+      "deployedAt": "2026-02-25T10:00:00Z"
     },
     "green": {
       "state": "grace",
       "port": 4002,
-      "version": "7.0.66",
-      "graceEndsAt": "2026-02-08T10:00:00Z"
+      "version": "8.0.0",
+      "graceEndsAt": "2026-02-27T10:00:00Z"
     }
   }
 }
@@ -321,7 +340,7 @@ X-API-Key: {api_key}
 ```
 
 **지원 도메인:**
-- `*.codeb.kr` - 자동 DNS (PowerDNS) + SSL (Caddy)
+- `*.codeb.kr`, `*.workb.net` - 자동 DNS (Cloudflare) + SSL (Caddy)
 - 커스텀 도메인 - 수동 DNS 설정 필요 (A: 158.247.203.55)
 
 #### domain_list
@@ -481,7 +500,7 @@ X-API-Key: {api_key}
   "data": {
     "api": {
       "status": "healthy",
-      "version": "8.0.0",
+      "version": "9.0.0",
       "uptime": 123456
     },
     "containers": [
@@ -526,7 +545,7 @@ X-API-Key: {api_key}
 
 ### 6.3 Rate Limit
 
-- 분당 60회 제한
+- 분당 100회 제한 (keyId 기준)
 - 헤더로 확인: `X-RateLimit-Remaining`, `X-RateLimit-Reset`
 
 ---

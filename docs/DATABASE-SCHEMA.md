@@ -1,6 +1,6 @@
-# CodeB v7.0 - 데이터베이스 스키마 및 API 레퍼런스
+# 데이터베이스 스키마 및 API 레퍼런스
 
-> PostgreSQL 기반 데이터 관리 시스템
+> **버전**: VERSION 파일 참조 (SSOT) | **스키마 버전**: 3 | **최종 업데이트**: 2026-02-25
 
 ---
 
@@ -8,21 +8,22 @@
 
 ```
 ┌─────────────────────────────────────────────────────────────────────────┐
-│                   데이터베이스 아키텍처 (v7.0.54+)                        │
+│                       데이터베이스 아키텍처 (v9.0)                        │
 ├─────────────────────────────────────────────────────────────────────────┤
 │                                                                         │
 │  ┌─────────────────────┐     ┌─────────────────────┐                   │
-│  │  Primary Source     │     │  Secondary Source   │                   │
-│  │  (File Registry)    │     │  (PostgreSQL)       │                   │
+│  │  Primary Source     │     │  Fallback Source    │                   │
+│  │  (PostgreSQL)       │     │  (File Registry)    │                   │
 │  │                     │     │                     │                   │
-│  │  /opt/codeb/        │ ──▶ │  db.codeb.kr:5432   │                   │
-│  │  registry/*.json    │sync │  codeb database     │                   │
+│  │  db.codeb.kr:5432   │     │  /opt/codeb/        │                   │
+│  │  codeb database     │     │  registry/*.json    │                   │
 │  └─────────────────────┘     └─────────────────────┘                   │
 │                                                                         │
 │  설계 원칙:                                                              │
-│  - 파일 레지스트리가 Primary Source (배포 안정성)                         │
-│  - PostgreSQL은 조회 최적화 및 분석용                                     │
-│  - 동기화 실패 시에도 배포 작업 계속 진행                                  │
+│  - PostgreSQL이 Primary Source (SSOT)                                   │
+│  - 파일 레지스트리는 Fallback (DB 장애 시 degraded 모드)                  │
+│  - 인증(API Keys)만 파일 기반 유지 (/opt/codeb/registry/api-keys.json)  │
+│  - DB 연결 실패 시에도 배포 작업 계속 진행 (파일 fallback)                │
 │                                                                         │
 └─────────────────────────────────────────────────────────────────────────┘
 ```
@@ -60,48 +61,98 @@ const DB_CONFIG = {
 ┌────────────────────┐       ┌────────────────────┐
 │       teams        │       │     api_keys       │
 ├────────────────────┤       ├────────────────────┤
-│ id (PK)            │◀──────│ team_id (FK)       │
-│ name               │       │ id (PK)            │
-│ slug (UNIQUE)      │       │ key_hash (UNIQUE)  │
-│ owner              │       │ key_prefix         │
-│ plan               │       │ name               │
-│ settings (JSONB)   │       │ role               │
-│ created_at         │       │ scopes (JSONB)     │
-│ updated_at         │       │ created_at         │
-└────────────────────┘       │ expires_at         │
-         │                   └────────────────────┘
-         │
-         ▼
-┌────────────────────┐       ┌────────────────────┐
-│     projects       │       │   project_slots    │
-├────────────────────┤       ├────────────────────┤
-│ name (PK)          │◀──────│ project_name (FK)  │
-│ team_id (FK)       │       │ id (PK)            │
-│ type               │       │ environment        │
-│ database_name      │       │ active_slot        │
-│ database_port      │       │ blue_* (상태정보)   │
-│ redis_db           │       │ green_* (상태정보)  │
-│ redis_port         │       │ grace_expires_at   │
-│ created_at         │       │ updated_at         │
-│ updated_at         │       └────────────────────┘
-└────────────────────┘
-         │
-         ▼
-┌────────────────────┐       ┌────────────────────┐
-│   deployments      │       │    audit_logs      │
-├────────────────────┤       ├────────────────────┤
-│ id (PK)            │       │ id (PK)            │
-│ project_name (FK)  │       │ team_id            │
-│ environment        │       │ user_id            │
-│ slot               │       │ action             │
-│ version            │       │ resource           │
-│ status             │       │ params (JSONB)     │
-│ deployed_by        │       │ success            │
-│ promoted_at        │       │ timestamp          │
-│ rolled_back_at     │       │ duration           │
-│ created_at         │       │ error              │
-└────────────────────┘       └────────────────────┘
+│ id (PK)            │◀──┬───│ team_id (FK)       │
+│ name               │   │   │ id (PK)            │
+│ slug (UNIQUE)      │   │   │ key_hash (UNIQUE)  │
+│ owner              │   │   │ key_prefix         │
+│ plan               │   │   │ name               │
+│ settings (JSONB)   │   │   │ role               │
+│ created_at         │   │   │ scopes (JSONB)     │
+│ updated_at         │   │   │ created_at         │
+└────────────────────┘   │   │ expires_at         │
+         │               │   └────────────────────┘
+         │               │
+         ▼               │   ┌────────────────────┐
+┌────────────────────┐   │   │   project_slots    │
+│     projects       │   │   ├────────────────────┤
+├────────────────────┤   │   │ project_name (FK)  │
+│ name (PK)          │◀──┼───│ id (PK)            │
+│ team_id (FK)       │   │   │ environment        │
+│ type               │   │   │ active_slot        │
+│ database_name      │   │   │ blue_* (상태정보)   │
+│ database_port      │   │   │ green_* (상태정보)  │
+│ redis_db           │   │   │ grace_expires_at   │
+│ redis_port         │   │   └────────────────────┘
+│ created_at         │   │
+│ updated_at         │   │   ┌────────────────────┐
+└────────────────────┘   │   │     domains (v2)   │
+         │               │   ├────────────────────┤
+         ├───────────────┼──▶│ project_name (FK)  │
+         │               │   │ domain (UNIQUE)    │
+         │               │   │ environment        │
+         │               │   │ type               │
+         │               │   │ ssl_enabled        │
+         │               │   │ dns_configured     │
+         │               │   │ status             │
+         │               │   └────────────────────┘
+         │               │
+         │               │   ┌────────────────────┐
+         ├───────────────┼──▶│  project_envs (v2) │
+         │               │   ├────────────────────┤
+         │               │   │ project_name (FK)  │
+         │               │   │ environment        │
+         │               │   │ env_data (JSONB)   │
+         │               │   │ version            │
+         │               │   └────────────────────┘
+         │               │
+         ▼               │   ┌────────────────────┐
+┌────────────────────┐   └──▶│  work_tasks (v3)   │
+│   deployments      │       ├────────────────────┤
+├────────────────────┤       │ team_id (FK)       │
+│ id (PK)            │       │ project_name (FK)  │
+│ project_name (FK)  │       │ title              │
+│ environment        │       │ author             │
+│ slot               │       │ branch             │
+│ version            │       │ status             │
+│ status             │       │ priority           │
+│ deployed_by        │       │ affected_files     │
+│ promoted_at        │       └────────┬───────────┘
+│ rolled_back_at     │                │
+│ created_at         │                ▼
+└────────────────────┘       ┌────────────────────┐
+                             │ work_task_files(v3)│
+┌────────────────────┐       ├────────────────────┤
+│    audit_logs      │       │ task_id (FK)       │
+├────────────────────┤       │ file_path          │
+│ id (PK)            │       │ lock_type          │
+│ team_id            │       │ status             │
+│ action             │       │ locked_at          │
+│ params (JSONB)     │       │ released_at        │
+│ success            │       └────────────────────┘
+│ duration           │
+│ error              │       ┌────────────────────┐
+│ timestamp          │       │ schema_migrations  │
+└────────────────────┘       ├────────────────────┤
+                             │ version (PK)       │
+                             │ applied_at         │
+                             └────────────────────┘
 ```
+
+### 테이블 요약 (11개)
+
+| 테이블 | 마이그레이션 | 목적 |
+|--------|------------|------|
+| `teams` | v1 | 팀/조직 정보 |
+| `team_members` | v1 | 팀 멤버십 및 권한 |
+| `api_keys` | v1 | API 인증 키 (SHA-256 해시) |
+| `projects` | v1 | 프로젝트 메타데이터 |
+| `project_slots` | v1 | Blue-Green 슬롯 상태 (SSOT) |
+| `deployments` | v1 | 배포 이력 추적 |
+| `audit_logs` | v1 | API 감사 로그 |
+| `domains` | v2 | 도메인 + DNS + SSL 설정 |
+| `project_envs` | v2 | 환경변수 (버전 관리) |
+| `work_tasks` | v3 | 작업 관리 + 협업 |
+| `work_task_files` | v3 | 파일별 잠금 추적 |
 
 ---
 
@@ -318,20 +369,139 @@ CREATE TABLE audit_logs (
 
 ---
 
+### 8. domains (도메인) - v2
+
+프로젝트 도메인 설정 및 SSL 상태를 관리합니다.
+
+```sql
+CREATE TABLE domains (
+  id SERIAL PRIMARY KEY,
+  domain VARCHAR(255) UNIQUE NOT NULL,         -- 도메인명 (myapp.codeb.kr)
+  project_name VARCHAR(100) REFERENCES projects(name) ON DELETE CASCADE,
+  environment VARCHAR(20) NOT NULL DEFAULT 'production',
+  type VARCHAR(20) NOT NULL DEFAULT 'subdomain', -- subdomain/custom
+  ssl_enabled BOOLEAN DEFAULT true,
+  ssl_issuer VARCHAR(100) DEFAULT 'letsencrypt',
+  dns_configured BOOLEAN DEFAULT false,
+  dns_verified_at TIMESTAMPTZ,
+  caddy_configured BOOLEAN DEFAULT false,
+  status VARCHAR(20) DEFAULT 'pending',        -- pending/active/error
+  created_by VARCHAR(255),
+  created_at TIMESTAMPTZ DEFAULT NOW(),
+  updated_at TIMESTAMPTZ DEFAULT NOW()
+);
+```
+
+**지원 도메인 타입:**
+| 타입 | 예시 | DNS | SSL |
+|------|------|-----|-----|
+| `subdomain` | `*.codeb.kr`, `*.workb.net` | Cloudflare 자동 | Caddy 자동 |
+| `custom` | `example.com` | 수동 (A: 158.247.203.55) | Caddy 자동 |
+
+---
+
+### 9. project_envs (환경변수) - v2
+
+프로젝트 환경변수를 버전 관리합니다.
+
+```sql
+CREATE TABLE project_envs (
+  id SERIAL PRIMARY KEY,
+  project_name VARCHAR(100) REFERENCES projects(name) ON DELETE CASCADE,
+  environment VARCHAR(20) NOT NULL DEFAULT 'production',
+  env_data JSONB NOT NULL DEFAULT '{}',        -- {"KEY": "value", ...}
+  encrypted BOOLEAN DEFAULT false,
+  version INTEGER DEFAULT 1,                   -- 자동 증가 (upsert 시)
+  created_by VARCHAR(255),
+  created_at TIMESTAMPTZ DEFAULT NOW(),
+  updated_at TIMESTAMPTZ DEFAULT NOW(),
+  UNIQUE(project_name, environment)
+);
+```
+
+---
+
+### 10. work_tasks (작업 관리) - v3
+
+팀 협업 및 충돌 방지를 위한 작업 관리 시스템입니다.
+
+```sql
+CREATE TABLE work_tasks (
+  id SERIAL PRIMARY KEY,
+  team_id VARCHAR(32) REFERENCES teams(id) ON DELETE CASCADE,
+  project_name VARCHAR(100) REFERENCES projects(name) ON DELETE CASCADE,
+  title VARCHAR(500) NOT NULL,
+  description TEXT NOT NULL DEFAULT '',
+  author VARCHAR(255) NOT NULL,
+  branch VARCHAR(255),
+  pr_number INTEGER,
+  status VARCHAR(20) NOT NULL DEFAULT 'draft', -- draft/in-progress/review/done/deployed
+  priority VARCHAR(20) NOT NULL DEFAULT 'medium', -- low/medium/high/critical
+  affected_files JSONB DEFAULT '[]',           -- ["src/index.ts", "lib/auth.ts"]
+  affected_areas JSONB DEFAULT '[]',           -- ["auth", "deploy"]
+  progress_notes JSONB DEFAULT '[]',           -- [{date, note, author}]
+  deploy_id VARCHAR(32),                       -- 배포 연결
+  created_at TIMESTAMPTZ DEFAULT NOW(),
+  updated_at TIMESTAMPTZ DEFAULT NOW()
+);
+```
+
+**작업 상태 전이:**
+```
+draft → in-progress → review → done → deployed
+```
+
+---
+
+### 11. work_task_files (파일 잠금) - v3
+
+파일별 잠금 추적으로 동시 편집 충돌을 방지합니다.
+
+```sql
+CREATE TABLE work_task_files (
+  id SERIAL PRIMARY KEY,
+  task_id INTEGER REFERENCES work_tasks(id) ON DELETE CASCADE,
+  file_path VARCHAR(1000) NOT NULL,
+  lock_type VARCHAR(20) NOT NULL DEFAULT 'editing', -- editing/reviewing
+  change_description TEXT,
+  status VARCHAR(20) NOT NULL DEFAULT 'locked',      -- locked/released
+  locked_at TIMESTAMPTZ DEFAULT NOW(),
+  released_at TIMESTAMPTZ
+);
+```
+
+---
+
 ## 인덱스
 
 ```sql
--- 감사 로그 검색 최적화
+-- v1: 감사 로그 검색 최적화
 CREATE INDEX idx_audit_logs_timestamp ON audit_logs(timestamp DESC);
 CREATE INDEX idx_audit_logs_team ON audit_logs(team_id, timestamp DESC);
 CREATE INDEX idx_audit_logs_action ON audit_logs(action);
 
--- 배포 이력 검색
+-- v1: 배포 이력 검색
 CREATE INDEX idx_deployments_project ON deployments(project_name, created_at DESC);
 
--- API 키 검색
+-- v1: API 키 검색
 CREATE INDEX idx_api_keys_team ON api_keys(team_id);
 CREATE INDEX idx_api_keys_prefix ON api_keys(key_prefix);
+
+-- v2: 도메인 검색
+CREATE INDEX idx_domains_project ON domains(project_name);
+CREATE INDEX idx_domains_domain ON domains(domain);
+
+-- v2: 환경변수 검색
+CREATE INDEX idx_project_envs_project ON project_envs(project_name, environment);
+
+-- v3: 작업 검색
+CREATE INDEX idx_work_tasks_team ON work_tasks(team_id);
+CREATE INDEX idx_work_tasks_project ON work_tasks(project_name);
+CREATE INDEX idx_work_tasks_status ON work_tasks(status);
+CREATE INDEX idx_work_tasks_author ON work_tasks(author);
+CREATE INDEX idx_work_task_files_task ON work_task_files(task_id);
+CREATE INDEX idx_work_task_files_path ON work_task_files(file_path);
+CREATE INDEX idx_work_task_files_status ON work_task_files(status);
 ```
 
 ---
@@ -599,7 +769,7 @@ await withTransaction(async (client) => {
 
 ## 마이그레이션
 
-스키마 버전 관리 및 자동 마이그레이션을 지원합니다.
+스키마 버전 관리 및 자동 마이그레이션을 지원합니다. 서버 시작 시 자동 실행됩니다.
 
 ```typescript
 import { runMigrations } from './lib/database.js';
@@ -609,22 +779,34 @@ await runMigrations();
 
 // 콘솔 출력:
 // Applying migration v1...
-// ✅ Database schema at v1
+// Applying migration v2...
+// Applying migration v3...
+// ✅ Database schema at v3
 ```
 
-**마이그레이션 추가:**
+### 마이그레이션 이력
+
+| 버전 | 설명 | 테이블 |
+|------|------|--------|
+| **v1** | 기본 스키마 | teams, team_members, api_keys, projects, project_slots, deployments, audit_logs |
+| **v2** | 도메인 + 환경변수 | domains, project_envs |
+| **v3** | 작업 관리 + 파일 잠금 | work_tasks, work_task_files |
+
+### 마이그레이션 추가 방법
+
 ```typescript
 const MIGRATIONS: Record<number, string[]> = {
-  1: [/* 기존 스키마 */],
-  2: [
-    // 새 컬럼 추가
+  1: [/* v1 스키마 */],
+  2: [/* v2: domains, project_envs */],
+  3: [/* v3: work_tasks, work_task_files */],
+  4: [
+    // 새 마이그레이션 추가
     'ALTER TABLE projects ADD COLUMN description TEXT',
-    // 새 인덱스
     'CREATE INDEX idx_projects_type ON projects(type)'
   ]
 };
 
-const SCHEMA_VERSION = 2;  // 버전 업데이트
+const SCHEMA_VERSION = 4;  // 버전 업데이트
 ```
 
 ---
@@ -688,8 +870,8 @@ console.log({
 
 ---
 
-## 버전
+## 관련 문서
 
-- **문서 버전**: 8.0.0
-- **스키마 버전**: 1
-- **최종 업데이트**: 2026-01-15
+- [SERVICE-FLOW.md](./SERVICE-FLOW.md) - 전체 서비스 플로우
+- [ARCHITECTURE.md](./ARCHITECTURE.md) - 시스템 아키텍처
+- [API-REFERENCE.md](./API-REFERENCE.md) - MCP API 레퍼런스

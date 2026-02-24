@@ -1,9 +1,9 @@
-# CodeB v7.0 - 배포 플로우 가이드
+# CodeB v9.0 - 배포 플로우 가이드
 
 > Blue-Green 배포 시스템의 전체 흐름과 각 단계별 동작
 >
-> **문서 버전**: 8.0.0
-> **최종 업데이트**: 2026-02-06
+> **버전**: VERSION 파일 참조 (SSOT)
+> **최종 업데이트**: 2026-02-25
 
 ---
 
@@ -25,7 +25,7 @@
 
 ```
 ┌─────────────────────────────────────────────────────────────────────────────┐
-│                         CodeB v7.0 배포 방식                                  │
+│                         CodeB v9.0 배포 방식                                  │
 ├─────────────────────────────────────────────────────────────────────────────┤
 │                                                                             │
 │  방식 1: GitHub Actions CI/CD (일반 프로젝트 - workb, heeling 등)           │
@@ -50,10 +50,11 @@
 │                                      │  deploy_project(image)  │            │
 │                                      └─────────────────────────┘            │
 │                                                                             │
-│  방식 2: 수동 배포 (codeb-server 전용)                                       │
+│  방식 2: MCP API 직접 호출 (promote/rollback만)                              │
 │  ────────────────────────────────────────────────────────────────           │
 │                                                                             │
-│  [로컬] ──deploy-all.sh──→ [직접 빌드] ──SSH──→ [서버 배포]                 │
+│  [Claude Code] ── /we:promote ──→ [MCP API] ──→ [Caddy reload]            │
+│  [Claude Code] ── /we:rollback ──→ [MCP API] ──→ [Caddy reload]           │
 │                                                                             │
 └─────────────────────────────────────────────────────────────────────────────┘
 ```
@@ -62,11 +63,11 @@
 
 | 단계 | GitHub Actions (workb) | 수동 (codeb-server) |
 |------|------------------------|---------------------|
-| 트리거 | `git push` | `./deploy-all.sh` |
-| 빌드 위치 | Self-Hosted Runner | 로컬 |
-| 빌드 캐시 | Minio S3 | 없음 |
-| 이미지 저장 | Private Registry | 서버 직접 |
-| 배포 API | MCP API (image 파라미터) | SSH + Docker |
+| 트리거 | `git push` | `/we:promote`, `/we:rollback` |
+| 빌드 위치 | Self-Hosted Runner | N/A (빌드 없음) |
+| 빌드 캐시 | MinIO S3 | N/A |
+| 이미지 저장 | Private Registry | N/A |
+| 배포 API | MCP API (image 파라미터) | MCP API (Caddy 전환만) |
 
 ---
 
@@ -489,7 +490,7 @@
 | `mcp-server/src/tools/domain.ts` | 도메인 관리 |
 | `mcp-server/src/lib/caddy.ts` | Caddy 설정 통합 관리 |
 | `mcp-server/src/lib/database.ts` | PostgreSQL 연동 |
-| `mcp-server/src/lib/ssh.ts` | SSH 연결 관리 |
+| `mcp-server/src/lib/local-exec.ts` | 로컬 실행 (SSH-Free) |
 
 ---
 

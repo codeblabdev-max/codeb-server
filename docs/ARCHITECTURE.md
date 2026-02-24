@@ -1,19 +1,18 @@
 # System Architecture
 
-> **버전: VERSION 파일 참조** | SSOT 기반 버전 관리
+> **버전**: VERSION 파일 참조 (SSOT) | 최종 업데이트: 2026-02-25
 
 ## Overview
 
 CodeB Server는 **Vercel 수준의 Self-hosted 배포 플랫폼**입니다:
 
 - **Blue-Green Slot 배포** (무중단 배포)
-- **Team-based API Key 인증** (v6.0+)
-- **Claude Code 2.1 통합** (v7.0 신규 - Skills, Hooks, Agent)
-- **MCP API** for Claude Code 통합
+- **Team-based API Key 인증** (RBAC)
+- **Claude Code 통합** (Skills, Hooks, MCP)
+- **MCP API** (Express.js + TypeScript, 38개 Tool)
 - **4-Server 인프라** on Vultr
+- **SSH-Free 아키텍처** (LocalExec 기반)
 - **실시간 백업** (PostgreSQL WAL + Redis AOF)
-- **Edge Functions** (Deno Runtime)
-- **Analytics & Web Vitals** (Vercel 스타일)
 
 ---
 
@@ -21,16 +20,16 @@ CodeB Server는 **Vercel 수준의 Self-hosted 배포 플랫폼**입니다:
 
 | Component | Technology | Purpose |
 |-----------|------------|---------|
-| Container Runtime | Docker | Production containers |
-| Reverse Proxy | Caddy 2.x | HTTPS + Auto SSL |
-| DNS | PowerDNS 4.x | Dynamic DNS management |
-| Service Manager | systemd + Docker | Container management |
-| Database | PostgreSQL 15 | Shared database |
-| Cache | Redis 7 | Shared cache |
-| WebSocket | Centrifugo | Real-time communication |
-| CI/CD | GitHub Actions (self-hosted) | Build & deploy automation |
-| MCP API | Express.js + TypeScript | HTTP API server (v6.0) |
-| Edge Runtime | Deno | Edge Functions |
+| MCP API | Express.js + TypeScript | HTTP API 서버 (:9101) |
+| Container Runtime | Docker | 프로덕션 컨테이너 |
+| Reverse Proxy | Caddy 2.x | HTTPS + Auto SSL + Blue-Green 전환 |
+| Database | PostgreSQL 15 | Slot/Project/ENV/Audit 저장 |
+| Cache | Redis 7 | 프로젝트별 공유 캐시 |
+| Object Storage | MinIO | Docker 빌드 캐시 + Registry |
+| WebSocket | Centrifugo | 실시간 통신 |
+| CI/CD | GitHub Actions (self-hosted) | Docker Buildx + MinIO S3 캐시 |
+| Monitoring | Prometheus + Grafana | 메트릭 수집 + 대시보드 |
+| Execution | LocalExec (child_process) | SSH-Free 로컬 실행 |
 
 ---
 
@@ -47,14 +46,9 @@ CodeB Server는 **Vercel 수준의 Self-hosted 배포 플랫폼**입니다:
 ┌─────────────────────────────────────────────────────────────────────────┐
 │                        App Server (158.247.203.55)                       │
 │  ┌─────────────┐  ┌─────────────┐  ┌─────────────┐  ┌─────────────┐    │
-│  │  PowerDNS   │  │    Caddy    │  │  MCP API    │  │ Containers  │    │
-│  │ (DNS:53)    │  │ (HTTPS:443) │  │ (HTTP:9101) │  │ (3000-4999) │    │
+│  │    Caddy    │  │  MCP API    │  │ Containers  │  │ GitHub      │    │
+│  │ (HTTPS:443) │  │ (HTTP:9101) │  │ (4100-5499) │  │ Runner      │    │
 │  └─────────────┘  └─────────────┘  └─────────────┘  └─────────────┘    │
-│                                                                          │
-│  ┌─────────────┐  ┌─────────────┐                                       │
-│  │ GitHub      │  │  Edge       │                                       │
-│  │ Runner      │  │  Runtime    │                                       │
-│  └─────────────┘  └─────────────┘                                       │
 └─────────────────────────────────────────────────────────────────────────┘
         │                                                    │
         │                                                    │
@@ -67,12 +61,11 @@ CodeB Server는 **Vercel 수준의 Self-hosted 배포 플랫폼**입니다:
 │  ├─────────────────┤  │                    │  └─────────────────┘  │
 │  │     Redis       │  │                    └───────────────────────┘
 │  │  (port 6379)    │  │
-│  └─────────────────┘  │                    ┌───────────────────────┐
-└───────────────────────┘                    │ Backup (141.164.37.63)  │
-                                             │  ┌─────────────────┐  │
-                                             │  │   ENV Backup    │  │
-                                             │  │   Prometheus    │  │
-                                             │  │   Grafana       │  │
+│  ├─────────────────┤  │                    ┌───────────────────────┐
+│  │ MinIO S3 :9000  │  │                    │ Backup (141.164.37.63)  │
+│  │ Registry :5000  │  │                    │  ┌─────────────────┐  │
+│  └─────────────────┘  │                    │  │   Prometheus    │  │
+└───────────────────────┘                    │  │   Grafana       │  │
                                              │  └─────────────────┘  │
                                              └───────────────────────┘
 ```
@@ -81,10 +74,10 @@ CodeB Server는 **Vercel 수준의 Self-hosted 배포 플랫폼**입니다:
 
 | Server | IP | Domain | Services |
 |--------|-----|--------|----------|
-| **App** | 158.247.203.55 | app.codeb.kr, api.codeb.kr | Containers, Caddy, PowerDNS, MCP API, GitHub Runner, Edge Runtime |
-| **Storage** | 64.176.226.119 | db.codeb.kr | PostgreSQL, Redis |
-| **Streaming** | 141.164.42.213 | ws.codeb.kr | Centrifugo (WebSocket) |
-| **Backup** | 141.164.37.63 | backup.codeb.kr | ENV backup, Prometheus, Grafana |
+| **App** | 158.247.203.55 | api.codeb.kr | MCP API, Caddy, Docker 컨테이너, GitHub Runner |
+| **Storage** | 64.176.226.119 | db.codeb.kr | PostgreSQL, Redis, MinIO S3, Private Registry |
+| **Streaming** | 141.164.42.213 | ws.codeb.kr | Centrifugo (WebSocket/SSE) |
+| **Backup** | 141.164.37.63 | backup.codeb.kr | Prometheus, Grafana |
 
 ---
 
@@ -95,36 +88,39 @@ CodeB Server는 **Vercel 수준의 Self-hosted 배포 플랫폼**입니다:
 각 프로젝트는 **두 개의 Slot** (blue/green)을 가지며, 하나만 활성 상태입니다.
 
 ```
-Project: myapp
-Environment: staging
+Project: myapp (production)
 
-┌─────────────────────────────────────────────┐
-│              Caddy Config                   │
-│  myapp-staging.codeb.kr → localhost:3000    │
-└─────────────────────────────────────────────┘
-                      │
-         ┌────────────┴────────────┐
-         │                         │
-         ▼                         ▼
-   ┌──────────┐              ┌──────────┐
-   │  BLUE    │ ◀── Active   │  GREEN   │
-   │ :3000    │              │ :3001    │
-   │ Running  │              │ Standby  │
-   └──────────┘              └──────────┘
+         ┌─── Caddy (lb_policy first) ───┐
+         │                                │
+         ▼                                ▼
+   ┌──────────┐                     ┌──────────┐
+   │  BLUE    │ ◀── Active          │  GREEN   │
+   │ :4100    │     (트래픽 수신)    │ :4101    │
+   └──────────┘                     └──────────┘
 ```
 
 ### State Transitions
 
 ```
-EMPTY → deploy → DEPLOYED → promote → ACTIVE
-                                ↓
-                         (previous slot)
-                                ↓
-                          GRACE-PERIOD → cleanup → EMPTY
-                                ↓
-                             rollback
-                                ↓
-                              ACTIVE
+                    deploy
+    ┌──────┐  ──────────────→  ┌──────────┐
+    │ empty │                   │ deployed │
+    └──────┘                   └────┬─────┘
+                                     │ promote
+                                     ▼
+                               ┌──────────┐
+                               │  active  │ ← 모든 트래픽
+                               └────┬─────┘
+                                     │ 다른 slot promote
+                                     ▼
+                               ┌──────────┐
+                               │  grace   │ ← 48시간 유지
+                               └────┬─────┘
+                              rollback│    만료/cleanup
+                                     ▼         ▼
+                               ┌────────┐ ┌──────┐
+                               │ active │ │ empty │
+                               └────────┘ └──────┘
 ```
 
 ### Slot States
@@ -134,244 +130,102 @@ EMPTY → deploy → DEPLOYED → promote → ACTIVE
 | `empty` | 컨테이너 없음 |
 | `deployed` | 배포됨 (Preview URL 사용 가능) |
 | `active` | 트래픽 수신 중 |
-| `grace` | 이전 버전 (48시간 유지 후 정리) |
-
-### Registry Files (v6.0)
-
-| File | Location | Purpose |
-|------|----------|---------|
-| SSOT | `/opt/codeb/registry/ssot.json` | Project registry |
-| Slots | `/opt/codeb/registry/slots/{project}-{env}.json` | Slot state |
-| Teams | `/opt/codeb/registry/teams.json` | Team registry |
-| API Keys | `/opt/codeb/registry/api-keys.json` | API key registry |
-| Edge | `/opt/codeb/registry/edge-functions/{project}/manifest.json` | Edge functions |
-| ENV | `/opt/codeb/env-backup/{project}/{env}/` | Environment files |
-| Caddy | `/etc/caddy/sites/{project}-{env}.caddy` | Reverse proxy config |
+| `grace` | 이전 버전 (48시간 유지, 롤백 가능) |
 
 ---
 
 ## Port Allocation
 
-### Port Ranges
-
-| Environment | App Ports | Blue | Green |
-|-------------|-----------|------|-------|
-| Staging | 3000-3499 | Base | Base+1 |
-| Production | 4000-4499 | Base | Base+1 |
-| Preview | 5000-5999 | Base | Base+1 |
-| Edge Functions | 9200 | - | - |
-
-### Port Calculation
-
-```javascript
-// Hash-based port allocation
-const hash = projectName.split('').reduce((acc, char) => acc + char.charCodeAt(0), 0);
-const basePort = environment === 'production'
-  ? 4000 + (hash % 500)
-  : 3000 + (hash % 500);
-
-// Slot ports
-const bluePort = basePort;      // e.g., 3050
-const greenPort = basePort + 1; // e.g., 3051
-```
+| Environment | Range | Blue | Green |
+|-------------|-------|------|-------|
+| **Production** | 4100-4499 | 짝수 (4100, 4102, ...) | 홀수 (4101, 4103, ...) |
+| **Staging** | 4500-4999 | 짝수 | 홀수 |
+| **Preview** | 5000-5499 | 짝수 | 홀수 |
 
 ---
 
-## Request Flow
+## Execution Layer (SSH-Free)
 
-### Deploy Request
-
-```
-1. Client → POST /api/tool {tool: "deploy"}
-2. API → Validate API Key (codeb_{teamId}_{role}_{token})
-3. API → Check permissions (member+)
-4. API → Load slot registry
-5. API → Determine target slot (opposite of active)
-6. API → SSH to app server
-7. API → docker pull + docker run
-8. API → Health check
-9. API → Update slot registry
-10. API → Return preview URL
-```
-
-### Promote Request
+MCP API는 App 서버에서 직접 실행되므로 SSH가 불필요합니다.
 
 ```
-1. Client → POST /api/tool {tool: "promote"}
-2. API → Validate permissions (member+)
-3. API → Load slot registry
-4. API → Generate Caddy config
-5. API → Write to /etc/caddy/sites/
-6. API → systemctl reload caddy
-7. API → Update slot registry (active slot, grace period)
-8. API → Return domain URL
+┌──────────────────┐     ┌──────────────────────────┐
+│   Tool Handler   │────→│     LocalExec            │
+└──────────────────┘     │  (child_process.exec)    │
+                          │                          │
+                          │  exec(cmd)               │
+                          │  writeFile(path, content) │
+                          │  readFile(path)           │
+                          │  fileExists(path)         │
+                          │  mkdir(path)              │
+                          └──────────────────────────┘
 ```
+
+허용 경로: `/opt/codeb/`, `/etc/caddy/`, `/etc/containers/`, `/var/log/`, `/tmp/`
+
+Storage DB 접근: SSH 터널 없이 TCP 직접 연결 (`psql -h 64.176.226.119`)
 
 ---
 
-## Authentication (v6.0)
+## Authentication
 
 ### API Key Format
 
 ```
 codeb_{teamId}_{role}_{randomToken}
-
-Examples:
-- codeb_default_admin_a1b2c3d4e5f6g7h8
-- codeb_myteam_member_x9y8z7w6v5u4t3s2
-- codeb_default_viewer_abcdefghijklmnop
 ```
 
 ### Role Hierarchy
 
 | Role | Level | Capabilities |
 |------|-------|--------------|
-| **owner** | 4 | 모든 권한 + 팀 삭제 |
-| **admin** | 3 | 멤버 관리, 토큰 생성, 슬롯 정리 |
-| **member** | 2 | 배포, promote, rollback, ENV 설정 |
-| **viewer** | 1 | 조회만 (상태, 로그, 메트릭) |
+| **owner** | 3 | 모든 권한 + 팀 생성/삭제 |
+| **admin** | 2 | 멤버 관리, 토큰 관리, slot 정리 |
+| **member** | 1 | 배포, promote, rollback, ENV 설정, 토큰 관리 |
+| **viewer** | 0 | 조회만 (상태, 로그, 메트릭) |
 
-### Permission Matrix
+### Auth Storage
 
-| Operation | owner | admin | member | viewer |
-|-----------|:-----:|:-----:|:------:|:------:|
-| team.delete | O | X | X | X |
-| member.manage | O | O | X | X |
-| slot.cleanup | O | O | X | X |
-| deploy | O | O | O | X |
-| promote | O | O | O | X |
-| rollback | O | O | O | X |
-| env.set | O | O | O | X |
-| view.* | O | O | O | O |
+인증은 파일 기반: `/opt/codeb/registry/api-keys.json` (SHA-256 해시 저장)
 
 ---
 
-## Database Architecture
+## Data Storage
 
-### Shared Database
+### PostgreSQL (Primary, Storage 서버)
 
-모든 프로젝트는 Storage 서버의 PostgreSQL/Redis를 공유합니다.
+| Table | Purpose |
+|-------|---------|
+| `projects` | 프로젝트 레지스트리 |
+| `project_slots` | Blue/Green Slot 상태 (SSOT) |
+| `project_envs` | 환경변수 (버전 관리) |
+| `deployments` | 배포 이력 |
+| `domains` | 도메인 매핑 |
+| `audit_logs` | API 감사 로그 |
+| `work_tasks` | 작업 관리 + 파일 잠금 |
 
-```
-PostgreSQL (db.codeb.kr:5432)
-├── myapp (database)
-├── another-app (database)
-└── codeb (system database)
+### File System (Fallback, App 서버)
 
-Redis (db.codeb.kr:6379)
-├── myapp: (prefix)
-├── another-app: (prefix)
-└── codeb: (system prefix)
-```
-
-### Connection
-
-```bash
-# ENV 자동 생성
-DATABASE_URL=postgresql://postgres:password@db.codeb.kr:5432/myapp?schema=public
-REDIS_URL=redis://db.codeb.kr:6379/0
-REDIS_PREFIX=myapp:
-```
-
----
-
-## Edge Functions (v6.0)
-
-### Architecture
-
-```
-┌─────────────────────────────────────────────────────────────────┐
-│                         Caddy (Reverse Proxy)                    │
-└─────────────────────────────────────────────────────────────────┘
-                                 │
-         ┌───────────────────────┼───────────────────────┐
-         │                       │                       │
-         ▼                       ▼                       ▼
-   ┌──────────┐           ┌──────────┐           ┌──────────┐
-   │ Deno     │           │ Next.js  │           │ Deno     │
-   │ Edge     │           │ App      │           │ Edge     │
-   │ (9200)   │           │ (:3000)  │           │ (9200)   │
-   └──────────┘           └──────────┘           └──────────┘
-   middleware               main app               api route
-```
-
-### Function Types
-
-| Type | Use Case | Example |
-|------|----------|---------|
-| `middleware` | 요청 전처리 | 인증, 로깅, 헤더 수정 |
-| `api` | API 엔드포인트 | REST API, Webhook |
-| `rewrite` | URL 재작성 | A/B 테스트, 프록시 |
-| `redirect` | 리디렉션 | 301/302 리디렉트 |
-
-### Resource Limits
-
-| Resource | Default | Max |
-|----------|---------|-----|
-| Timeout | 10s | 30s |
-| Memory | 64MB | 128MB |
-| Code Size | - | 1MB |
-
----
-
-## File Structure (v7.0)
-
-```
-codeb-server/
-├── VERSION                     # Single source of truth (SSOT)
-├── mcp-server/                 # TypeScript MCP API Server
-│   │   ├── src/
-│   │   │   ├── index.ts        # Express HTTP API
-│   │   │   ├── lib/
-│   │   │   │   ├── auth.ts     # Team-based auth
-│   │   │   │   ├── types.ts    # TypeScript types
-│   │   │   │   └── servers.ts  # Server config
-│   │   │   └── tools/          # 30 API tools
-│   │   └── package.json
-│   └── infrastructure/         # Setup scripts
-│
-├── .claude/                    # Claude Code 2.1 Integration
-│   ├── settings.local.json     # Project settings (Wildcard, Hooks)
-│   ├── skills/                 # Skills System (Hot Reload)
-│   │   ├── deploy/             # 배포 관련 Skills
-│   │   ├── monitoring/         # 모니터링 Skills
-│   │   ├── infrastructure/     # 인프라 Skills
-│   │   └── analysis/           # 분석 Skills
-│   └── hooks/                  # Hook Scripts
-│       ├── pre-deploy.py       # PreToolUse: 배포 검증
-│       ├── post-deploy.py      # PostToolUse: 배포 완료 알림
-│       ├── post-promote.py     # PostToolUse: 프로모트 로깅
-│       ├── post-rollback.py    # PostToolUse: 롤백 로깅
-│       ├── session-summary.py  # Stop (once: true): 세션 요약
-│       └── agent-audit.py      # Agent: 감사 로깅
-│
-├── cli/                        # we CLI Tool
-│   ├── package.json
-│   ├── bin/we.js               # Entry point
-│   └── src/                    # CLI source
-│
-├── docs/                       # Documentation
-│
-├── .github/
-│   └── workflows/
-│       └── deploy-mcp-api.yml  # Self-hosted runner workflow
-│
-└── CLAUDE.md                   # AI instructions (v7.0)
-```
+| Path | Purpose |
+|------|---------|
+| `/opt/codeb/registry/api-keys.json` | 인증 SSOT |
+| `/opt/codeb/registry/teams.json` | 팀 레지스트리 |
+| `/opt/codeb/registry/slots/*.json` | Slot fallback |
+| `/opt/codeb/env/{project}/.env.*` | ENV 파일 |
+| `/etc/caddy/sites/{project}-*.caddy` | 리버스 프록시 |
 
 ---
 
 ## Container Lifecycle
 
-### Container Naming
+### Naming Convention
 
 ```
 {project}-{environment}-{slot}
 
 Examples:
-- myapp-staging-blue
-- myapp-staging-green
 - myapp-production-blue
+- myapp-staging-green
 ```
 
 ### Labels
@@ -379,125 +233,71 @@ Examples:
 ```bash
 docker run \
   -l "codeb.project=myapp" \
-  -l "codeb.environment=staging" \
+  -l "codeb.environment=production" \
   -l "codeb.slot=blue" \
-  -l "codeb.version=v1.2.3" \
   ...
 ```
 
-### Network
-
-모든 컨테이너는 `codeb-main` 네트워크에 연결:
+### Resource Limits
 
 ```bash
-docker network create codeb-main
-```
-
----
-
-## GitHub Actions Self-Hosted Runner
-
-### Configuration
-
-| Item | Value |
-|------|-------|
-| Location | App Server (158.247.203.55) |
-| Path | /opt/actions-runner |
-| User | runner |
-| Labels | self-hosted, Linux, X64, codeb, app-server |
-
-### Why Host-Based Runner
-
-```
-❌ Containerized Runner 문제점:
-   - Docker-in-Docker 설정 복잡
-   - 볼륨 마운트 제한
-   - 불안정한 빌드 환경
-
-✅ Host systemd 서비스 장점:
-   - 호스트의 Docker 직접 사용
-   - 안정적이고 빠른 빌드
-   - 간단한 설정 및 유지보수
+--memory=512m --cpus=1
 ```
 
 ---
 
 ## Monitoring & Logging
 
-### Current Setup
-
 | Component | Method | Location |
 |-----------|--------|----------|
+| MCP API | Prometheus | `GET /metrics` (20+ 메트릭) |
 | Containers | docker logs | journalctl |
 | Caddy | Access logs | /var/log/caddy/ |
-| MCP API | Console | journalctl -u codeb-mcp-api |
-| Audit | SQLite | /var/lib/codeb/audit.db |
-| Metrics | Prometheus | backup.codeb.kr |
-| Dashboard | Grafana | backup.codeb.kr |
-
-### Health Checks
-
-```bash
-# API health (v6.0.5)
-curl https://api.codeb.kr/health
-
-# Full server check
-curl -X POST https://api.codeb.kr/api/tool \
-  -H "X-API-Key: codeb_default_viewer_xxx" \
-  -d '{"tool": "health_check"}'
-```
+| API Calls | Audit Log | PostgreSQL `audit_logs` 테이블 |
+| Real-time | SSE Stream | `GET /api/logs/stream` |
+| Dashboard | Grafana | backup.codeb.kr:3000 |
 
 ---
 
-## Backup System (v6.0)
-
-### 실시간 백업 구조
+## File Structure
 
 ```
-┌─────────────┐                      ┌─────────────┐
-│  Storage    │   WAL 스트리밍        │   Backup    │
-│   Server    │ ────────────────────▶│   Server    │
-│             │   (실시간)            │             │
-│ PostgreSQL  │                      │ WAL Archive │
-│   Redis     │ ────────────────────▶│ RDB + AOF   │
-│             │   매시간 동기화        │             │
-└─────────────┘                      └─────────────┘
-```
-
-### 백업 유형
-
-| 유형 | 방식 | 주기 | 보관 |
-|------|------|------|------|
-| PostgreSQL WAL | 스트리밍 | 실시간 | 7일 |
-| PostgreSQL Dump | pg_dump | 매일 03:00 | 7일 |
-| Redis RDB | BGSAVE | 매시간 | 24시간 |
-| Redis AOF | everysec | 실시간 | 최신 1개 |
-| ENV | 자동 | 변경 시 | 무제한 |
-
-### ENV 백업 구조
-
-```
-/opt/codeb/env-backup/{project}/{environment}/
-├── master.env           # 최초 생성 시 저장 (불변, 복구 기준)
-├── current.env          # 현재 버전
-├── 2026-01-15T10:30:00.env  # 변경 이력
-└── ...
-```
-
-### 복구 명령
-
-```bash
-# ENV 복구 (master에서)
-we env restore myapp --version master
-
-# ENV 복구 (최신 백업에서)
-we env restore myapp --version current
+codeb-server/
+├── VERSION                     # SSOT (버전 관리)
+├── mcp-server/                 # MCP API Server
+│   ├── src/
+│   │   ├── index.ts            # Express HTTP API (38 tools)
+│   │   ├── lib/
+│   │   │   ├── auth.ts         # Team-based 인증
+│   │   │   ├── caddy.ts        # Caddy 설정 관리
+│   │   │   ├── database.ts     # PostgreSQL (migration v3)
+│   │   │   ├── local-exec.ts   # SSH-Free 실행 계층
+│   │   │   ├── log-stream.ts   # SSE 실시간 로그
+│   │   │   └── servers.ts      # 4-Server 설정
+│   │   └── tools/              # 38 API tools
+│   ├── Dockerfile
+│   └── package.json
+│
+├── cli/                        # we CLI Tool
+│   ├── bin/we.js               # Entry (VERSION SSOT 읽기)
+│   └── src/
+│
+├── docs/                       # Documentation
+├── .github/workflows/          # CI/CD
+│
+├── .claude/
+│   ├── settings.local.json     # Claude Code 설정
+│   ├── skills/                 # Skills 시스템
+│   └── hooks/                  # Hook 스크립트
+│
+└── CLAUDE.md                   # AI 규칙
 ```
 
 ---
 
 ## Related Documents
 
-- [QUICK_START.md](./QUICK_START.md) - 빠른 시작 가이드
-- [DEPLOYMENT.md](./DEPLOYMENT.md) - 배포 가이드
+- [SERVICE-FLOW.md](./SERVICE-FLOW.md) - 전체 서비스 플로우
 - [API-REFERENCE.md](./API-REFERENCE.md) - MCP API 레퍼런스
+- [DEPLOY-FLOW.md](./DEPLOY-FLOW.md) - 배포 플로우 상세
+- [DATABASE-SCHEMA.md](./DATABASE-SCHEMA.md) - DB 스키마
