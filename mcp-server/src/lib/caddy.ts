@@ -200,6 +200,22 @@ export async function writeCaddyConfig(config: CaddySiteConfig): Promise<void> {
     // Write new config
     await local.writeFile(caddyPath, caddyContent);
 
+    // Sync active/standby ports to other related caddy files (e.g. workb-net.caddy)
+    const relatedFilesResult = await local.exec(
+      `ls ${CADDY_SITES_DIR}/${config.projectName}-*.caddy 2>/dev/null || echo ""`
+    );
+    const relatedFiles = relatedFilesResult.stdout
+      .trim()
+      .split('\n')
+      .filter((f: string) => f && f !== caddyPath && !f.includes('.backup') && !f.includes('.disabled') && !f.includes('.deleted'));
+
+    for (const relatedFile of relatedFiles) {
+      await local.exec(`sed -i 's|# Active Slot:.*|# Active Slot: ${config.activeSlot} (port ${config.activePort})|g' ${relatedFile}`);
+      await local.exec(`sed -i 's|reverse_proxy localhost:[0-9]\\+ localhost:[0-9]\\+|reverse_proxy localhost:${config.activePort} localhost:${config.standbyPort ?? config.activePort}|g' ${relatedFile}`);
+      await local.exec(`sed -i 's|X-CodeB-Slot .*|X-CodeB-Slot ${config.activeSlot}|g' ${relatedFile}`);
+      logger.info('Synced related Caddy config', { file: relatedFile, activeSlot: config.activeSlot, activePort: config.activePort });
+    }
+
     // Validate configuration
     const validateResult = await local.exec('caddy validate --config /etc/caddy/Caddyfile 2>&1');
     if (validateResult.code !== 0 && !validateResult.stdout.includes('Valid')) {
