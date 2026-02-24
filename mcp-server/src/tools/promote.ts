@@ -1,5 +1,5 @@
 /**
- * CodeB v7.0 - Promote Tool (Unified)
+ * CodeB v9.0 - Promote Tool (Unified)
  *
  * Switch traffic from active slot to deployed slot
  * Uses unified caddy.ts module for configuration

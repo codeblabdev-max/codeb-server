@@ -1,5 +1,5 @@
 /**
- * CodeB v6.0 - Type Definitions
+ * CodeB v9.0 - Type Definitions
  * Unified Blue-Green Deployment System with Team Management
  */
 

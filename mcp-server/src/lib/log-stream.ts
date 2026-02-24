@@ -1,5 +1,5 @@
 /**
- * CodeB v7.0 - Real-time Log Streaming (Docker)
+ * CodeB v9.0 - Real-time Log Streaming (Docker)
  *
  * Features:
  * - Server-Sent Events (SSE) for real-time logs

@@ -1,5 +1,5 @@
 /**
- * CodeB v8.1 - Work Task Management Tool
+ * CodeB v9.0 - Work Task Management Tool
  * Team Collaboration & Conflict Prevention System
  *
  * 팀원 간 파일 수정 충돌을 방지하는 작업 관리 시스템.

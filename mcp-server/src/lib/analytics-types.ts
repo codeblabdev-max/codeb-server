@@ -1,5 +1,5 @@
 /**
- * CodeB v6.0 - Analytics Types
+ * CodeB v9.0 - Analytics Types
  * Real-time deployment analytics with Web Vitals monitoring
  */
 

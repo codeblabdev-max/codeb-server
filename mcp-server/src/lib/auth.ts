@@ -1,5 +1,5 @@
 /**
- * CodeB v6.0 - Authentication & Authorization
+ * CodeB v9.0 - Authentication & Authorization
  * Team-based API Key authentication (Vercel style)
  */
 

@@ -1,5 +1,5 @@
 /**
- * CodeB v8.1.0 - Git/PR Management Tools
+ * CodeB v9.0 - Git/PR Management Tools
  *
  * GitHub REST API를 통한 PR 관리:
  * - pr_list: 열린 PR 목록 조회

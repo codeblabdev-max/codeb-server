@@ -1,6 +1,6 @@
 #!/usr/bin/env npx tsx
 /**
- * Create initial API Key for CodeB v6.0
+ * Create initial API Key for CodeB v9.0
  *
  * Usage:
  *   npx tsx src/scripts/create-api-key.ts --team myteam --role owner

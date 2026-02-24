@@ -1,5 +1,5 @@
 /**
- * CodeB v7.0.65 - Blue-Green Deploy Tool
+ * CodeB v9.0 - Blue-Green Deploy Tool
  * PostgreSQL DB 기반 SSOT + Team-based Authentication
  *
  * Docker 기반 배포

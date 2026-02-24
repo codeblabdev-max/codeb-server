@@ -1,5 +1,5 @@
 /**
- * CodeB v6.0 - Structured Logging with Winston
+ * CodeB v9.0 - Structured Logging with Winston
  *
  * Features:
  * - Structured JSON logging

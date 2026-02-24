@@ -1,5 +1,5 @@
 /**
- * CodeB v6.0 - 4-Server Configuration
+ * CodeB v9.0 - 4-Server Configuration
  * Single Source of Truth for server infrastructure
  */
 

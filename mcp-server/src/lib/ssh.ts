@@ -1,5 +1,5 @@
 /**
- * CodeB v6.0 - SSH Client with Connection Pool
+ * CodeB v9.0 - SSH Client with Connection Pool
  * Secure SSH connection management (Admin only)
  */
 

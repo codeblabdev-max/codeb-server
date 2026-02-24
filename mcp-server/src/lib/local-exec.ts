@@ -1,5 +1,5 @@
 /**
- * CodeB v8.0 - Local Execution (SSH-free)
+ * CodeB v9.0 - Local Execution (SSH-free)
  *
  * SSH를 대체하는 로컬 실행 모듈
  * MCP API 서버가 App 서버에서 직접 실행되므로 SSH 불필요

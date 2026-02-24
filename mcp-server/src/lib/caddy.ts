@@ -1,5 +1,5 @@
 /**
- * CodeB v7.0 - Caddy Configuration Manager
+ * CodeB v9.0 - Caddy Configuration Manager
  *
  * 통합된 Caddy 설정 관리 모듈
  * - 파일 기반 설정 (/etc/caddy/sites/*.caddy)
@@ -133,7 +133,7 @@ export function generateCaddyConfig(config: CaddySiteConfig): string {
   }
 
   // Build configuration
-  let caddyConfig = `# CodeB v7.0 - Caddy Site Configuration
+  let caddyConfig = `# CodeB v9.0 - Caddy Site Configuration
 # Project: ${config.projectName}
 # Environment: ${config.environment}
 # Version: ${config.version}

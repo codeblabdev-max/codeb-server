@@ -1,5 +1,5 @@
 /**
- * CodeB v6.0 - Team Management Tool
+ * CodeB v9.0 - Team Management Tool
  * Vercel-style team and member management
  */
 

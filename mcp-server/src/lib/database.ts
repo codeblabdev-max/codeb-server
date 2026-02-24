@@ -1,5 +1,5 @@
 /**
- * CodeB v6.0 - PostgreSQL Database Layer
+ * CodeB v9.0 - PostgreSQL Database Layer
  * File-based storage → PostgreSQL migration
  *
  * Features:

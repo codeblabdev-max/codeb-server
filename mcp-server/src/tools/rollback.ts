@@ -1,5 +1,5 @@
 /**
- * CodeB v6.0 - Rollback Tool
+ * CodeB v9.0 - Rollback Tool
  * Instant rollback to previous slot
  */
 
@@ -195,7 +195,7 @@ function generateCaddyConfig(config: {
 }): string {
   const timestamp = new Date().toISOString();
 
-  return `# CodeB v6.0 - Auto-generated Caddy Config
+  return `# CodeB v9.0 - Auto-generated Caddy Config
 # Project: ${config.projectName}
 # Environment: ${config.environment}
 # Version: ${config.version}

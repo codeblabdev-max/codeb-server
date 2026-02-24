@@ -1,4 +1,5 @@
-# CodeB API Server v7.0
+# CodeB API Server v9.0
+# VERSION은 루트 VERSION 파일이 SSOT — 빌드 전 cp ../VERSION . 실행 필요
 # Multi-stage build for minimal image size
 
 # ============================================================================

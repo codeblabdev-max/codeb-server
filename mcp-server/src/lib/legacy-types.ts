@@ -1,5 +1,5 @@
 /**
- * CodeB v6.0 - Legacy System Types
+ * CodeB v9.0 - Legacy System Types
  * 기존 v3.x/v5.x 시스템과의 호환을 위한 타입 정의
  */
 

@@ -1,5 +1,5 @@
 /**
- * CodeB v7.0 - Unified HTTP API Server
+ * CodeB v9.0 - Unified HTTP API Server
  *
  * Features:
  * - Team-based authentication (Vercel style)

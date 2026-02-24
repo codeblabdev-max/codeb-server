@@ -1,7 +1,7 @@
 {
   "name": "codeb-mcp",
-  "version": "8.0.1",
-  "description": "CodeB v7.0 - Unified HTTP API Server with Blue-Green Deployment + Claude Code 2.1 Integration",
+  "version": "9.0.0",
+  "description": "CodeB v9.0 - Unified HTTP API Server with Blue-Green Deployment (SSH-Free, Local Execution)",
   "type": "module",
   "main": "dist/index.js",
   "types": "dist/index.d.ts",

@@ -1,5 +1,5 @@
 /**
- * CodeB v7.0.58 - Slot Registry Management (DB-Primary)
+ * CodeB v9.0 - Slot Registry Management (DB-Primary)
  * Blue-Green slot state management with Team-based access
  *
  * v7.0.58 Changes:

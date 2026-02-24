@@ -1,5 +1,5 @@
 /**
- * CodeB v6.0 - Legacy Compatibility Adapter
+ * CodeB v9.0 - Legacy Compatibility Adapter
  * v3.x/v5.x 시스템을 v6.0 Blue-Green 슬롯 시스템으로 매핑
  */
 
@@ -388,7 +388,7 @@ export function generateQuadletFromLegacy(
   const serviceName = `${projectName}-${environment}-${slot}`;
   const containerName = serviceName;
 
-  return `# CodeB v6.0 - Auto-generated from legacy container
+  return `# CodeB v9.0 - Auto-generated from legacy container
 # Source: ${containerInfo.name}
 # Generated: ${new Date().toISOString()}
 

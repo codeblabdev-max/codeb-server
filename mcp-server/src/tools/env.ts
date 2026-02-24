@@ -1,5 +1,5 @@
 /**
- * CodeB v7.0.62 - Environment Variables Management Tools
+ * CodeB v9.0 - Environment Variables Management Tools
  *
  * Vercel 스타일 환경변수 관리:
  * - env_sync: 로컬 .env를 서버로 동기화
@@ -104,7 +104,7 @@ function parseEnvContent(content: string | undefined | null): Record<string, str
  */
 function formatEnvContent(vars: Record<string, string>): string {
   const lines: string[] = [
-    '# CodeB v7.0 - Environment Variables',
+    '# CodeB v9.0 - Environment Variables',
     `# Updated: ${new Date().toISOString()}`,
     '',
   ];

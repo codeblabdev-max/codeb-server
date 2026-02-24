@@ -1,4 +1,4 @@
-# CLAUDE.md v8.0.0 -- CodeB Project Rules
+# CLAUDE.md v9.0.0 -- CodeB Project Rules
 
 > 버전은 VERSION 파일에서 관리됩니다 (SSOT)
 
@@ -6,14 +6,14 @@
 
 ---
 
-## v7.0 Overview
+## v9.0 Overview
 
 ```
 ┌─────────────────────────────────────────────────────────────────┐
-│                  CodeB v7.0 vs Vercel 비교                       │
+│                  CodeB v9.0 vs Vercel 비교                       │
 ├─────────────────────────────────────────────────────────────────┤
 │                                                                 │
-│  Feature              │ Vercel │ CodeB v7.0 │ Rating            │
+│  Feature              │ Vercel │ CodeB v9.0 │ Rating            │
 │  ─────────────────────┼────────┼────────────┼─────────────────  │
 │  Blue-Green Deploy    │   ✅   │     ✅     │ ⭐⭐⭐⭐⭐        │
 │  Zero-Downtime        │   ✅   │     ✅     │ ⭐⭐⭐⭐⭐        │
@@ -32,11 +32,11 @@
 
 ---
 
-## v7.0 주요 변경사항
+## v9.0 주요 변경사항
 
 ```
 ┌─────────────────────────────────────────────────────────────────┐
-│                    CodeB v7.0 New Features                       │
+│                    CodeB v9.0 New Features                       │
 ├─────────────────────────────────────────────────────────────────┤
 │                                                                 │
 │  1. Claude Code 2.1 100% Integration                            │
@@ -90,7 +90,7 @@
     └── workflow.md       # /we:workflow
 ```
 
-### Skill 파일 형식 (v7.0)
+### Skill 파일 형식 (v9.0)
 
 ```yaml
 ---
@@ -144,7 +144,7 @@ Skills 파일 수정 시 Claude Code 재시작 없이 즉시 반영됩니다.
 └── agent-audit.py        # Agent Hook - 에이전트 감사
 ```
 
-### settings.local.json (v7.0)
+### settings.local.json (v9.0)
 
 ```json
 {
@@ -205,7 +205,7 @@ Skills 파일 수정 시 Claude Code 재시작 없이 즉시 반영됩니다.
 
 ```
 ┌─────────────────────────────────────────────────────────────────┐
-│                    CodeB v7.0 배포 흐름                          │
+│                    CodeB v9.0 배포 흐름                          │
 ├─────────────────────────────────────────────────────────────────┤
 │                                                                 │
 │  1. /we:deploy myapp                                            │
@@ -242,7 +242,7 @@ Skills 파일 수정 시 Claude Code 재시작 없이 즉시 반영됩니다.
 
 ---
 
-## CLI Quick Reference (v7.0)
+## CLI Quick Reference (v9.0)
 
 ```bash
 # 배포 (git push 기반 — deploy_project MCP 직접 호출 금지)
@@ -301,14 +301,14 @@ Skills 파일 수정 시 Claude Code 재시작 없이 즉시 반영됩니다.
 
 | 역할 | IP | 도메인 | 서비스 |
 |------|-----|--------|--------|
-| **App** | 158.247.203.55 | api.codeb.kr | MCP API v7.0, Caddy, Docker |
+| **App** | 158.247.203.55 | api.codeb.kr | MCP API v9.0, Caddy, Docker |
 | **Streaming** | 141.164.42.213 | ws.codeb.kr | Centrifugo (WebSocket) |
 | **Storage** | 64.176.226.119 | db.codeb.kr | PostgreSQL, Redis |
 | **Backup** | 141.164.37.63 | backup.codeb.kr | Prometheus, Grafana |
 
 ---
 
-## MCP API v7.0
+## MCP API v9.0
 
 ### 엔드포인트
 
@@ -608,7 +608,7 @@ your-project/
 └── package.json
 
 .claude/
-├── settings.local.json        # v7.0 설정 (Docker 기반)
+├── settings.local.json        # v9.0 설정 (Docker 기반)
 ├── skills/                    # Skills 시스템
 │   ├── deploy/
 │   ├── monitoring/

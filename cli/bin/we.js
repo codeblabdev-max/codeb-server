@@ -17,11 +17,21 @@ import { readFileSync } from 'fs';
 import { fileURLToPath } from 'url';
 import { dirname, join } from 'path';
 
-// Get version from cli/package.json (single source of truth)
+// Get version from root VERSION file (SSOT)
 const __filename = fileURLToPath(import.meta.url);
 const __dirname = dirname(__filename);
-const pkg = JSON.parse(readFileSync(join(__dirname, '../package.json'), 'utf-8'));
-const VERSION = pkg.version;
+function getVersion() {
+  const paths = [
+    join(__dirname, '../../VERSION'),       // cli/bin/ → root
+    join(__dirname, '../VERSION'),           // fallback
+    join(process.cwd(), 'VERSION'),          // cwd
+  ];
+  for (const p of paths) {
+    try { return readFileSync(p, 'utf-8').trim(); } catch {}
+  }
+  return '9.0.0';
+}
+const VERSION = getVersion();
 
 // Core Commands
 import { deploy, deployBlueGreen, promote, rollback as rollbackBlueGreen, slotStatus } from '../src/commands/deploy.js';

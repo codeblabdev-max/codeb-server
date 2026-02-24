@@ -1,5 +1,5 @@
 /**
- * CodeB v6.0 - Prometheus Metrics
+ * CodeB v9.0 - Prometheus Metrics
  *
  * Features:
  * - HTTP request metrics

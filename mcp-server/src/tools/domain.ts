@@ -1,5 +1,5 @@
 /**
- * CodeB v8.0 - Domain Management Tools (Cloudflare + Caddy)
+ * CodeB v9.0 - Domain Management Tools (Cloudflare + Caddy)
  *
  * 통합된 도메인 관리 시스템:
  * - Caddy 파일 기반 설정 (promote.ts와 동일 방식)

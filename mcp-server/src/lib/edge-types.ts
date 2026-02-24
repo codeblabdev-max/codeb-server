@@ -1,5 +1,5 @@
 /**
- * CodeB v6.0 - Edge Function Types
+ * CodeB v9.0 - Edge Function Types
  * Vercel-style Edge Runtime with Deno
  */
 
