@@ -71,9 +71,18 @@ import {
   gitSyncTool,
 } from './tools/git.js';
 
-// SSH for infrastructure status
-import { withSSH } from './lib/ssh.js';
-import { SERVERS } from './lib/servers.js';
+// Tools - Work Task Management (v8.2.0 - Team Collaboration)
+import {
+  taskCreateTool,
+  taskListTool,
+  taskGetTool,
+  taskUpdateTool,
+  taskCheckTool,
+  taskCompleteTool,
+} from './tools/task.js';
+
+// Local execution for infrastructure status
+import { withLocal } from './lib/local-exec.js';
 
 // ============================================================================
 // Configuration
@@ -285,6 +294,14 @@ const TOOLS: Record<string, {
   pr_create: { handler: (p, a) => prCreateTool.execute(p, a), permission: 'git.write' },
   git_sync: { handler: (p, a) => gitSyncTool.execute(p, a), permission: 'git.view' },
 
+  // Work Task Management (v8.2.0 - Team Collaboration & Conflict Prevention)
+  task_create: { handler: (p, a) => taskCreateTool.execute(p, a), permission: 'task.write' },
+  task_list: { handler: (p, a) => taskListTool.execute(p, a), permission: 'task.view' },
+  task_get: { handler: (p, a) => taskGetTool.execute(p, a), permission: 'task.view' },
+  task_update: { handler: (p, a) => taskUpdateTool.execute(p, a), permission: 'task.write' },
+  task_check: { handler: (p, a) => taskCheckTool.execute(p, a), permission: 'task.view' },
+  task_complete: { handler: (p, a) => taskCompleteTool.execute(p, a), permission: 'task.write' },
+
   // Utility
   health_check: { handler: executeInfraStatus, permission: 'project.view' },
   scan: { handler: (p, a) => projectScanTool.execute(p, a), permission: 'project.view' },
@@ -326,9 +343,9 @@ interface InfraStatusResult {
 
 async function executeInfraStatus(): Promise<InfraStatusResult> {
   try {
-    const result = await withSSH(SERVERS.app.ip, async (ssh) => {
+    const result = await withLocal(async (local) => {
       // 1. Docker 컨테이너 목록
-      const containersResult = await ssh.exec(
+      const containersResult = await local.exec(
         `docker ps --format '{{.Names}}|{{.Image}}|{{.Status}}|{{.Ports}}' 2>/dev/null | head -30`
       );
       const containers: ContainerInfo[] = containersResult.stdout
@@ -340,7 +357,7 @@ async function executeInfraStatus(): Promise<InfraStatusResult> {
         });
 
       // 2. SSOT Slot Registry
-      const slotsResult = await ssh.exec(`
+      const slotsResult = await local.exec(`
         for f in /opt/codeb/registry/slots/*.json; do
           if [ -f "$f" ]; then
             PROJECT=$(basename $f .json)
@@ -369,7 +386,7 @@ async function executeInfraStatus(): Promise<InfraStatusResult> {
         });
 
       // 3. Docker Images (프로젝트 관련)
-      const imagesResult = await ssh.exec(
+      const imagesResult = await local.exec(
         `docker images --format '{{.Repository}}|{{.Tag}}|{{.Size}}|{{.CreatedSince}}' | grep -E '(codeb|project|ghcr)' | head -15`
       );
       const images = imagesResult.stdout
@@ -381,7 +398,7 @@ async function executeInfraStatus(): Promise<InfraStatusResult> {
         });
 
       // 4. 포트 사용 현황 (4000-4200, 9101)
-      const portsResult = await ssh.exec(
+      const portsResult = await local.exec(
         `ss -tlnp 2>/dev/null | grep -E ':(4[0-1][0-9]{2}|9101) ' | awk '{print $4 "|" $6}' | head -20`
       );
       const ports = portsResult.stdout

@@ -330,7 +330,7 @@ member - 배포, promote, rollback
 viewer - 조회만
 ```
 
-### Tool 목록 (33개)
+### Tool 목록 (39개)
 
 | 카테고리 | Tool | 설명 |
 |---------|------|------|
@@ -342,7 +342,82 @@ viewer - 조회만
 | **Team** | team_create, team_list, team_get, team_delete, team_settings | 팀 관리 |
 | **Member** | member_invite, member_remove, member_list | 멤버 관리 |
 | **Token** | token_create, token_revoke, token_list | API 토큰 관리 |
+| **Task** | task_create, task_list, task_get, task_update, task_check, task_complete | 작업 관리 + 충돌 방지 |
 | **Utility** | health_check | 인프라 상태
+
+---
+
+## 작업 관리 시스템 (Task + Worktree)
+
+> **Hook이 자동 강제합니다. CLAUDE.md 규칙이 아닌 시스템 레벨 차단.**
+
+### 작업 플로우
+
+```
+┌─────────────────────────────────────────────────────────────────┐
+│              팀원 작업 플로우 (Task + Worktree)                    │
+├─────────────────────────────────────────────────────────────────┤
+│                                                                 │
+│  1. 작업 시작 (충돌 검증 먼저)                                    │
+│     └─→ task_create (MCP) → DB에서 기존 작업과 비교              │
+│         ├─→ 충돌 있음 → ⛔ 등록 거부 (작업 불가)                │
+│         └─→ 충돌 없음 → ✅ 등록 + 파일 잠금                    │
+│              └─→ claude --worktree task-<ID> 로 독립 작업        │
+│                                                                 │
+│  2. 작업 중 (Hook 이중 검증)                                      │
+│     └─→ Edit/Write 시 PreToolUse Hook 자동 실행                  │
+│     └─→ task_check → DB 실시간 조회 → 충돌 시 차단              │
+│                                                                 │
+│  3. 작업 완료 → git push (worktree 브랜치)                       │
+│     └─→ PostToolUse Hook → status: "pushed"                     │
+│                                                                 │
+│  4. GitHub Actions 자동 배포                                      │
+│     └─→ Build → Deploy → 성공 시:                               │
+│         ├─→ task_complete → 파일 잠금 해제                       │
+│         └─→ worktree 브랜치 → main 자동 merge                   │
+│                                                                 │
+│  5. 다음 팀원                                                    │
+│     └─→ task_create → 충돌 없음 → 작업 가능                     │
+│                                                                 │
+└─────────────────────────────────────────────────────────────────┘
+```
+
+### Claude Code 필수 규칙
+
+```
+1. 파일 수정 전 → task_check 자동 실행 (Hook 강제, 우회 불가)
+2. 작업 시작 시 → task_create로 DB 등록 (충돌 시 등록 거부)
+3. 작업은 반드시 worktree에서 → claude --worktree task-<ID>
+4. push는 worktree 브랜치로 → git push origin worktree-task-<ID>
+5. main 직접 push 금지 → GitHub Actions가 auto merge 처리
+```
+
+### CLI 명령어
+
+```bash
+# 작업 관리
+we task create "제목" --project myapp --files src/auth.ts
+we task list                   # 진행중 작업 + 잠금 파일 확인
+we task check --files src/auth.ts,src/db.ts  # 충돌 사전 확인
+we task status <id>            # 상세 조회 (MD 문서 포함)
+we task update <id> --note "auth.ts 수정 완료"
+we task done <id>              # 수동 완료 (배포 후 자동 완료 권장)
+```
+
+### Worktree 사용법
+
+```bash
+# 작업 시작 (task_create 후)
+claude --worktree task-1111    # .claude/worktrees/task-1111/ 에서 독립 작업
+
+# 여러 팀원 동시 작업
+# 터미널 1: claude --worktree task-1111  (팀원A: 인증)
+# 터미널 2: claude --worktree task-2222  (팀원B: API)
+# 터미널 3: claude --worktree task-3333  (팀원C: UI)
+
+# 작업 완료 후
+git push origin worktree-task-1111  # GitHub Actions 자동 배포 + merge
+```
 
 ---
 
@@ -351,14 +426,16 @@ viewer - 조회만
 ### Git 협업 규칙 (필수)
 
 ```bash
-# 커밋 전 반드시 최신 코드 동기화
-git pull origin main             # 항상 커밋 전에 실행
+# Worktree 브랜치에서 작업 (main 직접 push 금지)
+claude --worktree task-<ID>           # worktree에서 작업
+git push origin worktree-task-<ID>    # worktree 브랜치로 push
+# → GitHub Actions가 배포 성공 후 자동 merge to main
 
-# 커밋 & 푸시 순서
-git pull origin main             # 1. 최신 코드 받기
-git add <파일>                   # 2. 변경 파일 스테이징
-git commit -m "[이름] type: 설명" # 3. 커밋
-git push origin main             # 4. 푸시
+# main 직접 작업 시 (worktree 없이)
+git pull origin main                  # 항상 먼저 실행
+git add <파일>
+git commit -m "[이름] type: 설명"
+git push origin main
 ```
 
 > **Claude Code는 커밋 요청 시 반드시 `git pull origin main`을 먼저 실행한다.**
@@ -381,6 +458,11 @@ rm -rf /var/lib/docker/*       # Docker 데이터 삭제
 /we:deploy <project>           # 비활성 Slot에 배포
 /we:promote <project>          # 트래픽 전환
 /we:rollback <project>         # 즉시 롤백
+
+# 작업 관리
+we task create "제목" --project <name> --files <paths>
+we task list
+we task check --files <paths>
 
 # 상태 확인
 /we:health                     # 전체 시스템 헬스체크

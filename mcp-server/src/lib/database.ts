@@ -21,6 +21,12 @@ import type {
   Environment,
   SlotName,
   SlotState,
+  WorkTask,
+  WorkTaskFile,
+  TaskStatus,
+  TaskPriority,
+  ProgressNote,
+  ConflictInfo,
 } from './types.js';
 
 // ============================================================================
@@ -75,7 +81,7 @@ export async function closePool(): Promise<void> {
 // Schema Migration
 // ============================================================================
 
-const SCHEMA_VERSION = 2;
+const SCHEMA_VERSION = 3;
 
 const MIGRATIONS: Record<number, string[]> = {
   1: [
@@ -252,6 +258,50 @@ const MIGRATIONS: Record<number, string[]> = {
     `CREATE INDEX IF NOT EXISTS idx_domains_project ON domains(project_name)`,
     `CREATE INDEX IF NOT EXISTS idx_domains_domain ON domains(domain)`,
     `CREATE INDEX IF NOT EXISTS idx_project_envs_project ON project_envs(project_name, environment)`,
+  ],
+
+  // Migration v3: Work Tasks (Team Collaboration & Conflict Prevention)
+  3: [
+    // Work tasks table - 작업 등록 + MD 문서 저장
+    `CREATE TABLE IF NOT EXISTS work_tasks (
+      id SERIAL PRIMARY KEY,
+      team_id VARCHAR(32) REFERENCES teams(id) ON DELETE CASCADE,
+      project_name VARCHAR(100) REFERENCES projects(name) ON DELETE CASCADE,
+      title VARCHAR(500) NOT NULL,
+      description TEXT NOT NULL DEFAULT '',
+      author VARCHAR(255) NOT NULL,
+      branch VARCHAR(255),
+      pr_number INTEGER,
+      status VARCHAR(20) NOT NULL DEFAULT 'draft',
+      priority VARCHAR(20) NOT NULL DEFAULT 'medium',
+      affected_files JSONB DEFAULT '[]',
+      affected_areas JSONB DEFAULT '[]',
+      progress_notes JSONB DEFAULT '[]',
+      deploy_id VARCHAR(32),
+      created_at TIMESTAMPTZ DEFAULT NOW(),
+      updated_at TIMESTAMPTZ DEFAULT NOW()
+    )`,
+
+    // Work task files - 파일별 잠금 추적
+    `CREATE TABLE IF NOT EXISTS work_task_files (
+      id SERIAL PRIMARY KEY,
+      task_id INTEGER REFERENCES work_tasks(id) ON DELETE CASCADE,
+      file_path VARCHAR(1000) NOT NULL,
+      lock_type VARCHAR(20) NOT NULL DEFAULT 'editing',
+      change_description TEXT,
+      status VARCHAR(20) NOT NULL DEFAULT 'locked',
+      locked_at TIMESTAMPTZ DEFAULT NOW(),
+      released_at TIMESTAMPTZ
+    )`,
+
+    // Indexes
+    `CREATE INDEX IF NOT EXISTS idx_work_tasks_team ON work_tasks(team_id)`,
+    `CREATE INDEX IF NOT EXISTS idx_work_tasks_project ON work_tasks(project_name)`,
+    `CREATE INDEX IF NOT EXISTS idx_work_tasks_status ON work_tasks(status)`,
+    `CREATE INDEX IF NOT EXISTS idx_work_tasks_author ON work_tasks(author)`,
+    `CREATE INDEX IF NOT EXISTS idx_work_task_files_task ON work_task_files(task_id)`,
+    `CREATE INDEX IF NOT EXISTS idx_work_task_files_path ON work_task_files(file_path)`,
+    `CREATE INDEX IF NOT EXISTS idx_work_task_files_status ON work_task_files(status)`,
   ],
 };
 
@@ -1224,3 +1274,301 @@ export const ProjectEnvRepo = {
     return this.upsert({ projectName, environment, envData });
   },
 };
+
+// ============================================================================
+// Work Task Repository (Team Collaboration & Conflict Prevention)
+// ============================================================================
+
+export const WorkTaskRepo = {
+  async create(data: {
+    teamId: string;
+    projectName: string;
+    title: string;
+    description: string;
+    author: string;
+    branch?: string;
+    priority?: TaskPriority;
+    affectedFiles?: string[];
+    affectedAreas?: string[];
+  }): Promise<WorkTask> {
+    const db = await getPool();
+    const result = await db.query(
+      `INSERT INTO work_tasks (team_id, project_name, title, description, author, branch, priority, affected_files, affected_areas, status)
+       VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, 'in_progress')
+       RETURNING *`,
+      [
+        data.teamId,
+        data.projectName,
+        data.title,
+        data.description,
+        data.author,
+        data.branch || null,
+        data.priority || 'medium',
+        JSON.stringify(data.affectedFiles || []),
+        JSON.stringify(data.affectedAreas || []),
+      ]
+    );
+    return mapWorkTask(result.rows[0]);
+  },
+
+  async findById(id: number): Promise<WorkTask | null> {
+    const db = await getPool();
+    const result = await db.query('SELECT * FROM work_tasks WHERE id = $1', [id]);
+    return result.rows[0] ? mapWorkTask(result.rows[0]) : null;
+  },
+
+  async findByProject(projectName: string, statusFilter?: TaskStatus[]): Promise<WorkTask[]> {
+    const db = await getPool();
+    let query = 'SELECT * FROM work_tasks WHERE project_name = $1';
+    const values: unknown[] = [projectName];
+
+    if (statusFilter && statusFilter.length > 0) {
+      const placeholders = statusFilter.map((_, i) => `$${i + 2}`).join(', ');
+      query += ` AND status IN (${placeholders})`;
+      values.push(...statusFilter);
+    }
+
+    query += ' ORDER BY created_at DESC';
+    const result = await db.query(query, values);
+    return result.rows.map(mapWorkTask);
+  },
+
+  async findActive(teamId?: string): Promise<WorkTask[]> {
+    const db = await getPool();
+    const activeStatuses = ['draft', 'in_progress', 'pushed', 'deploying'];
+    const placeholders = activeStatuses.map((_, i) => `$${i + 1}`).join(', ');
+    let query = `SELECT * FROM work_tasks WHERE status IN (${placeholders})`;
+    const values: unknown[] = [...activeStatuses];
+
+    if (teamId) {
+      query += ` AND team_id = $${values.length + 1}`;
+      values.push(teamId);
+    }
+
+    query += ' ORDER BY priority DESC, created_at ASC';
+    const result = await db.query(query, values);
+    return result.rows.map(mapWorkTask);
+  },
+
+  async updateStatus(id: number, status: TaskStatus): Promise<WorkTask | null> {
+    const db = await getPool();
+    const result = await db.query(
+      'UPDATE work_tasks SET status = $1, updated_at = NOW() WHERE id = $2 RETURNING *',
+      [status, id]
+    );
+    return result.rows[0] ? mapWorkTask(result.rows[0]) : null;
+  },
+
+  async update(id: number, updates: {
+    title?: string;
+    description?: string;
+    branch?: string;
+    prNumber?: number;
+    status?: TaskStatus;
+    priority?: TaskPriority;
+    affectedFiles?: string[];
+    affectedAreas?: string[];
+    deployId?: string;
+  }): Promise<WorkTask | null> {
+    const db = await getPool();
+    const setClauses: string[] = [];
+    const values: unknown[] = [];
+    let idx = 1;
+
+    if (updates.title !== undefined) { setClauses.push(`title = $${idx++}`); values.push(updates.title); }
+    if (updates.description !== undefined) { setClauses.push(`description = $${idx++}`); values.push(updates.description); }
+    if (updates.branch !== undefined) { setClauses.push(`branch = $${idx++}`); values.push(updates.branch); }
+    if (updates.prNumber !== undefined) { setClauses.push(`pr_number = $${idx++}`); values.push(updates.prNumber); }
+    if (updates.status !== undefined) { setClauses.push(`status = $${idx++}`); values.push(updates.status); }
+    if (updates.priority !== undefined) { setClauses.push(`priority = $${idx++}`); values.push(updates.priority); }
+    if (updates.affectedFiles !== undefined) { setClauses.push(`affected_files = $${idx++}`); values.push(JSON.stringify(updates.affectedFiles)); }
+    if (updates.affectedAreas !== undefined) { setClauses.push(`affected_areas = $${idx++}`); values.push(JSON.stringify(updates.affectedAreas)); }
+    if (updates.deployId !== undefined) { setClauses.push(`deploy_id = $${idx++}`); values.push(updates.deployId); }
+
+    if (setClauses.length === 0) return this.findById(id);
+
+    setClauses.push('updated_at = NOW()');
+    values.push(id);
+
+    const result = await db.query(
+      `UPDATE work_tasks SET ${setClauses.join(', ')} WHERE id = $${idx} RETURNING *`,
+      values
+    );
+    return result.rows[0] ? mapWorkTask(result.rows[0]) : null;
+  },
+
+  async addProgressNote(id: number, note: ProgressNote): Promise<WorkTask | null> {
+    const db = await getPool();
+    const result = await db.query(
+      `UPDATE work_tasks
+       SET progress_notes = progress_notes || $1::jsonb, updated_at = NOW()
+       WHERE id = $2 RETURNING *`,
+      [JSON.stringify([note]), id]
+    );
+    return result.rows[0] ? mapWorkTask(result.rows[0]) : null;
+  },
+
+  async complete(id: number, deployId?: string): Promise<WorkTask | null> {
+    const db = await getPool();
+    const result = await db.query(
+      `UPDATE work_tasks SET status = 'deployed', deploy_id = $1, updated_at = NOW()
+       WHERE id = $2 RETURNING *`,
+      [deployId || null, id]
+    );
+    return result.rows[0] ? mapWorkTask(result.rows[0]) : null;
+  },
+};
+
+function mapWorkTask(row: any): WorkTask {
+  return {
+    id: row.id,
+    teamId: row.team_id,
+    projectName: row.project_name,
+    title: row.title,
+    description: row.description,
+    author: row.author,
+    branch: row.branch,
+    prNumber: row.pr_number,
+    status: row.status,
+    priority: row.priority,
+    affectedFiles: row.affected_files || [],
+    affectedAreas: row.affected_areas || [],
+    progressNotes: row.progress_notes || [],
+    deployId: row.deploy_id,
+    createdAt: row.created_at?.toISOString?.() || row.created_at,
+    updatedAt: row.updated_at?.toISOString?.() || row.updated_at,
+  };
+}
+
+// ============================================================================
+// Work Task File Lock Repository
+// ============================================================================
+
+export const WorkTaskFileRepo = {
+  async lockFiles(taskId: number, files: { path: string; description?: string; lockType?: string }[]): Promise<WorkTaskFile[]> {
+    const db = await getPool();
+    const results: WorkTaskFile[] = [];
+
+    for (const file of files) {
+      const result = await db.query(
+        `INSERT INTO work_task_files (task_id, file_path, lock_type, change_description)
+         VALUES ($1, $2, $3, $4) RETURNING *`,
+        [taskId, file.path, file.lockType || 'editing', file.description || null]
+      );
+      results.push(mapWorkTaskFile(result.rows[0]));
+    }
+
+    return results;
+  },
+
+  async releaseByTask(taskId: number): Promise<number> {
+    const db = await getPool();
+    const result = await db.query(
+      `UPDATE work_task_files SET status = 'released', released_at = NOW()
+       WHERE task_id = $1 AND status = 'locked'`,
+      [taskId]
+    );
+    return result.rowCount ?? 0;
+  },
+
+  async findLockedByPaths(filePaths: string[]): Promise<(WorkTaskFile & { task: WorkTask })[]> {
+    if (filePaths.length === 0) return [];
+    const db = await getPool();
+    const placeholders = filePaths.map((_, i) => `$${i + 1}`).join(', ');
+
+    const result = await db.query(
+      `SELECT wtf.*, wt.title as task_title, wt.author as task_author,
+              wt.status as task_status, wt.project_name as task_project
+       FROM work_task_files wtf
+       JOIN work_tasks wt ON wtf.task_id = wt.id
+       WHERE wtf.file_path IN (${placeholders})
+         AND wtf.status = 'locked'
+         AND wt.status IN ('draft', 'in_progress', 'pushed', 'deploying')
+       ORDER BY wtf.locked_at ASC`,
+      filePaths
+    );
+
+    return result.rows.map((row: any) => ({
+      ...mapWorkTaskFile(row),
+      task: {
+        id: row.task_id,
+        teamId: '',
+        projectName: row.task_project,
+        title: row.task_title,
+        description: '',
+        author: row.task_author,
+        status: row.task_status,
+        priority: 'medium' as TaskPriority,
+        affectedFiles: [],
+        affectedAreas: [],
+        progressNotes: [],
+        createdAt: '',
+        updatedAt: '',
+      },
+    }));
+  },
+
+  async findByTask(taskId: number): Promise<WorkTaskFile[]> {
+    const db = await getPool();
+    const result = await db.query(
+      'SELECT * FROM work_task_files WHERE task_id = $1 ORDER BY locked_at ASC',
+      [taskId]
+    );
+    return result.rows.map(mapWorkTaskFile);
+  },
+
+  async checkConflicts(filePaths: string[], excludeTaskId?: number): Promise<ConflictInfo[]> {
+    if (filePaths.length === 0) return [];
+    const db = await getPool();
+    const placeholders = filePaths.map((_, i) => `$${i + 1}`).join(', ');
+    let query = `
+      SELECT wt.id as task_id, wt.title, wt.author, wt.status,
+             array_agg(DISTINCT wtf.file_path) as conflicting_files
+      FROM work_task_files wtf
+      JOIN work_tasks wt ON wtf.task_id = wt.id
+      WHERE wtf.file_path IN (${placeholders})
+        AND wtf.status = 'locked'
+        AND wt.status IN ('draft', 'in_progress', 'pushed', 'deploying')`;
+
+    const values: unknown[] = [...filePaths];
+
+    if (excludeTaskId) {
+      query += ` AND wt.id != $${values.length + 1}`;
+      values.push(excludeTaskId);
+    }
+
+    query += ' GROUP BY wt.id, wt.title, wt.author, wt.status';
+
+    const result = await db.query(query, values);
+
+    return result.rows.map((row: any) => {
+      const conflictCount = row.conflicting_files.length;
+      const totalChecked = filePaths.length;
+      let severity: 'high' | 'medium' | 'low' = 'low';
+      if (conflictCount >= 3 || conflictCount / totalChecked > 0.5) severity = 'high';
+      else if (conflictCount >= 1) severity = 'medium';
+
+      return {
+        taskId: row.task_id,
+        title: row.title,
+        author: row.author,
+        status: row.status as TaskStatus,
+        conflictingFiles: row.conflicting_files,
+        severity,
+      };
+    });
+  },
+};
+
+function mapWorkTaskFile(row: any): WorkTaskFile {
+  return {
+    id: row.id,
+    taskId: row.task_id,
+    filePath: row.file_path,
+    lockType: row.lock_type,
+    changeDescription: row.change_description,
+    status: row.status,
+    lockedAt: row.locked_at?.toISOString?.() || row.locked_at,
+    releasedAt: row.released_at?.toISOString?.() || row.released_at,
+  };
+}

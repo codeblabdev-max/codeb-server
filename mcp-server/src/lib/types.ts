@@ -282,6 +282,71 @@ export interface APIResponse<T = unknown> {
 // Audit Log Types
 // ============================================================================
 
+// ============================================================================
+// Work Task Types (Team Collaboration & Conflict Prevention)
+// ============================================================================
+
+export type TaskStatus = 'draft' | 'in_progress' | 'pushed' | 'deploying' | 'deployed' | 'cancelled';
+export type TaskPriority = 'low' | 'medium' | 'high' | 'critical';
+export type FileLockType = 'editing' | 'planning';
+export type FileLockStatus = 'locked' | 'completed' | 'released';
+
+export interface WorkTask {
+  id: number;
+  teamId: string;
+  projectName: string;
+  title: string;
+  description: string;
+  author: string;
+  branch?: string;
+  prNumber?: number;
+  status: TaskStatus;
+  priority: TaskPriority;
+  affectedFiles: string[];
+  affectedAreas: string[];
+  progressNotes: ProgressNote[];
+  deployId?: string;
+  createdAt: string;
+  updatedAt: string;
+}
+
+export interface ProgressNote {
+  timestamp: string;
+  note: string;
+  filesChanged?: string[];
+}
+
+export interface WorkTaskFile {
+  id: number;
+  taskId: number;
+  filePath: string;
+  lockType: FileLockType;
+  changeDescription?: string;
+  status: FileLockStatus;
+  lockedAt: string;
+  releasedAt?: string;
+}
+
+export interface ConflictInfo {
+  taskId: number;
+  title: string;
+  author: string;
+  status: TaskStatus;
+  conflictingFiles: string[];
+  severity: 'high' | 'medium' | 'low';
+}
+
+export interface TaskCheckResult {
+  hasConflicts: boolean;
+  conflicts: ConflictInfo[];
+  checkedFiles: string[];
+  message: string;
+}
+
+// ============================================================================
+// Audit Log Types
+// ============================================================================
+
 export interface AuditLogEntry {
   id: string;
   timestamp: string;

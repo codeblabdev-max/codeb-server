@@ -21,8 +21,7 @@ import type {
   Environment,
   AuthContext,
 } from '../lib/types.js';
-import { withSSH } from '../lib/ssh.js';
-import { SERVERS } from '../lib/servers.js';
+import { withLocal } from '../lib/local-exec.js';
 import { SlotRepo } from '../lib/database.js';
 import { logger } from '../lib/logger.js';
 
@@ -76,9 +75,9 @@ export async function getSlotRegistry(
   }
 
   // 2. DB에 없으면 파일에서 조회 (Fallback)
-  return withSSH(SERVERS.app.ip, async (ssh) => {
+  return withLocal(async (local) => {
     const filePath = getSlotFilePath(projectName, environment);
-    const content = await ssh.readFile(filePath);
+    const content = await local.readFile(filePath);
 
     if (!content.trim()) {
       throw new Error(`Slot registry not found for ${projectName}/${environment}. Run /we:quick or /we:deploy first.`);
@@ -129,14 +128,14 @@ export async function updateSlotRegistry(
 
   // 2. 파일 백업 (Secondary)
   try {
-    await withSSH(SERVERS.app.ip, async (ssh) => {
+    await withLocal(async (local) => {
       const filePath = getSlotFilePath(projectName, environment);
 
       // Ensure directory exists
-      await ssh.mkdir(REGISTRY_BASE);
+      await local.mkdir(REGISTRY_BASE);
 
       // Write slot registry with proper formatting
-      await ssh.writeFile(filePath, JSON.stringify(slots, null, 2));
+      await local.writeFile(filePath, JSON.stringify(slots, null, 2));
     });
     logger.debug('Slot registry backed up to file', { projectName, environment });
   } catch (error) {
@@ -332,10 +331,10 @@ export async function executeSlotCleanup(
     }
 
     // Stop and remove container via Docker
-    await withSSH(SERVERS.app.ip, async (ssh) => {
+    await withLocal(async (local) => {
       const containerName = `${projectName}-${environment}-${graceSlot}`;
-      await ssh.exec(`docker stop ${containerName} 2>/dev/null || true`);
-      await ssh.exec(`docker rm ${containerName} 2>/dev/null || true`);
+      await local.exec(`docker stop ${containerName} 2>/dev/null || true`);
+      await local.exec(`docker rm ${containerName} 2>/dev/null || true`);
     });
 
     // Update slot state
@@ -438,10 +437,10 @@ export async function executeSlotList(
 async function executeSlotListFromFiles(
   auth: AuthContext
 ): Promise<SlotListResult> {
-  return withSSH(SERVERS.app.ip, async (ssh) => {
+  return withLocal(async (local) => {
     try {
       // List all slot registry files
-      const result = await ssh.exec(`ls ${REGISTRY_BASE}/*.json 2>/dev/null || echo ""`);
+      const result = await local.exec(`ls ${REGISTRY_BASE}/*.json 2>/dev/null || echo ""`);
 
       if (!result.stdout.trim()) {
         return {
@@ -455,7 +454,7 @@ async function executeSlotListFromFiles(
       const slots: SlotListResult['data'] = [];
 
       for (const file of files) {
-        const content = await ssh.exec(`cat ${file}`);
+        const content = await local.exec(`cat ${file}`);
         const data = JSON.parse(content.stdout) as ProjectSlots;
 
         // Filter by team access

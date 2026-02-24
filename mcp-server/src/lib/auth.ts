@@ -80,6 +80,10 @@ const PERMISSIONS: Record<string, TeamRole> = {
   'git.view': 'viewer',
   'git.write': 'member',
 
+  // Work Task Management (Team Collaboration)
+  'task.view': 'viewer',
+  'task.write': 'member',
+
   // Monitoring
   'logs.view': 'viewer',
   'health.check': 'viewer',

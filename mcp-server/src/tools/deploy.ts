@@ -35,8 +35,8 @@ import type {
   Environment,
   AuthContext,
 } from '../lib/types.js';
-import { getSSHClient, withSSH } from '../lib/ssh.js';
-import { getSlotPorts, SERVERS } from '../lib/servers.js';
+import { withLocal, type LocalExec } from '../lib/local-exec.js';
+import { getSlotPorts } from '../lib/servers.js';
 import { ProjectRepo, SlotRepo, DeploymentRepo, ProjectEnvRepo } from '../lib/database.js';
 import { logger } from '../lib/logger.js';
 
@@ -219,7 +219,7 @@ export async function executeDeploy(
     // Step 5-10: SSH로 실제 배포 수행
     // v7.0.64: ENV 처리는 컨테이너 실행 직전으로 이동
     // ================================================================
-    return await withSSH(SERVERS.app.ip, async (ssh) => {
+    return await withLocal(async (local) => {
       const envFile = `/opt/codeb/env/${projectName}/.env`;
       const envAltFile = `/opt/codeb/projects/${projectName}/.env.${environment}`;
       const envBackupDir = `/opt/codeb/env-backup/${projectName}`;
@@ -235,7 +235,7 @@ export async function executeDeploy(
           : `${PRIVATE_REGISTRY}/${projectName}:${version}`;
 
       try {
-        await ssh.exec(`docker pull ${imageUrl}`, { timeout: 180000 });
+        await local.exec(`docker pull ${imageUrl}`, { timeout: 180000 });
         steps.push({
           name: 'pull_image',
           status: 'success',
@@ -256,8 +256,8 @@ export async function executeDeploy(
       // Step 6: 기존 컨테이너 정리
       const step6Start = Date.now();
       try {
-        await ssh.exec(`docker stop ${containerName} 2>/dev/null || true`);
-        await ssh.exec(`docker rm ${containerName} 2>/dev/null || true`);
+        await local.exec(`docker stop ${containerName} 2>/dev/null || true`);
+        await local.exec(`docker rm ${containerName} 2>/dev/null || true`);
         steps.push({
           name: 'cleanup_container',
           status: 'success',
@@ -290,14 +290,14 @@ export async function executeDeploy(
             .map(([key, value]) => `${key}=${value}`)
             .join('\n');
 
-          await ssh.exec(`mkdir -p /opt/codeb/env/${projectName}`);
+          await local.exec(`mkdir -p /opt/codeb/env/${projectName}`);
           const base64Content = Buffer.from(envContent).toString('base64');
-          await ssh.exec(`echo "${base64Content}" | base64 -d > ${envFile}`);
-          await ssh.exec(`chmod 600 ${envFile}`);
+          await local.exec(`echo "${base64Content}" | base64 -d > ${envFile}`);
+          await local.exec(`chmod 600 ${envFile}`);
 
           // 백업 생성
-          await ssh.exec(`mkdir -p ${envBackupDir}`);
-          await ssh.exec(`cp ${envFile} ${envBackupDir}/.env.${Date.now()}`);
+          await local.exec(`mkdir -p ${envBackupDir}`);
+          await local.exec(`cp ${envFile} ${envBackupDir}/.env.${Date.now()}`);
 
           logger.info('ENV synced from DB SSOT', { projectName, environment, keys: Object.keys(dbEnv.env_data).length });
 
@@ -309,7 +309,7 @@ export async function executeDeploy(
           });
         } else {
           // DB에 ENV가 없으면 서버 파일 확인
-          const envCheck = await ssh.exec(`test -f ${envFile} && echo "OK" || test -f ${envAltFile} && echo "OK" || echo "MISSING"`);
+          const envCheck = await local.exec(`test -f ${envFile} && echo "OK" || test -f ${envAltFile} && echo "OK" || echo "MISSING"`);
 
           if (envCheck.stdout.trim() === 'MISSING') {
             steps.push({
@@ -323,7 +323,7 @@ export async function executeDeploy(
           }
 
           // 서버 파일을 DB에 백업
-          const serverEnvContent = await ssh.exec(`cat ${envFile} 2>/dev/null || cat ${envAltFile} 2>/dev/null`);
+          const serverEnvContent = await local.exec(`cat ${envFile} 2>/dev/null || cat ${envAltFile} 2>/dev/null`);
           if (serverEnvContent.stdout.trim()) {
             const envData = parseEnvContent(serverEnvContent.stdout);
             if (Object.keys(envData).length > 0) {
@@ -368,7 +368,7 @@ export async function executeDeploy(
       ].map(l => `-l ${l}`).join(' ');
 
       // ENV 파일 경로 결정 (DB에서 동기화한 파일 우선)
-      const envFileToUse = await ssh.exec(`test -f ${envFile} && echo "${envFile}" || echo "${envAltFile}"`);
+      const envFileToUse = await local.exec(`test -f ${envFile} && echo "${envFile}" || echo "${envAltFile}"`);
       const actualEnvFile = envFileToUse.stdout.trim();
 
       try {
@@ -387,7 +387,7 @@ export async function executeDeploy(
           ${dockerLabels} \\
           ${imageUrl}`;
 
-        await ssh.exec(dockerCmd, { timeout: 60000 });
+        await local.exec(dockerCmd, { timeout: 60000 });
         steps.push({
           name: 'start_container',
           status: 'success',
@@ -409,7 +409,7 @@ export async function executeDeploy(
       const step9Start = Date.now();
       if (!skipHealthcheck) {
         try {
-          await waitForHealthy(ssh, targetPort, 60, containerName);
+          await waitForHealthy(local, targetPort, 60, containerName);
           steps.push({
             name: 'health_check',
             status: 'success',
@@ -418,8 +418,8 @@ export async function executeDeploy(
           });
         } catch (error) {
           // 롤백: 실패한 컨테이너 제거
-          await ssh.exec(`docker stop ${containerName} 2>/dev/null || true`);
-          await ssh.exec(`docker rm ${containerName} 2>/dev/null || true`);
+          await local.exec(`docker stop ${containerName} 2>/dev/null || true`);
+          await local.exec(`docker rm ${containerName} 2>/dev/null || true`);
 
           steps.push({
             name: 'health_check',
@@ -536,7 +536,7 @@ function parseEnvContent(content: string): Record<string, string> {
  * Wait for container to become healthy (Docker)
  */
 async function waitForHealthy(
-  ssh: ReturnType<typeof getSSHClient>,
+  local: LocalExec,
   port: number,
   timeoutSeconds: number,
   containerName?: string
@@ -549,7 +549,7 @@ async function waitForHealthy(
   for (let i = 0; i < maxAttempts; i++) {
     // 1차: Docker healthcheck 상태 확인 (가장 신뢰성 있음)
     if (containerName) {
-      const healthResult = await ssh.exec(
+      const healthResult = await local.exec(
         `docker inspect ${containerName} --format '{{.State.Health.Status}}' 2>/dev/null || echo "unknown"`
       );
       const healthStatus = healthResult.stdout.trim();
@@ -560,7 +560,7 @@ async function waitForHealthy(
 
     // 2차: 컨테이너 내부에서 직접 curl
     if (containerName) {
-      const execResult = await ssh.exec(
+      const execResult = await local.exec(
         `docker exec ${containerName} sh -c 'curl -sf http://localhost:3000/health 2>/dev/null || curl -sf http://localhost:3000/api/health 2>/dev/null' && echo "OK" || echo "FAIL"`
       );
       if (execResult.stdout.includes('OK')) {
@@ -569,7 +569,7 @@ async function waitForHealthy(
     }
 
     // 3차: 호스트에서 직접 curl (fallback)
-    const result = await ssh.exec(
+    const result = await local.exec(
       `curl -sf -o /dev/null -w '%{http_code}' http://localhost:${port}/health 2>/dev/null || curl -sf -o /dev/null -w '%{http_code}' http://localhost:${port}/api/health 2>/dev/null || echo "000"`
     );
     const statusCode = result.stdout.trim();

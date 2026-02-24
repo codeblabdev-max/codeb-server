@@ -37,6 +37,7 @@ import { mcp } from '../src/commands/mcp.js';
 import { update } from '../src/commands/update.js';
 import { scan } from '../src/commands/scan.js';
 import { monitor } from '../src/commands/monitor.js';
+import { taskCreate, taskList, taskCheck, taskStatus, taskUpdate, taskDone } from '../src/commands/task.js';
 
 const program = new Command();
 
@@ -300,12 +301,63 @@ const envCmd = program
   });
 
 // ============================================================================
+// 6. TASK - 작업 관리 (핵심 명령어 #6 - Team Collaboration)
+// ============================================================================
+
+const taskCmd = program
+  .command('task')
+  .description('작업 관리 (충돌 방지, 파일 잠금, 팀 협업)')
+  .argument('<action>', 'Action (create|list|check|status|update|done)')
+  .argument('[target]', 'Task ID or title')
+  .option('-p, --project <name>', 'Project name')
+  .option('-f, --files <paths>', 'Comma-separated file paths')
+  .option('--areas <areas>', 'Comma-separated affected areas')
+  .option('--priority <level>', 'Priority (low|medium|high|critical)', 'medium')
+  .option('--author <name>', 'Author name')
+  .option('--branch <name>', 'Git branch name')
+  .option('--description <text>', 'Task description (MD)')
+  .option('--note <text>', 'Progress note')
+  .option('--status <status>', 'Task status')
+  .option('--pr <number>', 'PR number')
+  .option('--deploy-id <id>', 'Deploy ID')
+  .option('--files-changed <paths>', 'Files changed (for note)')
+  .option('--add-files <paths>', 'Additional files to lock')
+  .option('--exclude <taskId>', 'Exclude task ID from conflict check')
+  .option('--title <text>', 'Update title')
+  .option('-a, --all', 'Show all tasks (including completed)')
+  .action(async (action, target, options) => {
+    switch (action) {
+      case 'create':
+        await taskCreate(target, options);
+        break;
+      case 'list':
+        await taskList(options);
+        break;
+      case 'check':
+        await taskCheck(options);
+        break;
+      case 'status':
+        await taskStatus(target, options);
+        break;
+      case 'update':
+        await taskUpdate(target, options);
+        break;
+      case 'done':
+        await taskDone(target, options);
+        break;
+      default:
+        console.log(chalk.red(`Unknown action: ${action}`));
+        console.log(chalk.gray('Available: create, list, check, status, update, done'));
+    }
+  });
+
+// ============================================================================
 // HELP
 // ============================================================================
 
 program.on('--help', () => {
   console.log('');
-  console.log(chalk.yellow('Core Commands (5):'));
+  console.log(chalk.yellow('Core Commands (6):'));
   console.log('');
   console.log(chalk.cyan('  deploy') + chalk.gray('    - Blue-Green 배포 시스템'));
   console.log(chalk.gray('              we deploy <project>'));
@@ -335,6 +387,14 @@ program.on('--help', () => {
   console.log(chalk.gray('              we env pull [project]'));
   console.log(chalk.gray('              we env push [project]'));
   console.log(chalk.gray('              we env fix [project]'));
+  console.log('');
+  console.log(chalk.cyan('  task') + chalk.gray('      - 작업 관리 (팀 협업 충돌 방지)'));
+  console.log(chalk.gray('              we task create "제목" --project myapp --files src/auth.ts'));
+  console.log(chalk.gray('              we task list'));
+  console.log(chalk.gray('              we task check --files src/auth.ts'));
+  console.log(chalk.gray('              we task status <id>'));
+  console.log(chalk.gray('              we task update <id> --note "수정 완료"'));
+  console.log(chalk.gray('              we task done <id> --pr 42'));
   console.log('');
   console.log(chalk.yellow('Examples:'));
   console.log('');

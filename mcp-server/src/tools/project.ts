@@ -31,7 +31,7 @@
 import { z } from 'zod';
 import { randomBytes } from 'crypto';
 import type { AuthContext } from '../lib/types.js';
-import { withSSH } from '../lib/ssh.js';
+import { withLocal, execStorageSQLBatch } from '../lib/local-exec.js';
 import { SERVERS, getSlotPorts } from '../lib/servers.js';
 import { ProjectRepo, SlotRepo, TeamRepo } from '../lib/database.js';
 import { initializeSlots, getAvailablePort } from './slot.js';
@@ -159,39 +159,38 @@ async function executeWorkflowInit(
     // ============================================================
     // Step 3: Storage Server (PostgreSQL, Redis)
     // ============================================================
-    await withSSH(SERVERS.storage.ip, async (storageSSH) => {
-      const dbPassword = generatePassword();
-      const dbName = `${projectName}_db`;
-      const dbUser = `${projectName}_user`;
+    // Storage 서버 PostgreSQL/Redis — SSH 대신 TCP 직접 연결
+    const dbPassword = generatePassword();
+    const dbName = `${projectName}_db`;
+    const dbUser = `${projectName}_user`;
 
-      // PostgreSQL DB/User 생성
-      if (needsDatabase) {
-        await storageSSH.exec(`sudo -u postgres psql -c "CREATE DATABASE ${dbName};" || true`);
-        await storageSSH.exec(`sudo -u postgres psql -c "CREATE USER ${dbUser} WITH PASSWORD '${dbPassword}';" || true`);
-        await storageSSH.exec(`sudo -u postgres psql -c "GRANT ALL PRIVILEGES ON DATABASE ${dbName} TO ${dbUser};"`);
-        await storageSSH.exec(`sudo -u postgres psql -c "ALTER DATABASE ${dbName} OWNER TO ${dbUser};"`);
+    if (needsDatabase) {
+      await execStorageSQLBatch([
+        `CREATE DATABASE ${dbName};`,
+        `CREATE USER ${dbUser} WITH PASSWORD '${dbPassword}';`,
+        `GRANT ALL PRIVILEGES ON DATABASE ${dbName} TO ${dbUser};`,
+        `ALTER DATABASE ${dbName} OWNER TO ${dbUser};`,
+      ]);
 
-        dbInfo = {
-          name: dbName,
-          user: dbUser,
-          password: dbPassword,
-          host: SERVERS.storage.domain,
-          port: SERVERS.storage.ports.postgresql,
-          url: `postgresql://${dbUser}:${dbPassword}@${SERVERS.storage.domain}:${SERVERS.storage.ports.postgresql}/${dbName}?schema=public`,
-        };
-      }
+      dbInfo = {
+        name: dbName,
+        user: dbUser,
+        password: dbPassword,
+        host: SERVERS.storage.domain,
+        port: SERVERS.storage.ports.postgresql,
+        url: `postgresql://${dbUser}:${dbPassword}@${SERVERS.storage.domain}:${SERVERS.storage.ports.postgresql}/${dbName}?schema=public`,
+      };
+    }
 
-      // Redis DB 번호 할당
-      if (needsRedis) {
-        const redisDb = await allocateRedisDb(storageSSH, projectName);
-        redisInfo = {
-          db: redisDb,
-          host: SERVERS.storage.domain,
-          port: SERVERS.storage.ports.redis,
-          url: `redis://${SERVERS.storage.domain}:${SERVERS.storage.ports.redis}/${redisDb}`,
-        };
-      }
-    });
+    if (needsRedis) {
+      const redisDb = await allocateRedisDb(projectName);
+      redisInfo = {
+        db: redisDb,
+        host: SERVERS.storage.domain,
+        port: SERVERS.storage.ports.redis,
+        url: `redis://${SERVERS.storage.domain}:${SERVERS.storage.ports.redis}/${redisDb}`,
+      };
+    }
 
     // ============================================================
     // Step 4: 팀 찾기 또는 자동 생성 (Foreign Key 해결)
@@ -267,15 +266,12 @@ async function executeWorkflowInit(
     // ============================================================
     // Step 7: App Server (디렉토리, ENV, Caddy)
     // ============================================================
-    await withSSH(SERVERS.app.ip, async (appSSH) => {
+    await withLocal(async (local) => {
       // 프로젝트 디렉토리 생성
-      const projectDir = `/opt/codeb/projects/${projectName}`;
-      await appSSH.exec(`mkdir -p ${projectDir}`);
-      await appSSH.exec(`mkdir -p /opt/codeb/env/${projectName}`);
-      await appSSH.exec(`mkdir -p /opt/codeb/env-backup/${projectName}`);
-
-      // 슬롯 레지스트리 디렉토리 (파일 백업용)
-      await appSSH.exec(`mkdir -p /opt/codeb/registry/slots`);
+      await local.mkdir(`/opt/codeb/projects/${projectName}`);
+      await local.mkdir(`/opt/codeb/env/${projectName}`);
+      await local.mkdir(`/opt/codeb/env-backup/${projectName}`);
+      await local.mkdir(`/opt/codeb/registry/slots`);
 
       // ENV 파일 생성
       const envContent = generateEnvWithCredentials({
@@ -286,12 +282,12 @@ async function executeWorkflowInit(
       });
 
       const envPath = `/opt/codeb/env/${projectName}/.env`;
-      await appSSH.writeFile(envPath, envContent);
+      await local.writeFile(envPath, envContent);
       files.push(envPath);
 
       // ENV 백업
       const backupPath = `/opt/codeb/env-backup/${projectName}/.env.${Date.now()}`;
-      await appSSH.exec(`cp ${envPath} ${backupPath}`);
+      await local.exec(`cp ${envPath} ${backupPath}`);
 
       // Caddy 도메인 설정
       const caddySnippet = `
@@ -307,22 +303,29 @@ ${domain} {
 }
 `;
       const caddyPath = `/etc/caddy/sites/${projectName}.caddy`;
-      await appSSH.exec(`sudo mkdir -p /etc/caddy/sites`);
-      await appSSH.exec(`echo '${caddySnippet}' | sudo tee ${caddyPath}`);
-      await appSSH.exec(`sudo systemctl reload caddy || true`);
+      await local.mkdir('/etc/caddy/sites');
+      await local.writeFile(caddyPath, caddySnippet);
+      await local.exec('systemctl reload caddy || true');
       files.push(caddyPath);
 
-      // PowerDNS A 레코드 추가 (codeb.kr 서브도메인인 경우만)
-      if (domain.endsWith('.codeb.kr')) {
-        const subdomain = domain.replace('.codeb.kr', '');
-        await appSSH.exec(`pdnsutil add-record codeb.kr ${subdomain} A 300 ${SERVERS.app.ip} 2>/dev/null || true`);
-        await appSSH.exec(`pdnsutil rectify-zone codeb.kr 2>/dev/null || true`);
+      // Cloudflare DNS A 레코드 추가 (서브도메인인 경우)
+      const supportedDomains = ['codeb.kr', 'workb.net', 'wdot.kr', 'w-w-w.kr', 'vsvs.kr', 'workb.xyz'];
+      const matchedBase = supportedDomains.find(d => domain.endsWith(`.${d}`));
+      if (matchedBase) {
+        const subdomain = domain.replace(`.${matchedBase}`, '');
+        try {
+          const { addDNSRecord: addCfRecord } = await import('./domain.js');
+          await addCfRecord(matchedBase, 'A', subdomain, SERVERS.app.ip, true);
+          logger.info('Cloudflare DNS record added', { domain, subdomain, base: matchedBase });
+        } catch (dnsError) {
+          logger.warn('Failed to add Cloudflare DNS record (non-blocking)', { domain, error: String(dnsError) });
+        }
       }
 
       // SSL 인증서 발급 대기 (최대 30초)
       for (let i = 0; i < 10; i++) {
         await new Promise(resolve => setTimeout(resolve, 3000));
-        const certCheck = await appSSH.exec(
+        const certCheck = await local.exec(
           `curl -sI https://${domain} --connect-timeout 5 2>&1 | head -1 || echo "pending"`
         );
         if (certCheck.stdout.includes('HTTP/') || certCheck.stdout.includes('200')) {
@@ -347,15 +350,21 @@ ${domain} {
       `   도메인: ${domain}`,
       ``,
       `📁 로컬에 생성할 파일:`,
-      `   1. .github/workflows/deploy.yml`,
+      `   1. .github/workflows/deploy.yml (worktree + task 지원)`,
       `   2. Dockerfile (없으면)`,
       ``,
       `🔑 GitHub Secrets 설정:`,
       `   - CODEB_API_KEY: CodeB API 키`,
+      `   - MINIO_ACCESS_KEY: Minio S3 캐시 키`,
+      `   - MINIO_SECRET_KEY: Minio S3 시크릿 키`,
       ``,
-      `🚀 배포:`,
-      `   git push origin main  # → 비활성 슬롯에 배포`,
-      `   we promote ${projectName}  # → 트래픽 전환`,
+      `🚀 팀 작업 플로우:`,
+      `   1. we task create "작업 제목" --files src/... → 파일 잠금`,
+      `   2. claude --worktree task-<ID>  → 격리 작업 시작`,
+      `   3. git push → 자동 빌드/배포 (worktree-* 브랜치)`,
+      `   4. 배포 성공 → task_complete → 파일 잠금 해제`,
+      `   5. worktree 브랜치 → main 자동 병합`,
+      `   6. we promote ${projectName}  → 트래픽 전환`,
     ].filter(Boolean);
 
     logger.info('Workflow init completed', { projectName, domain, ports });
@@ -461,14 +470,13 @@ async function executeWorkflowScan(
     // ============================================================
     // Step 3: App Server에서 상태 확인
     // ============================================================
-    const serverStatus = await withSSH(SERVERS.app.ip, async (ssh) => {
+    const serverStatus = await withLocal(async (local) => {
       const projectDir = `/opt/codeb/projects/${projectName}`;
 
       // Dockerfile 확인
       let hasDockerfile = false;
       try {
-        await ssh.exec(`test -f ${projectDir}/Dockerfile`);
-        hasDockerfile = true;
+        hasDockerfile = await local.fileExists(`${projectDir}/Dockerfile`);
       } catch {
         // no dockerfile
       }
@@ -476,7 +484,7 @@ async function executeWorkflowScan(
       // Docker 컨테이너 확인
       let hasDockerContainer = false;
       try {
-        const result = await ssh.exec(`docker ps -a --format '{{.Names}}' | grep -c "^${projectName}-" || echo "0"`);
+        const result = await local.exec(`docker ps -a --format '{{.Names}}' | grep -c "^${projectName}-" || echo "0"`);
         hasDockerContainer = parseInt(result.stdout.trim()) > 0;
       } catch {
         // no docker containers
@@ -485,8 +493,7 @@ async function executeWorkflowScan(
       // ENV 확인
       let hasEnv = false;
       try {
-        await ssh.exec(`test -f /opt/codeb/env/${projectName}/.env`);
-        hasEnv = true;
+        hasEnv = await local.fileExists(`/opt/codeb/env/${projectName}/.env`);
       } catch {
         // no env
       }
@@ -604,13 +611,15 @@ function levenshteinDistance(a: string, b: string): number {
   return matrix[b.length][a.length];
 }
 
-async function allocateRedisDb(ssh: any, projectName: string): Promise<number> {
+async function allocateRedisDb(projectName: string): Promise<number> {
   // Redis DB 번호 할당 (0-15, 0은 기본이므로 1부터 시작)
   const ssotPath = '/opt/codeb/registry/redis-db.json';
   let redisDb: any = { used: {}, nextDb: 1 };
 
+  const local = (await import('../lib/local-exec.js')).getLocalExec();
+
   try {
-    const content = await ssh.readFile(ssotPath);
+    const content = await local.readFile(ssotPath);
     redisDb = JSON.parse(content);
   } catch {
     // 파일 없으면 새로 생성
@@ -629,7 +638,7 @@ async function allocateRedisDb(ssh: any, projectName: string): Promise<number> {
 
   redisDb.used[projectName] = dbNum;
   redisDb.nextDb = dbNum + 1;
-  await ssh.writeFile(ssotPath, JSON.stringify(redisDb, null, 2));
+  await local.writeFile(ssotPath, JSON.stringify(redisDb, null, 2));
 
   return dbNum;
 }
@@ -680,13 +689,15 @@ function generateGitHubActionsWorkflow(params: {
 }): string {
   const { projectName, baseDomain = 'codeb.kr' } = params;
 
-  // MCP API Blue-Green Deployment Workflow (v8.0)
-  return `# ${projectName} CI/CD Pipeline (Minio S3 Cache + Blue-Green)
+  // MCP API Blue-Green Deployment Workflow (v8.0 + Worktree + Task)
+  return `# ${projectName} CI/CD Pipeline (Minio S3 Cache + Blue-Green + Worktree)
 # Generated by CodeB v8.0
+# Updated: ${new Date().toISOString().split('T')[0]}
 #
 # Architecture:
 #   GitHub Actions (self-hosted) -> Docker Buildx + Minio S3 Cache
 #   -> Private Registry (64.176.226.119:5000) -> MCP API Blue-Green Deploy
+#   -> Task Complete (파일 잠금 해제) -> Auto Merge (worktree → main)
 #
 # Required Secrets: CODEB_API_KEY, MINIO_ACCESS_KEY, MINIO_SECRET_KEY
 
@@ -694,7 +705,7 @@ name: ${projectName} CI/CD
 
 on:
   push:
-    branches: [main]
+    branches: [main, 'worktree-*']
   workflow_dispatch:
     inputs:
       action:
@@ -906,6 +917,54 @@ jobs:
           echo "| **Preview** | \$PREVIEW_URL |" >> \$GITHUB_STEP_SUMMARY
           echo "" >> \$GITHUB_STEP_SUMMARY
           echo "> Run \\\`/we:promote ${projectName}\\\` or dispatch promote to switch traffic" >> \$GITHUB_STEP_SUMMARY
+
+      - name: Complete Work Tasks
+        if: success()
+        env:
+          CODEB_API_KEY: \${{ secrets.CODEB_API_KEY }}
+        run: |
+          COMMIT_MSG=\$(git log -1 --pretty=%s)
+          TASK_IDS=\$(echo "\$COMMIT_MSG" | grep -oP '#\\K[0-9]+' || true)
+
+          if [ -z "\$TASK_IDS" ]; then
+            echo "No task IDs found in commit message"
+            exit 0
+          fi
+
+          for TASK_ID in \$TASK_IDS; do
+            echo "Completing task #\$TASK_ID..."
+            RESULT=\$(curl -sf --max-time 30 -X POST "https://api.codeb.kr/api/tool" \\
+              -H "X-API-Key: \${CODEB_API_KEY}" \\
+              -H "Content-Type: application/json" \\
+              -d "{\\"tool\\":\\"task_complete\\",\\"params\\":{\\"taskId\\":\${TASK_ID},\\"deployId\\":\\"deploy-\${GITHUB_SHA:0:7}\\"}}" || true)
+            echo "Task #\$TASK_ID: \$RESULT"
+          done
+
+      - name: Auto Merge Worktree Branch
+        if: success() && startsWith(github.ref_name, 'worktree-')
+        env:
+          GH_TOKEN: \${{ secrets.GITHUB_TOKEN }}
+        run: |
+          BRANCH="\${{ github.ref_name }}"
+          echo "Worktree auto merge: \$BRANCH -> main"
+
+          git fetch origin main
+          git checkout main
+          git pull origin main
+
+          if git merge --squash "origin/\$BRANCH"; then
+            COMMIT_MSG=\$(git log "origin/\$BRANCH" -1 --pretty=%s)
+            git commit -m "auto-merge: \$BRANCH - \$COMMIT_MSG
+          Deployed via GitHub Actions (\${GITHUB_SHA:0:7})
+          Co-Authored-By: CodeB CI <ci@codeb.kr>"
+            git push origin main
+            git push origin --delete "\$BRANCH" 2>/dev/null || true
+            echo "Merged \$BRANCH -> main"
+          else
+            echo "Merge conflict! Manual resolution needed."
+            git merge --abort
+            exit 1
+          fi
 
       - name: Cleanup
         if: always()
@@ -1182,7 +1241,7 @@ export const workflowGenerateTool = {
       const dockerfile = generateDockerfile(type);
 
       const instructions = [
-        `✅ 워크플로우 생성 완료!`,
+        `✅ 워크플로우 생성 완료! (worktree + task 지원)`,
         ``,
         `📁 로컬에 생성할 파일:`,
         `   1. .github/workflows/deploy.yml`,
@@ -1190,12 +1249,15 @@ export const workflowGenerateTool = {
         ``,
         `🔑 GitHub Secrets 설정:`,
         `   - CODEB_API_KEY: CodeB API 키`,
-        `   - SSH_PRIVATE_KEY: 서버 접근용 SSH 키 (Preview 배포 시 필요)`,
+        `   - MINIO_ACCESS_KEY: Minio S3 캐시 키`,
+        `   - MINIO_SECRET_KEY: Minio S3 시크릿 키`,
         ``,
         `📋 기존 GHCR 워크플로우가 있다면 삭제하세요.`,
         ``,
         `🚀 배포:`,
         `   git push origin main  # → Private Registry로 빌드 & 배포`,
+        `   worktree-* 브랜치도 자동 트리거 (팀 작업 시)`,
+        `   배포 성공 → task_complete → auto merge → main`,
       ];
 
       logger.info('Workflow generated', { projectName, type, baseDomain });

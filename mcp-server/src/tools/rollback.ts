@@ -10,8 +10,7 @@ import type {
   SlotName,
   AuthContext,
 } from '../lib/types.js';
-import { withSSH } from '../lib/ssh.js';
-import { SERVERS } from '../lib/servers.js';
+import { withLocal } from '../lib/local-exec.js';
 import { getSlotRegistry, updateSlotRegistry } from './slot.js';
 
 // ============================================================================
@@ -58,7 +57,7 @@ export async function executeRollback(
 
   const startTime = Date.now();
 
-  return withSSH(SERVERS.app.ip, async (ssh) => {
+  return withLocal(async (local) => {
     try {
       // Step 1: Get slot status
       const slots = await getSlotRegistry(projectName, environment);
@@ -81,7 +80,7 @@ export async function executeRollback(
       }
 
       // Step 2: Health check on grace slot
-      const healthResult = await ssh.exec(
+      const healthResult = await local.exec(
         `curl -sf -o /dev/null -w '%{http_code}' http://localhost:${graceSlot.port}/health 2>/dev/null || echo "000"`
       );
 
@@ -111,10 +110,10 @@ export async function executeRollback(
       });
 
       const caddyPath = `/etc/caddy/sites/${projectName}-${environment}.caddy`;
-      await ssh.writeFile(caddyPath, caddyConfig);
+      await local.writeFile(caddyPath, caddyConfig);
 
       // Step 4: Reload Caddy (zero-downtime)
-      await ssh.exec('systemctl reload caddy');
+      await local.exec('systemctl reload caddy');
 
       // Step 5: Update slot states
       slots.activeSlot = targetSlot;
@@ -134,7 +133,7 @@ export async function executeRollback(
       await updateSlotRegistry(projectName, environment, slots);
 
       // Step 6: Log rollback event
-      await logRollbackEvent(ssh, projectName, environment, {
+      await logRollbackEvent(local, projectName, environment, {
         fromSlot: currentActive,
         toSlot: targetSlot,
         fromVersion: activeSlot.version,
@@ -243,7 +242,7 @@ ${config.domain} {
  * Log rollback event for audit
  */
 async function logRollbackEvent(
-  ssh: ReturnType<typeof import('../lib/ssh.js').getSSHClient>,
+  local: import('../lib/local-exec.js').LocalExec,
   projectName: string,
   environment: string,
   event: {
@@ -260,14 +259,14 @@ async function logRollbackEvent(
   const logDir = `/opt/codeb/logs/rollbacks`;
   const logFile = `${logDir}/${projectName}-${environment}.jsonl`;
 
-  await ssh.mkdir(logDir);
+  await local.mkdir(logDir);
 
   // Use JSON Lines format for easy parsing
   const logEntry = JSON.stringify(event);
 
   // Escape for shell - use base64 to avoid any escaping issues
   const base64Entry = Buffer.from(logEntry).toString('base64');
-  await ssh.exec(`echo '${base64Entry}' | base64 -d >> ${logFile}`);
+  await local.exec(`echo '${base64Entry}' | base64 -d >> ${logFile}`);
 }
 
 // ============================================================================

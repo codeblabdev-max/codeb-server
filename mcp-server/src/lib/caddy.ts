@@ -7,8 +7,7 @@
  * - Blue-Green 도메인 전환 지원
  */
 
-import { withSSH } from './ssh.js';
-import { SERVERS } from './servers.js';
+import { withLocal } from './local-exec.js';
 import { logger } from './logger.js';
 import type { SlotName, Environment } from './types.js';
 
@@ -190,27 +189,27 @@ export async function writeCaddyConfig(config: CaddySiteConfig): Promise<void> {
   const caddyContent = generateCaddyConfig(config);
   const caddyPath = getCaddyConfigPath(config.projectName, config.environment);
 
-  await withSSH(SERVERS.app.ip, async (ssh) => {
+  await withLocal(async (local) => {
     // Ensure directory exists
-    await ssh.mkdir(CADDY_SITES_DIR);
+    await local.mkdir(CADDY_SITES_DIR);
 
     // Backup existing config if exists
     const backupPath = `${caddyPath}.backup.${Date.now()}`;
-    await ssh.exec(`[ -f ${caddyPath} ] && cp ${caddyPath} ${backupPath} || true`);
+    await local.exec(`[ -f ${caddyPath} ] && cp ${caddyPath} ${backupPath} || true`);
 
     // Write new config
-    await ssh.writeFile(caddyPath, caddyContent);
+    await local.writeFile(caddyPath, caddyContent);
 
     // Validate configuration
-    const validateResult = await ssh.exec('caddy validate --config /etc/caddy/Caddyfile 2>&1');
+    const validateResult = await local.exec('caddy validate --config /etc/caddy/Caddyfile 2>&1');
     if (validateResult.code !== 0 && !validateResult.stdout.includes('Valid')) {
       // Restore backup on validation failure
-      await ssh.exec(`[ -f ${backupPath} ] && mv ${backupPath} ${caddyPath} || true`);
+      await local.exec(`[ -f ${backupPath} ] && mv ${backupPath} ${caddyPath} || true`);
       throw new Error(`Caddy config validation failed: ${validateResult.stdout}`);
     }
 
     // Reload Caddy (zero-downtime)
-    await ssh.exec('systemctl reload caddy');
+    await local.exec('systemctl reload caddy');
 
     logger.info('Caddy config updated', {
       projectName: config.projectName,
@@ -292,9 +291,9 @@ export async function getCustomDomains(
 ): Promise<string[]> {
   const caddyPath = getCaddyConfigPath(projectName, environment);
 
-  return withSSH(SERVERS.app.ip, async (ssh) => {
+  return withLocal(async (local) => {
     try {
-      const result = await ssh.exec(`cat ${caddyPath} 2>/dev/null || echo ""`);
+      const result = await local.exec(`cat ${caddyPath} 2>/dev/null || echo ""`);
       const content = result.stdout;
 
       if (!content.trim()) {
@@ -328,9 +327,9 @@ export async function deleteCaddyConfig(
 ): Promise<void> {
   const caddyPath = getCaddyConfigPath(projectName, environment);
 
-  await withSSH(SERVERS.app.ip, async (ssh) => {
+  await withLocal(async (local) => {
     // Check if file exists
-    const checkResult = await ssh.exec(`[ -f ${caddyPath} ] && echo "exists" || echo "not_found"`);
+    const checkResult = await local.exec(`[ -f ${caddyPath} ] && echo "exists" || echo "not_found"`);
 
     if (checkResult.stdout.trim() === 'not_found') {
       throw new Error(`Caddy config not found for ${projectName}-${environment}`);
@@ -338,10 +337,10 @@ export async function deleteCaddyConfig(
 
     // Backup before delete
     const backupPath = `${caddyPath}.deleted.${Date.now()}`;
-    await ssh.exec(`mv ${caddyPath} ${backupPath}`);
+    await local.exec(`mv ${caddyPath} ${backupPath}`);
 
     // Reload Caddy
-    await ssh.exec('systemctl reload caddy');
+    await local.exec('systemctl reload caddy');
 
     logger.info('Caddy config deleted', { projectName, environment });
   });
@@ -351,15 +350,15 @@ export async function deleteCaddyConfig(
  * List all configured domains
  */
 export async function listAllDomains(): Promise<DomainInfo[]> {
-  return withSSH(SERVERS.app.ip, async (ssh) => {
-    const result = await ssh.exec(`ls -1 ${CADDY_SITES_DIR}/*.caddy 2>/dev/null || echo ""`);
+  return withLocal(async (local) => {
+    const result = await local.exec(`ls -1 ${CADDY_SITES_DIR}/*.caddy 2>/dev/null || echo ""`);
     const files = result.stdout.trim().split('\n').filter(Boolean);
 
     const domains: DomainInfo[] = [];
 
     for (const file of files) {
       try {
-        const content = await ssh.exec(`cat ${file}`);
+        const content = await local.exec(`cat ${file}`);
         const info = parseCaddyConfig(content.stdout);
         if (info) {
           domains.push(info);
@@ -438,10 +437,10 @@ export async function getCaddyStatus(): Promise<{
   version: string;
   configValid: boolean;
 }> {
-  return withSSH(SERVERS.app.ip, async (ssh) => {
-    const statusResult = await ssh.exec('systemctl is-active caddy');
-    const versionResult = await ssh.exec('caddy version 2>/dev/null || echo "unknown"');
-    const validateResult = await ssh.exec('caddy validate --config /etc/caddy/Caddyfile 2>&1');
+  return withLocal(async (local) => {
+    const statusResult = await local.exec('systemctl is-active caddy');
+    const versionResult = await local.exec('caddy version 2>/dev/null || echo "unknown"');
+    const validateResult = await local.exec('caddy validate --config /etc/caddy/Caddyfile 2>&1');
 
     return {
       running: statusResult.stdout.trim() === 'active',
@@ -455,8 +454,8 @@ export async function getCaddyStatus(): Promise<{
  * Force reload Caddy configuration
  */
 export async function reloadCaddy(): Promise<void> {
-  await withSSH(SERVERS.app.ip, async (ssh) => {
-    await ssh.exec('systemctl reload caddy');
+  await withLocal(async (local) => {
+    await local.exec('systemctl reload caddy');
   });
 }
 

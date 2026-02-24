@@ -1,14 +1,15 @@
 /**
- * CodeB v7.0 - Domain Management Tools (Unified)
+ * CodeB v8.0 - Domain Management Tools (Cloudflare + Caddy)
  *
  * 통합된 도메인 관리 시스템:
  * - Caddy 파일 기반 설정 (promote.ts와 동일 방식)
- * - PowerDNS API로 DNS 레코드 관리
+ * - Cloudflare API로 DNS 레코드 관리 (PowerDNS에서 마이그레이션 완료)
  * - DNS 검증 기능
  *
- * 변경사항 (v7.0.54):
- * - Caddy Admin API 제거 → 파일 기반으로 통합
- * - caddy.ts 공통 모듈 사용
+ * 변경사항 (v8.0):
+ * - PowerDNS → Cloudflare API 마이그레이션
+ * - Zone ID 캐싱, upsert(create/update) 지원
+ * - proxied: true 기본 (Cloudflare CDN/보호)
  */
 
 import type { AuthContext, Environment, SlotName } from '../lib/types.js';
@@ -70,89 +71,142 @@ export interface DomainVerifyInput {
 }
 
 // ============================================================================
-// Configuration
+// Configuration (Cloudflare)
 // ============================================================================
 
-const PDNS_API_URL = process.env.PDNS_API_URL || 'http://158.247.203.55:8081/api/v1';
+const CF_API_BASE = 'https://api.cloudflare.com/client/v4';
+const zoneCache = new Map<string, string>();
 
 // ============================================================================
-// PowerDNS Client (DNS 레코드 관리용)
+// Cloudflare Client (DNS 레코드 관리)
 // ============================================================================
 
-function getPdnsApiKey(): string {
-  const key = process.env.PDNS_API_KEY;
-  if (!key) {
+function getCfApiToken(): string {
+  const token = process.env.CLOUDFLARE_API_TOKEN;
+  if (!token) {
     throw new Error(
-      'PDNS_API_KEY is not configured. ' +
-      'Please set PDNS_API_KEY in your project .env file or environment variables.'
+      'CLOUDFLARE_API_TOKEN is not configured. ' +
+      'Please set CLOUDFLARE_API_TOKEN in your .env file or environment variables.'
     );
   }
-  return key;
+  return token;
 }
 
-async function pdnsRequest(
+interface CloudflareResponse<T = unknown> {
+  success: boolean;
+  errors: Array<{ code: number; message: string }>;
+  result: T;
+}
+
+interface CfDnsRecord {
+  id: string;
+  type: string;
+  name: string;
+  content: string;
+  ttl: number;
+  proxied: boolean;
+}
+
+async function cfRequest<T = unknown>(
   method: string,
   path: string,
   body?: Record<string, unknown>
-): Promise<any> {
-  const apiKey = getPdnsApiKey();
-  const url = `${PDNS_API_URL}${path}`;
+): Promise<CloudflareResponse<T>> {
+  const token = getCfApiToken();
+  const url = `${CF_API_BASE}${path}`;
 
   try {
     const response = await fetch(url, {
       method,
       headers: {
-        'X-API-Key': apiKey,
+        'Authorization': `Bearer ${token}`,
         'Content-Type': 'application/json',
       },
       body: body ? JSON.stringify(body) : undefined,
     });
 
-    if (!response.ok) {
-      const text = await response.text();
-      throw new Error(`PowerDNS API error: ${response.status} - ${text}`);
+    const data = (await response.json()) as CloudflareResponse<T>;
+
+    if (!data.success) {
+      const errMsg = data.errors?.map(e => e.message).join(', ') || 'Unknown error';
+      throw new Error(`Cloudflare API error: ${errMsg}`);
     }
 
-    if (response.status === 204) {
-      return null;
-    }
-
-    return response.json();
+    return data;
   } catch (error) {
-    logger.error('PowerDNS request failed', { url, method, error: String(error) });
+    logger.error('Cloudflare request failed', { url, method, error: String(error) });
     throw error;
   }
+}
+
+async function getZoneId(zoneName: string): Promise<string> {
+  if (zoneCache.has(zoneName)) {
+    return zoneCache.get(zoneName)!;
+  }
+
+  const data = await cfRequest<Array<{ id: string; name: string }>>(
+    'GET',
+    `/zones?name=${zoneName}&status=active`,
+  );
+
+  if (!data.result || data.result.length === 0) {
+    throw new Error(`Cloudflare zone not found: ${zoneName}`);
+  }
+
+  const zoneId = data.result[0].id;
+  zoneCache.set(zoneName, zoneId);
+  return zoneId;
+}
+
+async function findCfRecord(
+  zoneId: string,
+  type: string,
+  name: string
+): Promise<CfDnsRecord | null> {
+  const data = await cfRequest<CfDnsRecord[]>(
+    'GET',
+    `/zones/${zoneId}/dns_records?type=${type}&name=${name}`,
+  );
+  return (data.result && data.result.length > 0) ? data.result[0] : null;
 }
 
 async function addDNSRecord(
   zone: string,
   type: string,
   name: string,
-  content: string
+  content: string,
+  proxied: boolean = true
 ): Promise<void> {
-  const rrsets = [
-    {
-      name: `${name}.${zone}.`,
-      type,
-      ttl: 300,
-      changetype: 'REPLACE',
-      records: [{ content, disabled: false }],
-    },
-  ];
+  const zoneId = await getZoneId(zone);
+  const fullName = name === '@' ? zone : `${name}.${zone}`;
 
-  await pdnsRequest('PATCH', `/servers/localhost/zones/${zone}.`, { rrsets });
+  const existing = await findCfRecord(zoneId, type, fullName);
+
+  if (existing) {
+    await cfRequest('PUT', `/zones/${zoneId}/dns_records/${existing.id}`, {
+      type, name: fullName, content, ttl: 1, proxied,
+    });
+    logger.info('DNS record updated (Cloudflare)', { zone, type, name: fullName, content, proxied });
+  } else {
+    await cfRequest('POST', `/zones/${zoneId}/dns_records`, {
+      type, name: fullName, content, ttl: 1, proxied,
+    });
+    logger.info('DNS record created (Cloudflare)', { zone, type, name: fullName, content, proxied });
+  }
 }
 
 async function removeDNSRecord(zone: string, type: string, name: string): Promise<void> {
-  const rrsets = [
-    {
-      name: `${name}.${zone}.`,
-      type,
-      changetype: 'DELETE',
-    },
-  ];
+  const zoneId = await getZoneId(zone);
+  const fullName = name === '@' ? zone : `${name}.${zone}`;
 
-  await pdnsRequest('PATCH', `/servers/localhost/zones/${zone}.`, { rrsets });
+  const existing = await findCfRecord(zoneId, type, fullName);
+
+  if (existing) {
+    await cfRequest('DELETE', `/zones/${zoneId}/dns_records/${existing.id}`);
+    logger.info('DNS record deleted (Cloudflare)', { zone, type, name: fullName });
+  } else {
+    logger.warn('DNS record not found for deletion', { zone, type, name: fullName });
+  }
 }
 
 async function resolveDNS(domain: string, type: string): Promise<string[]> {
@@ -216,7 +270,7 @@ async function getSlotInfo(
 
 export const domainSetupTool = {
   name: 'domain_setup',
-  description: 'Setup a custom domain for a project (Caddy file-based + PowerDNS)',
+  description: 'Setup a custom domain for a project (Caddy file-based + Cloudflare DNS)',
 
   async execute(
     input: DomainSetupInput,
@@ -624,6 +678,8 @@ export const sslStatusTool = {
 export {
   getProjectDomain,
   isSubdomain,
+  addDNSRecord,
+  removeDNSRecord,
   BASE_DOMAIN,
   APP_SERVER_IP,
 };

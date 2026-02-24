@@ -12,8 +12,7 @@ import type {
   SlotName,
   AuthContext,
 } from '../lib/types.js';
-import { withSSH } from '../lib/ssh.js';
-import { SERVERS } from '../lib/servers.js';
+import { withLocal } from '../lib/local-exec.js';
 import { getSlotRegistry, updateSlotRegistry } from './slot.js';
 import {
   writeCaddyConfig,
@@ -69,7 +68,7 @@ export async function executePromote(
 
   const startTime = Date.now();
 
-  return withSSH(SERVERS.app.ip, async (ssh) => {
+  return withLocal(async (local) => {
     try {
       // Step 1: Get slot status
       const slots = await getSlotRegistry(projectName, environment);
@@ -93,7 +92,7 @@ export async function executePromote(
       }
 
       // Step 2: Final health check on new slot
-      const healthResult = await ssh.exec(
+      const healthResult = await local.exec(
         `curl -sf -o /dev/null -w '%{http_code}' http://localhost:${newSlot.port}/ --connect-timeout 5 2>/dev/null || echo "000"`
       );
 

@@ -10,12 +10,9 @@
 
 import { z } from 'zod';
 import type { AuthContext, Environment } from '../lib/types.js';
-import { withSSH } from '../lib/ssh.js';
-import { SERVERS } from '../lib/servers.js';
+import { withLocal } from '../lib/local-exec.js';
 import { ProjectRepo, ProjectEnvRepo } from '../lib/database.js';
 import { logger } from '../lib/logger.js';
-
-const APP_SERVER = SERVERS.app.ip;
 
 // ============================================================================
 // Input Schema
@@ -170,9 +167,9 @@ export const envSyncTool = {
       let unchanged = 0;
 
       if (merge) {
-        const existingContent = await withSSH(APP_SERVER, async (ssh) => {
+        const existingContent = await withLocal(async (local) => {
           try {
-            const result = await ssh.exec(`cat ${envPath} 2>/dev/null || echo ""`);
+            const result = await local.exec(`cat ${envPath} 2>/dev/null || echo ""`);
             return result.stdout;
           } catch {
             return '';
@@ -201,12 +198,12 @@ export const envSyncTool = {
       const finalContent = formatEnvContent(finalVars);
 
       // 4. 서버에 저장
-      await withSSH(APP_SERVER, async (ssh) => {
+      await withLocal(async (local) => {
         // 디렉토리 생성
-        await ssh.exec(`mkdir -p /opt/codeb/projects/${projectName}`);
+        await local.exec(`mkdir -p /opt/codeb/projects/${projectName}`);
 
         // 백업 (기존 파일이 있으면)
-        await ssh.exec(`
+        await local.exec(`
           if [ -f ${envPath} ]; then
             cp ${envPath} ${envPath}.backup.$(date +%Y%m%d%H%M%S)
           fi
@@ -214,10 +211,10 @@ export const envSyncTool = {
 
         // 새 파일 저장 (base64로 안전하게 전송)
         const base64Content = Buffer.from(finalContent).toString('base64');
-        await ssh.exec(`echo "${base64Content}" | base64 -d > ${envPath}`);
+        await local.exec(`echo "${base64Content}" | base64 -d > ${envPath}`);
 
         // 권한 설정
-        await ssh.exec(`chmod 600 ${envPath}`);
+        await local.exec(`chmod 600 ${envPath}`);
       });
 
       const variablesSet = newVarCount - updated - unchanged;
@@ -264,8 +261,8 @@ export const envGetTool = {
     const envPath = `/opt/codeb/projects/${projectName}/.env.${environment}`;
 
     try {
-      const content = await withSSH(APP_SERVER, async (ssh) => {
-        const result = await ssh.exec(`cat ${envPath} 2>/dev/null || echo ""`);
+      const content = await withLocal(async (local) => {
+        const result = await local.exec(`cat ${envPath} 2>/dev/null || echo ""`);
         return result.stdout;
       });
 
@@ -418,10 +415,10 @@ export const envScanTool = {
         serverEnv = dbEnv.env_data;
       } else {
         // 2. Fallback to file on server
-        await withSSH(APP_SERVER, async (ssh) => {
+        await withLocal(async (local) => {
           const envPath = `/opt/codeb/env/${projectName}/.env`;
           try {
-            const result = await ssh.exec(`cat ${envPath} 2>/dev/null || echo ""`);
+            const result = await local.exec(`cat ${envPath} 2>/dev/null || echo ""`);
             if (result.stdout.trim()) {
               serverEnv = parseEnvContent(result.stdout);
             }
@@ -432,7 +429,7 @@ export const envScanTool = {
           // Get backup list
           try {
             const backupDir = `/opt/codeb/env-backup/${projectName}`;
-            const result = await ssh.exec(`ls -t ${backupDir}/.env.* 2>/dev/null | head -10 || true`);
+            const result = await local.exec(`ls -t ${backupDir}/.env.* 2>/dev/null | head -10 || true`);
             serverBackups = result.stdout.trim().split('\n').filter(Boolean);
           } catch {
             // No backups
@@ -545,12 +542,12 @@ export const envRestoreTool = {
         }
       } else {
         // Restore from file backup (master = latest)
-        await withSSH(APP_SERVER, async (ssh) => {
+        await withLocal(async (local) => {
           const backupDir = `/opt/codeb/env-backup/${projectName}`;
           const envPath = `/opt/codeb/env/${projectName}/.env`;
 
           // Get latest backup
-          const result = await ssh.exec(`ls -t ${backupDir}/.env.* 2>/dev/null | head -1`);
+          const result = await local.exec(`ls -t ${backupDir}/.env.* 2>/dev/null | head -1`);
           const backupPath = result.stdout.trim();
 
           if (!backupPath) {
@@ -558,19 +555,19 @@ export const envRestoreTool = {
           }
 
           // Read backup content
-          const contentResult = await ssh.exec(`cat ${backupPath}`);
+          const contentResult = await local.exec(`cat ${backupPath}`);
           restoredEnv = parseEnvContent(contentResult.stdout);
           restoredFrom = backupPath;
 
           // Write to current ENV file
-          await ssh.exec(`mkdir -p /opt/codeb/env/${projectName}`);
+          await local.exec(`mkdir -p /opt/codeb/env/${projectName}`);
           const base64Content = Buffer.from(contentResult.stdout).toString('base64');
-          await ssh.exec(`echo "${base64Content}" | base64 -d > ${envPath}`);
-          await ssh.exec(`chmod 600 ${envPath}`);
+          await local.exec(`echo "${base64Content}" | base64 -d > ${envPath}`);
+          await local.exec(`chmod 600 ${envPath}`);
 
           // Create new backup with timestamp
           const timestamp = Date.now();
-          await ssh.exec(`cp ${envPath} ${backupDir}/.env.${timestamp}`);
+          await local.exec(`cp ${envPath} ${backupDir}/.env.${timestamp}`);
         });
       }
 

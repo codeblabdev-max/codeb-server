@@ -1,14 +1,15 @@
 # codeb-server CI/CD Pipeline
 # Self-Hosted Runner + Minio S3 Cache
 # 자동 배포: git push → API + CLI 배포
+# Worktree 브랜치 지원: worktree-* → 배포 성공 → auto merge to main
 #
-# Updated: 2026-02-06
+# Updated: 2026-02-24
 
 name: codeb-server CI/CD
 
 on:
   push:
-    branches: [main]
+    branches: [main, 'worktree-*']
     paths-ignore:
       - 'v2/**'
       - '.github/workflows/deploy-v2.yml'
@@ -253,6 +254,38 @@ jobs:
           echo "✅ SSOT Registry updated"
 
       # ============================================
+      # Work Task 자동 완료 (배포 성공 시)
+      # ============================================
+      - name: Complete Work Tasks
+        if: success()
+        env:
+          CODEB_API_KEY: ${{ secrets.CODEB_API_KEY }}
+        run: |
+          # 커밋 메시지에서 task ID 추출 (패턴: [#1111] 또는 #1111)
+          COMMIT_MSG=$(git log -1 --pretty=%s)
+          TASK_IDS=$(echo "$COMMIT_MSG" | grep -oP '#\K[0-9]+' || true)
+
+          if [ -z "$TASK_IDS" ]; then
+            echo "ℹ️ 커밋 메시지에 task ID 없음 (예: [#1111] feat: 설명)"
+          else
+            for TASK_ID in $TASK_IDS; do
+              echo "🔄 Task #$TASK_ID 완료 처리 중..."
+              RESULT=$(curl -sf -X POST https://api.codeb.kr/api/tool \
+                -H "X-API-Key: ${CODEB_API_KEY}" \
+                -H "Content-Type: application/json" \
+                -d "{\"tool\":\"task_complete\",\"params\":{\"taskId\":${TASK_ID},\"deployId\":\"deploy-${GITHUB_SHA:0:7}\"}}" \
+                2>/dev/null || echo '{"success":false}')
+
+              SUCCESS=$(echo "$RESULT" | jq -r '.result.success // .success // false')
+              if [ "$SUCCESS" = "true" ]; then
+                echo "✅ Task #$TASK_ID 완료 → 파일 잠금 해제"
+              else
+                echo "⚠️ Task #$TASK_ID 완료 실패 (수동 처리 필요): $RESULT"
+              fi
+            done
+          fi
+
+      # ============================================
       # 최종 요약
       # ============================================
       - name: Deployment Summary
@@ -276,6 +309,42 @@ jobs:
             echo "✅ All components synced to v$VERSION"
           else
             echo "❌ Version mismatch detected!"
+            exit 1
+          fi
+
+      # ============================================
+      # Worktree 브랜치 → main 자동 Merge
+      # ============================================
+      - name: Auto Merge Worktree Branch
+        if: success() && startsWith(github.ref_name, 'worktree-')
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: |
+          BRANCH="${{ github.ref_name }}"
+          echo "🔀 Worktree 브랜치 auto merge: $BRANCH → main"
+
+          # main 최신화
+          git fetch origin main
+          git checkout main
+          git pull origin main
+
+          # worktree 브랜치 merge (squash로 깔끔하게)
+          if git merge --squash "origin/$BRANCH"; then
+            COMMIT_MSG=$(git log "origin/$BRANCH" -1 --pretty=%s)
+            git commit -m "auto-merge: $BRANCH - $COMMIT_MSG
+
+            Deployed via GitHub Actions (${GITHUB_SHA:0:7})
+            Co-Authored-By: CodeB CI <ci@codeb.kr>"
+
+            git push origin main
+            echo "✅ $BRANCH → main merge 완료"
+
+            # worktree 브랜치 삭제
+            git push origin --delete "$BRANCH" 2>/dev/null || true
+            echo "🗑️ 원격 브랜치 $BRANCH 삭제됨"
+          else
+            echo "❌ Merge 충돌! 수동 처리 필요"
+            git merge --abort
             exit 1
           fi
 

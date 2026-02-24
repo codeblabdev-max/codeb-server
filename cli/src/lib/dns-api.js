@@ -1,188 +1,177 @@
 /**
- * DNS API Client - PowerDNS HTTP API
+ * DNS API Client - Cloudflare REST API
  *
- * SSH 없이 HTTP API로 PowerDNS 관리
+ * Cloudflare API로 DNS 레코드 관리
+ * Migrated from PowerDNS (2026-02-24)
  * @author CodeB Team
  */
 
-import axios from 'axios';
-
-// PowerDNS 설정
-// API Key는 프로젝트 .env 또는 환경변수에서 설정
-const PDNS_API_URL = process.env.PDNS_API_URL || 'http://158.247.203.55:8081/api/v1';
-const PDNS_API_KEY = process.env.PDNS_API_KEY || '';
-const DEFAULT_TTL = 300;
+const CF_API_BASE = 'https://api.cloudflare.com/client/v4';
+const CF_API_TOKEN = process.env.CLOUDFLARE_API_TOKEN || '';
 const APP_SERVER_IP = process.env.APP_SERVER_IP || '158.247.203.55';
 
 /**
- * PowerDNS API 클라이언트
+ * Cloudflare DNS API 클라이언트
  */
 class DNSApi {
   constructor() {
-    this.client = axios.create({
-      baseURL: PDNS_API_URL,
-      headers: {
-        'X-API-Key': PDNS_API_KEY,
-        'Content-Type': 'application/json'
-      },
-      timeout: 10000
-    });
+    this.zoneCache = new Map();
   }
 
   /**
-   * API Key 설정 여부 확인
+   * API Token 설정 여부 확인
    */
   isConfigured() {
-    return !!PDNS_API_KEY;
+    return !!CF_API_TOKEN;
   }
 
   /**
-   * API Key 검증
-   * @throws {Error} API Key가 설정되지 않은 경우
+   * API Token 검증
    */
   validateApiKey() {
-    if (!PDNS_API_KEY) {
+    if (!CF_API_TOKEN) {
       throw new Error(
-        'PDNS_API_KEY is not configured. ' +
-        'Please set PDNS_API_KEY in your project .env file or environment variables.'
+        'CLOUDFLARE_API_TOKEN is not configured. ' +
+        'Please set CLOUDFLARE_API_TOKEN in your .env file or environment variables.'
       );
     }
+  }
+
+  /**
+   * Cloudflare API 호출
+   */
+  async cfRequest(method, path, body) {
+    this.validateApiKey();
+    const url = `${CF_API_BASE}${path}`;
+
+    const response = await fetch(url, {
+      method,
+      headers: {
+        'Authorization': `Bearer ${CF_API_TOKEN}`,
+        'Content-Type': 'application/json',
+      },
+      body: body ? JSON.stringify(body) : undefined,
+    });
+
+    const data = await response.json();
+
+    if (!data.success) {
+      const errMsg = data.errors?.map(e => e.message).join(', ') || 'Unknown error';
+      throw new Error(`Cloudflare API error: ${errMsg}`);
+    }
+
+    return data;
+  }
+
+  /**
+   * Zone ID 조회 (캐싱)
+   */
+  async getZoneId(zoneName) {
+    if (this.zoneCache.has(zoneName)) {
+      return this.zoneCache.get(zoneName);
+    }
+
+    const data = await this.cfRequest('GET', `/zones?name=${zoneName}&status=active`);
+
+    if (!data.result || data.result.length === 0) {
+      throw new Error(`Zone not found: ${zoneName}`);
+    }
+
+    const zoneId = data.result[0].id;
+    this.zoneCache.set(zoneName, zoneId);
+    return zoneId;
+  }
+
+  /**
+   * 기존 레코드 찾기
+   */
+  async findRecord(zoneId, type, name) {
+    const data = await this.cfRequest('GET', `/zones/${zoneId}/dns_records?type=${type}&name=${name}`);
+    return (data.result && data.result.length > 0) ? data.result[0] : null;
   }
 
   /**
    * 존 목록 조회
    */
   async listZones() {
-    this.validateApiKey();
-    try {
-      const response = await this.client.get('/servers/localhost/zones');
-      return response.data;
-    } catch (error) {
-      throw new Error(`Failed to list zones: ${error.message}`);
-    }
+    const data = await this.cfRequest('GET', '/zones?per_page=50&status=active');
+    return data.result || [];
   }
 
   /**
    * 특정 존의 레코드 조회
    */
   async getZone(zoneName) {
-    this.validateApiKey();
     try {
-      // 존 이름 정규화 (마지막에 . 추가)
-      const normalizedZone = zoneName.endsWith('.') ? zoneName : `${zoneName}.`;
-      const response = await this.client.get(`/servers/localhost/zones/${normalizedZone}`);
-      return response.data;
+      const zoneId = await this.getZoneId(zoneName);
+      const data = await this.cfRequest('GET', `/zones/${zoneId}/dns_records?per_page=100`);
+      return { id: zoneId, name: zoneName, records: data.result || [] };
     } catch (error) {
-      if (error.response?.status === 404) {
-        return null;
-      }
-      throw new Error(`Failed to get zone ${zoneName}: ${error.message}`);
+      return null;
     }
   }
 
   /**
-   * A 레코드 추가
-   * @param {string} domain - 도메인 (예: worb.codeb.kr)
-   * @param {string} ip - IP 주소 (기본값: APP_SERVER_IP)
+   * A 레코드 추가/업데이트 (upsert)
    */
   async addARecord(domain, ip = APP_SERVER_IP) {
-    this.validateApiKey();
-    try {
-      // 도메인에서 존과 호스트 추출
-      const parts = domain.split('.');
-      if (parts.length < 2) {
-        throw new Error('Invalid domain format');
-      }
+    const parts = domain.split('.');
+    if (parts.length < 2) throw new Error('Invalid domain format');
 
-      // 존 이름 (예: codeb.kr.)
-      const zoneName = parts.slice(-2).join('.') + '.';
-      // 레코드 이름 (예: worb.codeb.kr.)
-      const recordName = domain.endsWith('.') ? domain : `${domain}.`;
+    const zoneName = parts.slice(-2).join('.');
+    const zoneId = await this.getZoneId(zoneName);
+    const existing = await this.findRecord(zoneId, 'A', domain);
 
-      const payload = {
-        rrsets: [
-          {
-            name: recordName,
-            type: 'A',
-            ttl: DEFAULT_TTL,
-            changetype: 'REPLACE',
-            records: [
-              {
-                content: ip,
-                disabled: false
-              }
-            ]
-          }
-        ]
-      };
-
-      await this.client.patch(`/servers/localhost/zones/${zoneName}`, payload);
-      return { success: true, domain, ip, zone: zoneName };
-    } catch (error) {
-      throw new Error(`Failed to add A record for ${domain}: ${error.message}`);
+    if (existing) {
+      await this.cfRequest('PUT', `/zones/${zoneId}/dns_records/${existing.id}`, {
+        type: 'A', name: domain, content: ip, ttl: 1, proxied: true,
+      });
+    } else {
+      await this.cfRequest('POST', `/zones/${zoneId}/dns_records`, {
+        type: 'A', name: domain, content: ip, ttl: 1, proxied: true,
+      });
     }
+
+    return { success: true, domain, ip, zone: zoneName };
   }
 
   /**
-   * CNAME 레코드 추가
+   * CNAME 레코드 추가/업데이트 (upsert)
    */
   async addCNAME(domain, target) {
-    this.validateApiKey();
-    try {
-      const parts = domain.split('.');
-      const zoneName = parts.slice(-2).join('.') + '.';
-      const recordName = domain.endsWith('.') ? domain : `${domain}.`;
-      const targetName = target.endsWith('.') ? target : `${target}.`;
+    const parts = domain.split('.');
+    const zoneName = parts.slice(-2).join('.');
+    const zoneId = await this.getZoneId(zoneName);
+    const existing = await this.findRecord(zoneId, 'CNAME', domain);
 
-      const payload = {
-        rrsets: [
-          {
-            name: recordName,
-            type: 'CNAME',
-            ttl: DEFAULT_TTL,
-            changetype: 'REPLACE',
-            records: [
-              {
-                content: targetName,
-                disabled: false
-              }
-            ]
-          }
-        ]
-      };
-
-      await this.client.patch(`/servers/localhost/zones/${zoneName}`, payload);
-      return { success: true, domain, target };
-    } catch (error) {
-      throw new Error(`Failed to add CNAME record for ${domain}: ${error.message}`);
+    if (existing) {
+      await this.cfRequest('PUT', `/zones/${zoneId}/dns_records/${existing.id}`, {
+        type: 'CNAME', name: domain, content: target, ttl: 1, proxied: true,
+      });
+    } else {
+      await this.cfRequest('POST', `/zones/${zoneId}/dns_records`, {
+        type: 'CNAME', name: domain, content: target, ttl: 1, proxied: true,
+      });
     }
+
+    return { success: true, domain, target };
   }
 
   /**
    * 레코드 삭제
    */
   async deleteRecord(domain, type = 'A') {
-    this.validateApiKey();
-    try {
-      const parts = domain.split('.');
-      const zoneName = parts.slice(-2).join('.') + '.';
-      const recordName = domain.endsWith('.') ? domain : `${domain}.`;
+    const parts = domain.split('.');
+    const zoneName = parts.slice(-2).join('.');
+    const zoneId = await this.getZoneId(zoneName);
+    const existing = await this.findRecord(zoneId, type, domain);
 
-      const payload = {
-        rrsets: [
-          {
-            name: recordName,
-            type: type,
-            changetype: 'DELETE'
-          }
-        ]
-      };
-
-      await this.client.patch(`/servers/localhost/zones/${zoneName}`, payload);
+    if (existing) {
+      await this.cfRequest('DELETE', `/zones/${zoneId}/dns_records/${existing.id}`);
       return { success: true, domain, type };
-    } catch (error) {
-      throw new Error(`Failed to delete ${type} record for ${domain}: ${error.message}`);
     }
+
+    return { success: true, domain, type, note: 'Record not found' };
   }
 
   /**
@@ -191,25 +180,17 @@ class DNSApi {
   async checkDomain(domain) {
     try {
       const parts = domain.split('.');
-      const zoneName = parts.slice(-2).join('.') + '.';
-      const recordName = domain.endsWith('.') ? domain : `${domain}.`;
+      const zoneName = parts.slice(-2).join('.');
+      const zoneId = await this.getZoneId(zoneName);
 
-      const zone = await this.getZone(zoneName);
-      if (!zone) {
-        return { exists: false, reason: 'Zone not found' };
+      const aRecord = await this.findRecord(zoneId, 'A', domain);
+      if (aRecord) {
+        return { exists: true, type: 'A', content: aRecord.content, ttl: aRecord.ttl, proxied: aRecord.proxied };
       }
 
-      const record = zone.rrsets?.find(
-        r => r.name === recordName && (r.type === 'A' || r.type === 'CNAME')
-      );
-
-      if (record) {
-        return {
-          exists: true,
-          type: record.type,
-          records: record.records,
-          ttl: record.ttl
-        };
+      const cnameRecord = await this.findRecord(zoneId, 'CNAME', domain);
+      if (cnameRecord) {
+        return { exists: true, type: 'CNAME', content: cnameRecord.content, ttl: cnameRecord.ttl, proxied: cnameRecord.proxied };
       }
 
       return { exists: false, reason: 'Record not found in zone' };
@@ -226,11 +207,9 @@ class DNSApi {
     const { ip = APP_SERVER_IP, www = false } = options;
     const results = [];
 
-    // A 레코드 추가
     const aResult = await this.addARecord(domain, ip);
     results.push({ type: 'A', ...aResult });
 
-    // www CNAME 추가 (옵션)
     if (www) {
       const wwwDomain = `www.${domain}`;
       const cnameResult = await this.addCNAME(wwwDomain, domain);

@@ -10,7 +10,13 @@
 
 import { EventEmitter } from 'events';
 import { Response } from 'express';
-import { execCommand } from './ssh.js';
+import { getLocalExec } from './local-exec.js';
+
+// execCommand replacement — execute locally instead of SSH
+async function execCommand(_serverRole: string, command: string): Promise<{ stdout: string; stderr: string }> {
+  const local = getLocalExec();
+  return local.exec(command);
+}
 
 // ============================================================================
 // Types
