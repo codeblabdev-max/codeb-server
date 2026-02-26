@@ -12,7 +12,7 @@ import type {
   SlotName,
   AuthContext,
 } from '../lib/types.js';
-import { withLocal } from '../lib/local-exec.js';
+import { withLocal, httpHealthCheck } from '../lib/local-exec.js';
 import { getSlotRegistry, updateSlotRegistry } from './slot.js';
 import {
   writeCaddyConfig,
@@ -91,12 +91,10 @@ export async function executePromote(
         };
       }
 
-      // Step 2: Final health check on new slot
-      const healthResult = await local.exec(
-        `curl -sf -o /dev/null -w '%{http_code}' http://localhost:${newSlot.port}/ --connect-timeout 5 2>/dev/null || echo "000"`
-      );
+      // Step 2: Final health check on new slot (Node.js native HTTP — curl 의존성 제거)
+      const healthStatus = await httpHealthCheck(newSlot.port, ['/', '/health', '/api/health'], 5000);
 
-      if (!healthResult.stdout.trim().startsWith('2') && !healthResult.stdout.trim().startsWith('3')) {
+      if (!healthStatus.startsWith('2') && !healthStatus.startsWith('3')) {
         return {
           success: false,
           fromSlot: currentActive,
@@ -104,7 +102,7 @@ export async function executePromote(
           productionUrl: '',
           newVersion: newSlot.version || '',
           duration: Date.now() - startTime,
-          error: `Health check failed on ${newActive} slot (port ${newSlot.port}): HTTP ${healthResult.stdout.trim()}`,
+          error: `Health check failed on ${newActive} slot (port ${newSlot.port}): HTTP ${healthStatus}`,
         };
       }
 

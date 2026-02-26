@@ -10,7 +10,7 @@ import type {
   SlotName,
   AuthContext,
 } from '../lib/types.js';
-import { withLocal } from '../lib/local-exec.js';
+import { withLocal, httpHealthCheck } from '../lib/local-exec.js';
 import { getSlotRegistry, updateSlotRegistry } from './slot.js';
 
 // ============================================================================
@@ -79,12 +79,10 @@ export async function executeRollback(
         };
       }
 
-      // Step 2: Health check on grace slot
-      const healthResult = await local.exec(
-        `curl -sf -o /dev/null -w '%{http_code}' http://localhost:${graceSlot.port}/health 2>/dev/null || echo "000"`
-      );
+      // Step 2: Health check on grace slot (Node.js native HTTP — curl 의존성 제거)
+      const healthStatus = await httpHealthCheck(graceSlot.port, ['/health', '/api/health'], 5000);
 
-      if (!healthResult.stdout.trim().startsWith('2')) {
+      if (!healthStatus.startsWith('2')) {
         return {
           success: false,
           fromSlot: currentActive,

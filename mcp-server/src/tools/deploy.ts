@@ -35,7 +35,7 @@ import type {
   Environment,
   AuthContext,
 } from '../lib/types.js';
-import { withLocal, type LocalExec } from '../lib/local-exec.js';
+import { withLocal, type LocalExec, httpHealthCheck } from '../lib/local-exec.js';
 import { getSlotPorts } from '../lib/servers.js';
 import { ProjectRepo, SlotRepo, DeploymentRepo, ProjectEnvRepo } from '../lib/database.js';
 import { updateSlotRegistry } from './slot.js';
@@ -380,7 +380,7 @@ export async function executeDeploy(
           --restart always \\
           --env-file ${actualEnvFile} \\
           -p ${targetPort}:3000 \\
-          --health-cmd="curl -sf http://localhost:3000/health || curl -sf http://localhost:3000/api/health || exit 1" \\
+          --health-cmd="node -e \"const h=require('http'),c=(p,cb)=>h.get('http://localhost:3000'+p,r=>{r.resume();r.statusCode<400?process.exit(0):cb()}).on('error',cb);c('/health',()=>c('/api/health',()=>process.exit(1)))\" || wget -q --spider http://localhost:3000/health 2>/dev/null || exit 1" \\
           --health-interval=10s \\
           --health-timeout=5s \\
           --health-retries=5 \\
@@ -621,19 +621,15 @@ async function waitForHealthy(
       // "starting" 상태일 때 — Docker는 아직 판단 안 했지만 HTTP로 직접 확인
     }
 
-    // 2차: 호스트에서 직접 HTTP 체크 (Docker start-period 중에도 조기 성공 감지 가능)
+    // 2차: Node.js native HTTP 체크 (curl 의존성 제거 — Alpine 컨테이너 호환)
     try {
-      const result = await local.exec(
-        `curl -sf -o /dev/null -w '%{http_code}' --max-time 5 http://localhost:${port}/health 2>/dev/null || curl -sf -o /dev/null -w '%{http_code}' --max-time 5 http://localhost:${port}/api/health 2>/dev/null || echo "000"`,
-        { timeout: 15000 }
-      );
-      const statusCode = result.stdout.trim();
+      const statusCode = await httpHealthCheck(port, ['/health', '/api/health'], 5000);
       if (statusCode.startsWith('2')) {
         logger.info('Health check passed (http)', { containerName, port, elapsed, statusCode });
         return;
       }
     } catch {
-      // curl 실패 — 다음 폴링으로
+      // HTTP 체크 실패 — 다음 폴링으로
     }
 
     // 10회(50초)마다 진행 상황 로깅

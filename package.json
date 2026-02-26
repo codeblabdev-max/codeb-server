@@ -1,6 +1,6 @@
 {
   "name": "@codeb-dev-run/we-cli",
-  "version": "9.0.2",
+  "version": "9.0.3",
   "description": "CodeB we-cli: Deploy, Analyze, Workflow with 7-Agent System + Auto Claude Code Integration",
   "type": "module",
   "main": "./cli/bin/we.js",

@@ -14,6 +14,8 @@
 
 import { exec as cpExec } from 'child_process';
 import { readFile, writeFile, mkdir, access, constants } from 'fs/promises';
+import { request as httpRequest } from 'http';
+import { request as httpsRequest } from 'https';
 import type { SSHResult } from './types.js';
 import { logger } from './logger.js';
 
@@ -200,4 +202,95 @@ export async function execStorageSQLBatch(statements: string[]): Promise<void> {
       }
     }
   }
+}
+
+// ============================================================================
+// HTTP Health Check (Node.js native — curl/wget 의존성 제거)
+// ============================================================================
+
+/**
+ * Node.js native HTTP 헬스체크
+ * curl 대신 http.request 사용 — Alpine 컨테이너에서도 동작
+ *
+ * @returns HTTP 상태코드 문자열 (예: "200", "404") 또는 실패 시 "000"
+ */
+export function httpHealthCheck(
+  port: number,
+  paths: string[] = ['/health', '/api/health'],
+  timeoutMs: number = 5000
+): Promise<string> {
+  return new Promise((resolve) => {
+    let resolved = false;
+    let attempted = 0;
+
+    function tryPath(path: string) {
+      const req = httpRequest(
+        { hostname: 'localhost', port, path, method: 'GET', timeout: timeoutMs },
+        (res) => {
+          // 응답 데이터 소비 (메모리 누수 방지)
+          res.resume();
+          if (!resolved) {
+            resolved = true;
+            resolve(String(res.statusCode));
+          }
+        }
+      );
+
+      req.on('error', () => {
+        attempted++;
+        if (attempted >= paths.length && !resolved) {
+          resolved = true;
+          resolve('000');
+        }
+      });
+
+      req.on('timeout', () => {
+        req.destroy();
+        attempted++;
+        if (attempted >= paths.length && !resolved) {
+          resolved = true;
+          resolve('000');
+        }
+      });
+
+      req.end();
+    }
+
+    // 모든 경로를 병렬로 시도, 첫 번째 성공 응답 반환
+    for (const path of paths) {
+      tryPath(path);
+    }
+  });
+}
+
+/**
+ * HTTPS 헤더 체크 (SSL 인증서 확인용)
+ * curl -sI 대체
+ *
+ * @returns 첫 번째 응답 라인 (예: "HTTP/1.1 200 OK") 또는 에러 메시지
+ */
+export function httpsHeaderCheck(
+  domain: string,
+  timeoutMs: number = 5000
+): Promise<string> {
+  return new Promise((resolve) => {
+    const req = httpsRequest(
+      { hostname: domain, port: 443, path: '/', method: 'HEAD', timeout: timeoutMs },
+      (res) => {
+        res.resume();
+        resolve(`HTTP/${res.httpVersion} ${res.statusCode} ${res.statusMessage}`);
+      }
+    );
+
+    req.on('error', (err) => {
+      resolve(`error: ${err.message}`);
+    });
+
+    req.on('timeout', () => {
+      req.destroy();
+      resolve('pending');
+    });
+
+    req.end();
+  });
 }

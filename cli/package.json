@@ -1,6 +1,6 @@
 {
   "name": "@codeb-dev-run/we-cli",
-  "version": "9.0.2",
+  "version": "9.0.3",
   "description": "/we: Web Deploy CLI - MCP-First + Skills Auto-Activation",
   "type": "module",
   "bin": {

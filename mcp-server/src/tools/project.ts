@@ -31,7 +31,7 @@
 import { z } from 'zod';
 import { randomBytes } from 'crypto';
 import type { AuthContext } from '../lib/types.js';
-import { withLocal, execStorageSQLBatch } from '../lib/local-exec.js';
+import { withLocal, execStorageSQLBatch, httpsHeaderCheck } from '../lib/local-exec.js';
 import { SERVERS, getSlotPorts } from '../lib/servers.js';
 import { ProjectRepo, SlotRepo, TeamRepo } from '../lib/database.js';
 import { initializeSlots, getAvailablePort } from './slot.js';
@@ -322,13 +322,11 @@ ${domain} {
         }
       }
 
-      // SSL 인증서 발급 대기 (최대 30초)
+      // SSL 인증서 발급 대기 (최대 30초, Node.js native HTTPS — curl 의존성 제거)
       for (let i = 0; i < 10; i++) {
         await new Promise(resolve => setTimeout(resolve, 3000));
-        const certCheck = await local.exec(
-          `curl -sI https://${domain} --connect-timeout 5 2>&1 | head -1 || echo "pending"`
-        );
-        if (certCheck.stdout.includes('HTTP/') || certCheck.stdout.includes('200')) {
+        const certResult = await httpsHeaderCheck(domain, 5000);
+        if (certResult.includes('HTTP/') || certResult.includes('200')) {
           break;
         }
       }
