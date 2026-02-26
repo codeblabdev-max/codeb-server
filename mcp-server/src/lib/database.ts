@@ -776,6 +776,9 @@ function mapProject(row: any): ProjectRecord {
 }
 
 function mapProjectSlots(row: any): ProjectSlots {
+  // grace_expires_at은 DB에 1개 컬럼이므로, grace 상태인 슬롯에 매핑
+  const graceExpiresAt = row.grace_expires_at?.toISOString();
+
   return {
     projectName: row.project_name,
     environment: row.environment,
@@ -790,6 +793,7 @@ function mapProjectSlots(row: any): ProjectSlots {
       deployedAt: row.blue_deployed_at?.toISOString(),
       deployedBy: row.blue_deployed_by,
       healthStatus: row.blue_health_status,
+      graceExpiresAt: row.blue_state === 'grace' ? graceExpiresAt : undefined,
     },
     green: {
       name: 'green',
@@ -800,7 +804,7 @@ function mapProjectSlots(row: any): ProjectSlots {
       deployedAt: row.green_deployed_at?.toISOString(),
       deployedBy: row.green_deployed_by,
       healthStatus: row.green_health_status,
-      graceExpiresAt: row.grace_expires_at?.toISOString(),
+      graceExpiresAt: row.green_state === 'grace' ? graceExpiresAt : undefined,
     },
   };
 }

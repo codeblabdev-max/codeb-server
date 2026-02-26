@@ -1,6 +1,6 @@
 {
   "name": "codeb-mcp",
-  "version": "9.0.1",
+  "version": "9.0.2",
   "description": "CodeB v9.0 - Unified HTTP API Server with Blue-Green Deployment (SSH-Free, Local Execution)",
   "type": "module",
   "main": "dist/index.js",

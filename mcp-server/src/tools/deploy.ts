@@ -38,6 +38,7 @@ import type {
 import { withLocal, type LocalExec } from '../lib/local-exec.js';
 import { getSlotPorts } from '../lib/servers.js';
 import { ProjectRepo, SlotRepo, DeploymentRepo, ProjectEnvRepo } from '../lib/database.js';
+import { updateSlotRegistry } from './slot.js';
 import { logger } from '../lib/logger.js';
 
 // ============================================================================
@@ -163,7 +164,7 @@ export async function executeDeploy(
         green: { name: 'green', state: 'empty', port: slotPorts.green },
       };
 
-      await SlotRepo.upsert(slots);
+      await updateSlotRegistry(projectName, environment, slots);
 
       steps.push({
         name: 'get_slot_status',
@@ -457,7 +458,7 @@ export async function executeDeploy(
         });
       }
 
-      // Step 10: DB 슬롯 레지스트리 업데이트
+      // Step 10: DB + JSON 슬롯 레지스트리 업데이트 (SSOT 동기화)
       const step10Start = Date.now();
       try {
         slots[targetSlot] = {
@@ -470,15 +471,14 @@ export async function executeDeploy(
           deployedBy: auth.keyId,
           healthStatus: 'healthy',
         };
-        slots.lastUpdated = new Date().toISOString();
 
-        await SlotRepo.upsert(slots);
+        await updateSlotRegistry(projectName, environment, slots);
 
         steps.push({
           name: 'update_registry',
           status: 'success',
           duration: Date.now() - step10Start,
-          output: 'DB slot registry updated',
+          output: 'Slot registry updated (DB + JSON synced)',
         });
       } catch (error) {
         steps.push({
