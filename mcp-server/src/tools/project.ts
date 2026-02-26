@@ -847,9 +847,9 @@ jobs:
 
       - name: Deploy to inactive slot (Blue-Green via MCP API)
         id: deploy
-        timeout-minutes: 5
+        timeout-minutes: 8
         run: |
-          RESPONSE=\$(curl -sf --max-time 180 -X POST "https://api.codeb.kr/api/tool" \\
+          RESPONSE=\$(curl -sf --max-time 300 -X POST "https://api.codeb.kr/api/tool" \\
             -H "X-API-Key: \${{ secrets.CODEB_API_KEY }}" \\
             -H "Content-Type: application/json" \\
             -d '{

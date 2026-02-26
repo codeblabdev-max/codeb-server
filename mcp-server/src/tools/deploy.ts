@@ -56,6 +56,7 @@ export const deployInputSchema = z.object({
   useGhcr: z.boolean().optional().describe('Force use GHCR instead of private registry'),
   skipHealthcheck: z.boolean().optional().describe('Skip health check'),
   skipValidation: z.boolean().optional().describe('Skip pre-deploy validation'),
+  healthcheckTimeout: z.number().min(30).max(600).optional().describe('Health check timeout in seconds (default: 120)'),
 });
 
 // ============================================================================
@@ -87,6 +88,7 @@ export async function executeDeploy(
     version = 'latest',
     skipHealthcheck = false,
     skipValidation = false,
+    healthcheckTimeout = 120,
   } = input;
 
   const steps: DeployStep[] = [];
@@ -380,8 +382,8 @@ export async function executeDeploy(
           --health-cmd="curl -sf http://localhost:3000/health || curl -sf http://localhost:3000/api/health || exit 1" \\
           --health-interval=10s \\
           --health-timeout=5s \\
-          --health-retries=3 \\
-          --health-start-period=30s \\
+          --health-retries=5 \\
+          --health-start-period=60s \\
           --memory=512m \\
           --cpus=1 \\
           ${dockerLabels} \\
@@ -409,7 +411,7 @@ export async function executeDeploy(
       const step9Start = Date.now();
       if (!skipHealthcheck) {
         try {
-          await waitForHealthy(local, targetPort, 60, containerName);
+          await waitForHealthy(local, targetPort, healthcheckTimeout, containerName);
           steps.push({
             name: 'health_check',
             status: 'success',
@@ -417,15 +419,31 @@ export async function executeDeploy(
             output: 'Container is healthy',
           });
         } catch (error) {
+          // 진단: 컨테이너 삭제 전에 상태/로그 수집
+          let diagnosis = '';
+          try {
+            const containerState = await local.exec(
+              `docker inspect ${containerName} --format '{{.State.Status}} (health: {{.State.Health.Status}})' 2>/dev/null || echo "removed"`
+            );
+            const containerLogs = await local.exec(
+              `docker logs ${containerName} --tail 40 2>&1 || echo "no logs"`
+            );
+            diagnosis = `[Container: ${containerState.stdout.trim()}]\n${containerLogs.stdout.slice(0, 1000)}`;
+          } catch {
+            // 진단 실패해도 계속 진행
+          }
+
           // 롤백: 실패한 컨테이너 제거
           await local.exec(`docker stop ${containerName} 2>/dev/null || true`);
           await local.exec(`docker rm ${containerName} 2>/dev/null || true`);
 
+          const errorMsg = error instanceof Error ? error.message : String(error);
           steps.push({
             name: 'health_check',
             status: 'failed',
             duration: Date.now() - step9Start,
-            error: error instanceof Error ? error.message : String(error),
+            error: errorMsg,
+            output: diagnosis || undefined,
           });
           await DeploymentRepo.updateStatus(deploymentId, 'failed', { steps, error: 'Health check failed' });
           return buildResult(false, steps, startTime, targetSlot, targetPort, projectName, environment);
@@ -534,6 +552,13 @@ function parseEnvContent(content: string): Record<string, string> {
 
 /**
  * Wait for container to become healthy (Docker)
+ *
+ * 전략:
+ * 1단계 (0-15초): 컨테이너 running 상태 확인 (crash 조기 감지)
+ * 2단계 (15초-timeout): Docker healthcheck + HTTP 직접 폴링
+ *
+ * Docker --health-start-period=60s 동안 Docker inspect는 "starting" 반환하므로
+ * HTTP 직접 체크를 병행하여 조기 성공 감지
  */
 async function waitForHealthy(
   local: LocalExec,
@@ -541,46 +566,94 @@ async function waitForHealthy(
   timeoutSeconds: number,
   containerName?: string
 ): Promise<void> {
-  const maxAttempts = Math.ceil(timeoutSeconds / 5);
+  const startTime = Date.now();
+  const timeoutMs = timeoutSeconds * 1000;
+  const pollInterval = 5000; // 5초 간격 폴링
 
-  // 컨테이너 시작 대기
+  // Phase 1: 컨테이너가 실제로 running 상태인지 확인 (crash 조기 감지)
   await new Promise(resolve => setTimeout(resolve, 3000));
 
-  for (let i = 0; i < maxAttempts; i++) {
-    // 1차: Docker healthcheck 상태 확인 (가장 신뢰성 있음)
+  if (containerName) {
+    const stateResult = await local.exec(
+      `docker inspect ${containerName} --format '{{.State.Status}}' 2>/dev/null || echo "missing"`
+    );
+    const state = stateResult.stdout.trim();
+    if (state === 'exited' || state === 'dead' || state === 'missing') {
+      // 컨테이너가 즉시 죽은 경우 - 로그 수집 후 빠른 실패
+      const logs = await local.exec(
+        `docker logs ${containerName} --tail 30 2>&1 || echo "no logs"`
+      );
+      throw new Error(
+        `Container crashed immediately (state: ${state}). Last logs:\n${logs.stdout.slice(0, 500)}`
+      );
+    }
+  }
+
+  // Phase 2: 헬스체크 폴링 (Docker inspect + HTTP 직접 체크 병행)
+  // Docker start-period(60초) 동안은 inspect가 "starting"이므로 HTTP 직접 체크도 함께 수행
+  logger.info('Health check started', { containerName, port, timeoutSeconds });
+
+  while (Date.now() - startTime < timeoutMs) {
+    const elapsed = Math.round((Date.now() - startTime) / 1000);
+
+    // 1차: Docker healthcheck 상태 확인
     if (containerName) {
       const healthResult = await local.exec(
         `docker inspect ${containerName} --format '{{.State.Health.Status}}' 2>/dev/null || echo "unknown"`
       );
       const healthStatus = healthResult.stdout.trim();
+
       if (healthStatus === 'healthy') {
+        logger.info('Health check passed (docker)', { containerName, elapsed });
         return;
       }
+
+      // 컨테이너가 죽었으면 빠른 실패
+      if (healthStatus === 'unhealthy') {
+        const logs = await local.exec(
+          `docker logs ${containerName} --tail 30 2>&1 || echo "no logs"`
+        );
+        throw new Error(
+          `Container unhealthy after ${elapsed}s. Last logs:\n${logs.stdout.slice(0, 500)}`
+        );
+      }
+
+      // "starting" 상태일 때 — Docker는 아직 판단 안 했지만 HTTP로 직접 확인
     }
 
-    // 2차: 컨테이너 내부에서 직접 curl
-    if (containerName) {
-      const execResult = await local.exec(
-        `docker exec ${containerName} sh -c 'curl -sf http://localhost:3000/health 2>/dev/null || curl -sf http://localhost:3000/api/health 2>/dev/null' && echo "OK" || echo "FAIL"`
+    // 2차: 호스트에서 직접 HTTP 체크 (Docker start-period 중에도 조기 성공 감지 가능)
+    try {
+      const result = await local.exec(
+        `curl -sf -o /dev/null -w '%{http_code}' --max-time 5 http://localhost:${port}/health 2>/dev/null || curl -sf -o /dev/null -w '%{http_code}' --max-time 5 http://localhost:${port}/api/health 2>/dev/null || echo "000"`,
+        { timeout: 15000 }
       );
-      if (execResult.stdout.includes('OK')) {
+      const statusCode = result.stdout.trim();
+      if (statusCode.startsWith('2')) {
+        logger.info('Health check passed (http)', { containerName, port, elapsed, statusCode });
         return;
       }
+    } catch {
+      // curl 실패 — 다음 폴링으로
     }
 
-    // 3차: 호스트에서 직접 curl (fallback)
-    const result = await local.exec(
-      `curl -sf -o /dev/null -w '%{http_code}' http://localhost:${port}/health 2>/dev/null || curl -sf -o /dev/null -w '%{http_code}' http://localhost:${port}/api/health 2>/dev/null || echo "000"`
-    );
-    const statusCode = result.stdout.trim();
-    if (statusCode.startsWith('2')) {
-      return;
+    // 10회(50초)마다 진행 상황 로깅
+    if (elapsed % 30 === 0 && elapsed > 0) {
+      logger.info('Health check still waiting...', { containerName, elapsed, timeoutSeconds });
     }
 
-    await new Promise(resolve => setTimeout(resolve, 5000));
+    await new Promise(resolve => setTimeout(resolve, pollInterval));
   }
 
-  throw new Error(`Health check failed after ${timeoutSeconds}s`);
+  // 타임아웃 — 컨테이너 로그 수집하여 디버깅 정보 제공
+  let debugInfo = '';
+  if (containerName) {
+    const logs = await local.exec(
+      `docker logs ${containerName} --tail 50 2>&1 || echo "no logs"`
+    );
+    debugInfo = `\nContainer logs:\n${logs.stdout.slice(0, 800)}`;
+  }
+
+  throw new Error(`Health check timed out after ${timeoutSeconds}s (port ${port})${debugInfo}`);
 }
 
 /**

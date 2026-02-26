@@ -118,6 +118,7 @@ export interface DeployInput {
   useGhcr?: boolean;
   skipHealthcheck?: boolean;
   skipValidation?: boolean;
+  healthcheckTimeout?: number;
 }
 
 export interface DeployResult {
