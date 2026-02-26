@@ -113,7 +113,7 @@ npm install -g @anthropic-ai/claude-code
 ### Step 2: CodeB CLI + MCP 서버 설치
 
 ```bash
-npm install -g @codeblabdev-max/we-cli
+npm install -g @codeb-dev-run/we-cli
 ```
 
 ### Step 3: MCP 서버 등록
@@ -122,7 +122,7 @@ npm install -g @codeblabdev-max/we-cli
 # 자동 등록 (권장)
 claude mcp add codeb-deploy \
   --command node \
-  --args "/opt/homebrew/lib/node_modules/@codeblabdev-max/we-cli/bin/codeb-mcp.js" \
+  --args "/opt/homebrew/lib/node_modules/@codeb-dev-run/we-cli/bin/codeb-mcp.js" \
   --env CODEB_API_URL=https://api.codeb.kr
 ```
 
@@ -133,7 +133,7 @@ claude mcp add codeb-deploy \
   "mcpServers": {
     "codeb-deploy": {
       "command": "node",
-      "args": ["/opt/homebrew/lib/node_modules/@codeblabdev-max/we-cli/bin/codeb-mcp.js"],
+      "args": ["/opt/homebrew/lib/node_modules/@codeb-dev-run/we-cli/bin/codeb-mcp.js"],
       "env": {
         "CODEB_API_URL": "https://api.codeb.kr"
       }

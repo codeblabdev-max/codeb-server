@@ -47,7 +47,7 @@ import { logger } from '../lib/logger.js';
 
 // Private Docker Registry 설정
 const PRIVATE_REGISTRY = '64.176.226.119:5000';
-const GHCR_FALLBACK = 'ghcr.io/codeblabdev-max';
+const GHCR_FALLBACK = 'ghcr.io/codeb-dev-run';
 
 export const deployInputSchema = z.object({
   projectName: z.string().min(1).max(50).describe('Project name'),

@@ -213,7 +213,7 @@ ssh $API_SERVER "
     },
     \"git\": {
       \"version\": \"$NEW_VERSION\",
-      \"repo\": \"https://github.com/codeblabdev-max/codeb-server\"
+      \"repo\": \"https://github.com/codeb-dev-run/codeb-server\"
     }
   }
 }

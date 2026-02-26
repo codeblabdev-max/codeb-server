@@ -1,5 +1,5 @@
 {
-  "name": "@codeblabdev-max/we-cli",
+  "name": "@codeb-dev-run/we-cli",
   "version": "9.0.2",
   "description": "/we: Web Deploy CLI - MCP-First + Skills Auto-Activation",
   "type": "module",
@@ -18,12 +18,12 @@
   ],
   "repository": {
     "type": "git",
-    "url": "https://github.com/codeblabdev-max/codeb-server.git",
+    "url": "https://github.com/codeb-dev-run/codeb-server.git",
     "directory": "cli"
   },
-  "homepage": "https://github.com/codeblabdev-max/codeb-server#readme",
+  "homepage": "https://github.com/codeb-dev-run/codeb-server#readme",
   "bugs": {
-    "url": "https://github.com/codeblabdev-max/codeb-server/issues"
+    "url": "https://github.com/codeb-dev-run/codeb-server/issues"
   },
   "scripts": {
     "test": "echo \"Tests coming soon\" && exit 0",

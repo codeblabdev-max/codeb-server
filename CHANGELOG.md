@@ -42,9 +42,9 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   - `docs/CLAUDE-CODE-INTEGRATION.md` - Claude Code 2.1 통합 가이드
 
 ### Changed
-- **패키지명 통일**: 모든 패키지 `@codeblabdev-max/*`로 변경
-  - `@codeb/mcp-proxy` → `@codeblabdev-max/mcp-proxy`
-  - `@codeb/analytics` → `@codeblabdev-max/analytics`
+- **패키지명 통일**: 모든 패키지 `@codeb-dev-run/*`로 변경
+  - `@codeb/mcp-proxy` → `@codeb-dev-run/mcp-proxy`
+  - `@codeb/analytics` → `@codeb-dev-run/analytics`
 - **폴더 구조 변경**: `v6.0/` → `v7.0/`
 - **문서 버전 업데이트**: 모든 docs/ 문서 v7.0으로 업데이트
 - **settings.local.json 재구성**: Claude Code 2.1 기능 활성화
@@ -166,9 +166,9 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ---
 
-[Unreleased]: https://github.com/codeblabdev-max/codeb-server/compare/v7.0.0...HEAD
-[7.0.0]: https://github.com/codeblabdev-max/codeb-server/compare/v6.0.5...v7.0.0
-[6.0.5]: https://github.com/codeblabdev-max/codeb-server/compare/v3.1.0...v6.0.5
-[3.1.0]: https://github.com/codeblabdev-max/codeb-server/compare/v3.0.24...v3.1.0
-[3.0.24]: https://github.com/codeblabdev-max/codeb-server/compare/v3.0.0...v3.0.24
-[3.0.0]: https://github.com/codeblabdev-max/codeb-server/releases/tag/v3.0.0
+[Unreleased]: https://github.com/codeb-dev-run/codeb-server/compare/v7.0.0...HEAD
+[7.0.0]: https://github.com/codeb-dev-run/codeb-server/compare/v6.0.5...v7.0.0
+[6.0.5]: https://github.com/codeb-dev-run/codeb-server/compare/v3.1.0...v6.0.5
+[3.1.0]: https://github.com/codeb-dev-run/codeb-server/compare/v3.0.24...v3.1.0
+[3.0.24]: https://github.com/codeb-dev-run/codeb-server/compare/v3.0.0...v3.0.24
+[3.0.0]: https://github.com/codeb-dev-run/codeb-server/releases/tag/v3.0.0

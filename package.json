@@ -1,5 +1,5 @@
 {
-  "name": "@codeblabdev-max/we-cli",
+  "name": "@codeb-dev-run/we-cli",
   "version": "9.0.2",
   "description": "CodeB we-cli: Deploy, Analyze, Workflow with 7-Agent System + Auto Claude Code Integration",
   "type": "module",
@@ -58,12 +58,12 @@
   },
   "repository": {
     "type": "git",
-    "url": "git+https://github.com/codeblabdev-max/codeb-server.git"
+    "url": "git+https://github.com/codeb-dev-run/codeb-server.git"
   },
   "bugs": {
-    "url": "https://github.com/codeblabdev-max/codeb-server/issues"
+    "url": "https://github.com/codeb-dev-run/codeb-server/issues"
   },
-  "homepage": "https://github.com/codeblabdev-max/codeb-server#readme",
+  "homepage": "https://github.com/codeb-dev-run/codeb-server#readme",
   "directories": {
     "doc": "docs"
   },

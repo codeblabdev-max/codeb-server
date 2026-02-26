@@ -4,7 +4,7 @@
  * /we: Claude Code 자동 설치 스크립트
  * 버전은 VERSION 파일에서 관리됩니다 (SSOT)
  *
- * npm install -g @codeblabdev-max/we-cli 시 자동으로 실행됩니다.
+ * npm install -g @codeb-dev-run/we-cli 시 자동으로 실행됩니다.
  *
  * 설치 항목:
  * 1. MCP Server: ~/.claude/settings.json에 codeb-deploy 등록 (전역 명령어 사용)
@@ -417,7 +417,7 @@ async function install() {
   } catch {}
 
   console.log('\n' + '═'.repeat(60));
-  console.log(`🚀 @codeblabdev-max/we-cli 설치 (v${version})`);
+  console.log(`🚀 @codeb-dev-run/we-cli 설치 (v${version})`);
   console.log('═'.repeat(60));
 
   const results = {

@@ -465,8 +465,8 @@ curl -s https://api.codeb.kr/health | jq '.version'
 ```
 
 - **Claude Code**: 2.1.x (Skills + Advanced Hooks)
-- **CLI**: @codeblabdev-max/we-cli
-- **MCP Server**: @codeblabdev-max/mcp-server
+- **CLI**: @codeb-dev-run/we-cli
+- **MCP Server**: @codeb-dev-run/mcp-server
 - **API Endpoint**: https://api.codeb.kr (16 tools)
 - **CLI Download**: https://releases.codeb.kr/cli/install.sh
 - **Container Runtime**: Docker

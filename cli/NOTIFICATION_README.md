@@ -310,5 +310,5 @@ MIT
 ## Support
 
 For issues and support:
-- GitHub: https://github.com/codeblabdev-max/codeb-server
+- GitHub: https://github.com/codeb-dev-run/codeb-server
 - Email: support@codeb.kr

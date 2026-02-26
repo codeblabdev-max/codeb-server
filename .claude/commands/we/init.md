@@ -67,7 +67,7 @@ mcp__codeb-deploy__workflow_init
 
 ## ⚠️ 중요: 절대 하지 말아야 할 것
 - **AskUserQuestion으로 API 키 물어보지 않기** (options 2개 이상 필요)
-- **npx @codeblabdev-max/we-cli init 호출하지 않기** (inquirer 에러 발생)
+- **npx @codeb-dev-run/we-cli init 호출하지 않기** (inquirer 에러 발생)
 - **.env에 키가 있는데 다시 물어보지 않기**
 
 ## API 키 우선순위

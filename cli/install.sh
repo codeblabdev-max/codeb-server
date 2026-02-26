@@ -4,14 +4,14 @@
 # VERSION은 설치 후 VERSION 파일에서 자동으로 읽힘 (SSOT)
 #
 # 설치 방법 1 (권장 — GitHub 직접 설치):
-#   curl -fsSL https://raw.githubusercontent.com/codeblabdev-max/codeb-server/main/install.sh | bash
+#   curl -fsSL https://raw.githubusercontent.com/codeb-dev-run/codeb-server/main/install.sh | bash
 #
 # 설치 방법 2 (npm — GitHub Package Registry):
-#   echo "@codeblabdev-max:registry=https://npm.pkg.github.com" >> ~/.npmrc
-#   npm install -g @codeblabdev-max/we-cli
+#   echo "@codeb-dev-run:registry=https://npm.pkg.github.com" >> ~/.npmrc
+#   npm install -g @codeb-dev-run/we-cli
 #
 # 설치 방법 3 (npm — npmjs.org):
-#   npm install -g @codeblabdev-max/we-cli
+#   npm install -g @codeb-dev-run/we-cli
 #
 
 set -e
@@ -51,16 +51,16 @@ echo -e "${GREEN}   ✅ npm $(npm -v)${NC}"
 
 # GitHub Package Registry 설정
 echo -e "${YELLOW}3. GitHub Package Registry 설정...${NC}"
-if ! grep -q "@codeblabdev-max:registry=https://npm.pkg.github.com" ~/.npmrc 2>/dev/null; then
-    echo "@codeblabdev-max:registry=https://npm.pkg.github.com" >> ~/.npmrc
+if ! grep -q "@codeb-dev-run:registry=https://npm.pkg.github.com" ~/.npmrc 2>/dev/null; then
+    echo "@codeb-dev-run:registry=https://npm.pkg.github.com" >> ~/.npmrc
     echo -e "${GREEN}   ✅ .npmrc 설정 추가${NC}"
 else
     echo -e "${GREEN}   ✅ .npmrc 이미 설정됨${NC}"
 fi
 
 # we-cli 설치
-echo -e "${YELLOW}4. @codeblabdev-max/we-cli 설치...${NC}"
-npm install -g @codeblabdev-max/we-cli
+echo -e "${YELLOW}4. @codeb-dev-run/we-cli 설치...${NC}"
+npm install -g @codeb-dev-run/we-cli
 
 # 설치 확인
 echo -e "${YELLOW}5. 설치 확인...${NC}"

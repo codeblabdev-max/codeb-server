@@ -98,7 +98,7 @@ GET /health?v=9.0.0   # 버전 체크 포함
   "status": "healthy",
   "version": "9.0.0",
   "updateRequired": true,
-  "updateMessage": "CLI 업데이트 필요: npm i -g @codeblabdev-max/we-cli",
+  "updateMessage": "CLI 업데이트 필요: npm i -g @codeb-dev-run/we-cli",
   "latestVersion": "9.0.0",
   "downloadUrl": "https://releases.codeb.kr/cli/install.sh"
 }

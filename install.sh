@@ -3,13 +3,13 @@
 # VERSION 파일이 SSOT — 이 파일의 VERSION 표시는 참고용
 #
 # 설치 명령어:
-#   curl -fsSL https://raw.githubusercontent.com/codeblabdev-max/codeb-server/main/install.sh | bash
+#   curl -fsSL https://raw.githubusercontent.com/codeb-dev-run/codeb-server/main/install.sh | bash
 #
 # MCP 서버 + Skills + CLAUDE.md + Hooks 설치
 
 set -e
 
-REPO_URL="https://github.com/codeblabdev-max/codeb-server.git"
+REPO_URL="https://github.com/codeb-dev-run/codeb-server.git"
 INSTALL_DIR="$HOME/.codeb"
 CLAUDE_DIR="$HOME/.claude"
 CLAUDE_SETTINGS="$CLAUDE_DIR/settings.json"

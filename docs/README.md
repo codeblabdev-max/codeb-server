@@ -29,12 +29,12 @@ codeb-server/
 
 ```bash
 # 1. CLI 설치
-npm install -g @codeblabdev-max/we-cli
+npm install -g @codeb-dev-run/we-cli
 
 # 2. MCP 서버 등록
 claude mcp add codeb-deploy \
   --command node \
-  --args "/opt/homebrew/lib/node_modules/@codeblabdev-max/we-cli/bin/codeb-mcp.js" \
+  --args "/opt/homebrew/lib/node_modules/@codeb-dev-run/we-cli/bin/codeb-mcp.js" \
   --env CODEB_API_URL=https://api.codeb.kr
 
 # 3. API 키 설정
@@ -176,7 +176,7 @@ curl -s https://api.codeb.kr/health | jq '.version'
 ```
 
 - **MCP Server**: codeb-mcp (Express.js, 38 tools)
-- **CLI**: @codeblabdev-max/we-cli
+- **CLI**: @codeb-dev-run/we-cli
 - **API Endpoint**: https://api.codeb.kr
 - **Container Runtime**: Docker
 

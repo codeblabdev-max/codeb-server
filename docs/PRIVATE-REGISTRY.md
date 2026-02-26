@@ -378,7 +378,7 @@ docker exec -i videopick-minio mc du local/docker-registry/
 /we:deploy myproject --useGhcr
 
 # 이미지 직접 지정
-/we:deploy myproject --image ghcr.io/codeblabdev-max/myproject:latest
+/we:deploy myproject --image ghcr.io/codeb-dev-run/myproject:latest
 ```
 
 ---

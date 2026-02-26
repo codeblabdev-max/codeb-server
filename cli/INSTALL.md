@@ -3,14 +3,14 @@
 ## 원라인 설치 (권장)
 
 ```bash
-curl -fsSL https://raw.githubusercontent.com/codeblabdev-max/codeb-server/main/install.sh | bash
+curl -fsSL https://raw.githubusercontent.com/codeb-dev-run/codeb-server/main/install.sh | bash
 ```
 
 ## 수동 설치
 
 ```bash
 # 1. 패키지 다운로드
-npm pack github:codeblabdev-max/codeb-server
+npm pack github:codeb-dev-run/codeb-server
 
 # 2. 전역 설치
 npm install -g we-cli-*.tgz
@@ -91,7 +91,7 @@ we --version
 
 ```bash
 # 최신 버전 재설치
-curl -fsSL https://raw.githubusercontent.com/codeblabdev-max/codeb-server/main/install.sh | bash
+curl -fsSL https://raw.githubusercontent.com/codeb-dev-run/codeb-server/main/install.sh | bash
 ```
 
 ## 삭제
@@ -118,7 +118,7 @@ cat ~/.claude.json | grep -A 10 codeb-deploy
 ### 권한 오류
 ```bash
 # 전역 설치 권한 문제
-sudo npm install -g github:codeblabdev-max/codeb-server
+sudo npm install -g github:codeb-dev-run/codeb-server
 
 # 또는 npm prefix 변경
 npm config set prefix ~/.npm-global
