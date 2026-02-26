@@ -1,12 +1,16 @@
 #!/bin/bash
 #
 # CodeB we-cli 원라인 설치 스크립트
+# VERSION은 설치 후 VERSION 파일에서 자동으로 읽힘 (SSOT)
 #
-# 설치 명령어:
-#   curl -fsSL https://raw.githubusercontent.com/codeblabdev-max/codeb-server/main/cli/install.sh | bash
+# 설치 방법 1 (권장 — GitHub 직접 설치):
+#   curl -fsSL https://raw.githubusercontent.com/codeblabdev-max/codeb-server/main/install.sh | bash
 #
-# 또는 npm 직접 설치 (GitHub Package Registry):
+# 설치 방법 2 (npm — GitHub Package Registry):
 #   echo "@codeblabdev-max:registry=https://npm.pkg.github.com" >> ~/.npmrc
+#   npm install -g @codeblabdev-max/we-cli
+#
+# 설치 방법 3 (npm — npmjs.org):
 #   npm install -g @codeblabdev-max/we-cli
 #
 
@@ -20,10 +24,10 @@ CYAN='\033[0;36m'
 NC='\033[0m'
 
 echo -e "${CYAN}"
-echo "╔═══════════════════════════════════════════════╗"
-echo "║   CodeB we-cli v7.0.57 설치                    ║"
-echo "║   배포 • 분석 • 워크플로우 • MCP 통합          ║"
-echo "╚═══════════════════════════════════════════════╝"
+echo "╔═══════════════════════════════════════════════════════╗"
+echo "║   CodeB we-cli 설치                                    ║"
+echo "║   배포 • 모니터링 • 워크플로우 • MCP 통합              ║"
+echo "╚═══════════════════════════════════════════════════════╝"
 echo -e "${NC}"
 
 # Node.js 버전 확인
@@ -43,7 +47,6 @@ echo -e "${GREEN}   ✅ Node.js $(node -v)${NC}"
 
 # npm 버전 확인
 echo -e "${YELLOW}2. npm 버전 확인...${NC}"
-NPM_VERSION=$(npm -v | cut -d'.' -f1)
 echo -e "${GREEN}   ✅ npm $(npm -v)${NC}"
 
 # GitHub Package Registry 설정
@@ -62,7 +65,8 @@ npm install -g @codeblabdev-max/we-cli
 # 설치 확인
 echo -e "${YELLOW}5. 설치 확인...${NC}"
 if command -v we &> /dev/null; then
-    echo -e "${GREEN}   ✅ we 명령어 설치 완료${NC}"
+    WE_VERSION=$(we --version 2>/dev/null || echo "installed")
+    echo -e "${GREEN}   ✅ we 명령어 설치 완료 (${WE_VERSION})${NC}"
 else
     echo -e "${RED}   ❌ we 명령어 설치 실패${NC}"
     exit 1
@@ -70,27 +74,27 @@ fi
 
 # 완료 메시지
 echo ""
-echo -e "${GREEN}═══════════════════════════════════════════════════${NC}"
-echo -e "${GREEN}✅ 설치 완료!${NC}"
-echo -e "${GREEN}═══════════════════════════════════════════════════${NC}"
+echo -e "${GREEN}═══════════════════════════════════════════════════════${NC}"
+echo -e "${GREEN}  ✅ 설치 완료!${NC}"
+echo -e "${GREEN}═══════════════════════════════════════════════════════${NC}"
 echo ""
-echo -e "${CYAN}🚀 시작하기:${NC}"
-echo "   we help                    - 도움말 보기"
-echo "   we config init             - 설정 초기화"
-echo "   we workflow init myapp     - 프로젝트 생성"
-echo "   we deploy myapp            - 배포"
+echo -e "${CYAN}다음 단계:${NC}"
+echo "   1. API 키 설정:   we init <API_KEY>"
+echo "   2. Claude Code 재시작"
+echo "   3. 상태 확인:     /we:health"
+echo "   4. 배포:          /we:deploy <프로젝트>"
 echo ""
-echo -e "${CYAN}📦 자동 설치 항목:${NC}"
-echo "   ~/.claude/commands/we/     - Slash Commands"
-echo "   ~/.claude/CLAUDE.md        - AI 규칙 (Socket.IO 금지, Centrifugo 사용)"
-echo "   ~/.claude/hooks/           - 보안 Hooks"
-echo "   ~/.claude.json             - MCP 서버 설정"
+echo -e "${CYAN}자동 설치 항목:${NC}"
+echo "   ~/.claude/skills/       - Skills (자동 활성화)"
+echo "   ~/.claude/CLAUDE.md     - AI 규칙"
+echo "   ~/.claude/hooks/        - 보안 Hooks"
+echo "   ~/.claude/settings.json - MCP 서버 설정"
 echo ""
-echo -e "${CYAN}🌐 서버 인프라:${NC}"
-echo "   n1.codeb.kr (158.247.203.55) - App Server"
-echo "   n2.codeb.kr (141.164.42.213) - Streaming (Centrifugo)"
-echo "   n3.codeb.kr (64.176.226.119) - Storage (PostgreSQL, Redis)"
-echo "   n4.codeb.kr (141.164.37.63)  - Backup"
+echo -e "${CYAN}서버 인프라:${NC}"
+echo "   App:       158.247.203.55 (MCP API, Caddy, Docker)"
+echo "   Streaming: 141.164.42.213 (Centrifugo WebSocket)"
+echo "   Storage:   64.176.226.119 (PostgreSQL, Redis)"
+echo "   Backup:    141.164.37.63  (Prometheus, Grafana)"
 echo ""
-echo -e "${YELLOW}⚠️  Claude Code를 재시작하여 MCP와 명령어를 로드하세요.${NC}"
+echo -e "${YELLOW}⚠️  Claude Code를 재시작하여 MCP와 Skills를 로드하세요.${NC}"
 echo ""
