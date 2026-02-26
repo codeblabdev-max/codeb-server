@@ -3,7 +3,7 @@
 # VERSION 파일이 SSOT — 이 파일의 VERSION 표시는 참고용
 #
 # 설치 명령어:
-#   curl -fsSL https://raw.githubusercontent.com/codeb-dev-run/codeb-server/main/install.sh | bash
+#   curl -fsSL https://releases.codeb.kr/cli/install.sh | bash
 #
 # MCP 서버 + Skills + CLAUDE.md + Hooks 설치
 

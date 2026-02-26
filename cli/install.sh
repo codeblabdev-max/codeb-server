@@ -4,7 +4,7 @@
 # VERSION은 설치 후 VERSION 파일에서 자동으로 읽힘 (SSOT)
 #
 # 설치 방법 1 (권장 — GitHub 직접 설치):
-#   curl -fsSL https://raw.githubusercontent.com/codeb-dev-run/codeb-server/main/install.sh | bash
+#   curl -fsSL https://releases.codeb.kr/cli/install.sh | bash
 #
 # 설치 방법 2 (npm — GitHub Package Registry):
 #   echo "@codeb-dev-run:registry=https://npm.pkg.github.com" >> ~/.npmrc
