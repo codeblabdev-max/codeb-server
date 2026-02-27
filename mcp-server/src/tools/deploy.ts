@@ -238,7 +238,7 @@ export async function executeDeploy(
           : `${PRIVATE_REGISTRY}/${projectName}:${version}`;
 
       try {
-        await local.exec(`docker pull ${imageUrl}`, { timeout: 180000 });
+        await local.execStrict(`docker pull ${imageUrl}`, { timeout: 180000 });
         steps.push({
           name: 'pull_image',
           status: 'success',
@@ -296,7 +296,7 @@ export async function executeDeploy(
           await local.exec(`mkdir -p /opt/codeb/env/${projectName}`);
           const base64Content = Buffer.from(envContent).toString('base64');
           await local.exec(`echo "${base64Content}" | base64 -d > ${envFile}`);
-          await local.exec(`chmod 600 ${envFile}`);
+          await local.exec(`chmod 644 ${envFile}`);
 
           // 백업 생성
           await local.exec(`mkdir -p ${envBackupDir}`);
@@ -375,22 +375,25 @@ export async function executeDeploy(
       const actualEnvFile = envFileToUse.stdout.trim();
 
       try {
-        const dockerCmd = `docker run -d \\
-          --name ${containerName} \\
-          --restart always \\
-          --env-file ${actualEnvFile} \\
-          -p ${targetPort}:3000 \\
-          --health-cmd="node -e \"const h=require('http'),c=(p,cb)=>h.get('http://localhost:3000'+p,r=>{r.resume();r.statusCode<400?process.exit(0):cb()}).on('error',cb);c('/health',()=>c('/api/health',()=>process.exit(1)))\" || wget -q --spider http://localhost:3000/health 2>/dev/null || exit 1" \\
-          --health-interval=10s \\
-          --health-timeout=5s \\
-          --health-retries=5 \\
-          --health-start-period=60s \\
-          --memory=512m \\
-          --cpus=1 \\
-          ${dockerLabels} \\
-          ${imageUrl}`;
+        const healthCmd = 'wget -q --spider http://localhost:3000/health || wget -q --spider http://localhost:3000/api/health || exit 1';
+        const dockerCmd = [
+          'docker run -d',
+          `--name ${containerName}`,
+          '--restart always',
+          `--env-file ${actualEnvFile}`,
+          `-p ${targetPort}:3000`,
+          `--health-cmd='${healthCmd}'`,
+          '--health-interval=10s',
+          '--health-timeout=5s',
+          '--health-retries=5',
+          '--health-start-period=60s',
+          '--memory=512m',
+          '--cpus=1',
+          dockerLabels,
+          imageUrl,
+        ].join(' ');
 
-        await local.exec(dockerCmd, { timeout: 60000 });
+        await local.execStrict(dockerCmd, { timeout: 60000 });
         steps.push({
           name: 'start_container',
           status: 'success',

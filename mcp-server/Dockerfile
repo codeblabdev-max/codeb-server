@@ -32,22 +32,25 @@ RUN npm prune --omit=dev
 # ============================================================================
 FROM node:20-alpine AS production
 
-# Security: non-root user
-RUN addgroup -g 1001 -S nodejs && \
-    adduser -S codeb -u 1001 -G nodejs
+# Install Docker CLI (deploy/promote/rollback에서 호스트 Docker 제어 필요)
+RUN apk add --no-cache docker-cli
+
+# Security: non-root user (UID/GID 997 = 호스트 codeb 유저와 일치)
+RUN addgroup -g 997 -S codeb && \
+    adduser -S codeb -u 997 -G codeb
 
 WORKDIR /app
 
 # Copy built files and production dependencies
-COPY --from=builder --chown=codeb:nodejs /app/dist ./dist
-COPY --from=builder --chown=codeb:nodejs /app/node_modules ./node_modules
-COPY --from=builder --chown=codeb:nodejs /app/package.json ./
+COPY --from=builder --chown=codeb:codeb /app/dist ./dist
+COPY --from=builder --chown=codeb:codeb /app/node_modules ./node_modules
+COPY --from=builder --chown=codeb:codeb /app/package.json ./
 
 # Copy VERSION file (copied from parent dir before build)
-COPY --chown=codeb:nodejs VERSION ./VERSION
+COPY --chown=codeb:codeb VERSION ./VERSION
 
 # Create logs directory
-RUN mkdir -p /app/logs && chown codeb:nodejs /app/logs
+RUN mkdir -p /app/logs && chown codeb:codeb /app/logs
 
 # Environment
 ENV NODE_ENV=production

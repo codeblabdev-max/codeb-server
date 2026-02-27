@@ -87,40 +87,41 @@ if [ -f "$INSTALL_DIR/VERSION" ]; then
 fi
 echo -e "${GREEN}   ✅ v${VERSION} 다운로드 완료${NC}"
 
-# ─── MCP 서버 빌드 ───
+# ─── MCP 프록시 설치 ───
 echo ""
-echo -e "${YELLOW}3. MCP 서버 빌드...${NC}"
-cd "$INSTALL_DIR/mcp-server"
-
-# VERSION 파일 복사 (Dockerfile에서 COPY VERSION ./VERSION 필요)
-cp "$INSTALL_DIR/VERSION" ./VERSION 2>/dev/null || true
+echo -e "${YELLOW}3. MCP 프록시 설치...${NC}"
+cd "$INSTALL_DIR/cli"
 
 npm install --silent 2>/dev/null
-npm run build --silent 2>/dev/null
-echo -e "${GREEN}   ✅ MCP 서버 빌드 완료${NC}"
+echo -e "${GREEN}   ✅ MCP 프록시 설치 완료${NC}"
 
 # ─── API Key 설정 ───
 echo ""
 echo -e "${YELLOW}4. API Key 설정...${NC}"
+
+# 우선순위: $1 인자 > CODEB_API_KEY 환경변수 > .env 파일 > 대화형 입력
+API_KEY="${1:-${CODEB_API_KEY:-}}"
 
 EXISTING_KEY=""
 if [ -f "$ENV_FILE" ]; then
   EXISTING_KEY=$(grep "^CODEB_API_KEY=" "$ENV_FILE" 2>/dev/null | cut -d= -f2)
 fi
 
-if [ -n "$EXISTING_KEY" ]; then
+if [ -n "$API_KEY" ]; then
+  # 인자 또는 환경변수로 전달됨
+  echo -e "${GREEN}   ✅ API Key 전달됨${NC}"
+elif [ -n "$EXISTING_KEY" ]; then
   MASKED="${EXISTING_KEY:0:12}...${EXISTING_KEY: -4}"
-  echo "   기존 API Key: $MASKED"
-  read -p "   새 키로 변경? (Enter = 유지, 새 키 입력 = 변경): " NEW_KEY
-  if [ -n "$NEW_KEY" ]; then
-    API_KEY="$NEW_KEY"
-  else
-    API_KEY="$EXISTING_KEY"
-  fi
+  echo "   기존 API Key 사용: $MASKED"
+  API_KEY="$EXISTING_KEY"
 else
-  read -p "   CODEB_API_KEY 입력: " API_KEY
+  # 대화형 입력 (파이프 모드가 아닌 경우만)
+  if [ -t 0 ]; then
+    read -p "   CODEB_API_KEY 입력: " API_KEY
+  fi
   if [ -z "$API_KEY" ]; then
     echo -e "${RED}   ❌ API Key가 필요합니다.${NC}"
+    echo -e "${YELLOW}   사용법: curl -fsSL https://releases.codeb.kr/cli/install.sh | bash -s -- <API_KEY>${NC}"
     exit 1
   fi
 fi
@@ -137,7 +138,7 @@ echo ""
 echo -e "${YELLOW}5. Claude Code MCP 설정...${NC}"
 mkdir -p "$CLAUDE_DIR"
 
-MCP_PATH="$INSTALL_DIR/mcp-server/dist/index.js"
+MCP_PATH="$INSTALL_DIR/cli/bin/codeb-mcp.js"
 
 # claude mcp add 시도 (Claude Code CLI가 있는 경우)
 MCP_REGISTERED=false
@@ -267,7 +268,11 @@ if command -v gh &> /dev/null && [ -n "$PROJECT_DIR" ] && [ "$PROJECT_DIR" != "$
   REPO=$(gh repo view --json nameWithOwner -q .nameWithOwner 2>/dev/null || echo "")
   if [ -n "$REPO" ]; then
     echo ""
-    read -p "   GitHub Secrets 등록? ($REPO) [y/N]: " SETUP_SECRETS
+    if [ -t 0 ]; then
+      read -p "   GitHub Secrets 등록? ($REPO) [y/N]: " SETUP_SECRETS
+    else
+      SETUP_SECRETS="N"
+    fi
     if [[ "$SETUP_SECRETS" =~ ^[yY]$ ]]; then
       echo "$API_KEY" | gh secret set CODEB_API_KEY 2>/dev/null && echo -e "${GREEN}   ✅ CODEB_API_KEY${NC}" || true
     fi
@@ -281,7 +286,7 @@ echo -e "${GREEN}  ✅ CodeB v${VERSION} 설치 완료!${NC}"
 echo -e "${GREEN}═══════════════════════════════════════════════════════${NC}"
 echo ""
 echo -e "  ${CYAN}설치 위치:${NC}  $INSTALL_DIR"
-echo -e "  ${CYAN}MCP 서버:${NC}   $MCP_PATH"
+echo -e "  ${CYAN}MCP 프록시:${NC} $MCP_PATH"
 echo -e "  ${CYAN}API Key:${NC}    ${API_KEY:0:12}...${API_KEY: -4}"
 echo -e "  ${CYAN}설정 파일:${NC}  $CLAUDE_SETTINGS"
 echo ""

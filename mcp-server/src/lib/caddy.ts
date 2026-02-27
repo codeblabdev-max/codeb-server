@@ -7,9 +7,51 @@
  * - Blue-Green 도메인 전환 지원
  */
 
+import { request as httpRequest } from 'http';
+import { readFile } from 'fs/promises';
 import { withLocal } from './local-exec.js';
 import { logger } from './logger.js';
 import type { SlotName, Environment } from './types.js';
+
+/**
+ * Caddy Admin API를 통한 설정 리로드
+ * 컨테이너 안에서 caddy CLI/systemctl 없이 동작
+ */
+async function reloadCaddyViaAPI(): Promise<void> {
+  const caddyfile = await readFile('/etc/caddy/Caddyfile', 'utf-8');
+
+  return new Promise((resolve, reject) => {
+    const postData = caddyfile;
+    const req = httpRequest(
+      {
+        hostname: '127.0.0.1',
+        port: 2019,
+        path: '/load',
+        method: 'POST',
+        headers: {
+          'Content-Type': 'text/caddyfile',
+          'Content-Length': Buffer.byteLength(postData),
+        },
+        timeout: 10000,
+      },
+      (res) => {
+        let body = '';
+        res.on('data', (chunk: Buffer) => { body += chunk; });
+        res.on('end', () => {
+          if (res.statusCode && res.statusCode >= 200 && res.statusCode < 300) {
+            resolve();
+          } else {
+            reject(new Error(`Caddy reload failed (HTTP ${res.statusCode}): ${body}`));
+          }
+        });
+      }
+    );
+    req.on('error', (err) => reject(new Error(`Caddy Admin API unreachable: ${err.message}`)));
+    req.on('timeout', () => { req.destroy(); reject(new Error('Caddy Admin API timeout')); });
+    req.write(postData);
+    req.end();
+  });
+}
 
 // ============================================================================
 // Constants
@@ -216,16 +258,14 @@ export async function writeCaddyConfig(config: CaddySiteConfig): Promise<void> {
       logger.info('Synced related Caddy config', { file: relatedFile, activeSlot: config.activeSlot, activePort: config.activePort });
     }
 
-    // Validate configuration
-    const validateResult = await local.exec('caddy validate --config /etc/caddy/Caddyfile 2>&1');
-    if (validateResult.code !== 0 && !validateResult.stdout.includes('Valid')) {
-      // Restore backup on validation failure
+    // Validate & Reload via Caddy Admin API (컨테이너 안에서도 동작)
+    try {
+      await reloadCaddyViaAPI();
+    } catch (reloadError) {
+      // Restore backup on failure
       await local.exec(`[ -f ${backupPath} ] && mv ${backupPath} ${caddyPath} || true`);
-      throw new Error(`Caddy config validation failed: ${validateResult.stdout}`);
+      throw new Error(`Caddy config reload failed: ${reloadError instanceof Error ? reloadError.message : String(reloadError)}`);
     }
-
-    // Reload Caddy (zero-downtime)
-    await local.exec('systemctl reload caddy');
 
     logger.info('Caddy config updated', {
       projectName: config.projectName,
@@ -453,16 +493,25 @@ export async function getCaddyStatus(): Promise<{
   version: string;
   configValid: boolean;
 }> {
-  return withLocal(async (local) => {
-    const statusResult = await local.exec('systemctl is-active caddy');
-    const versionResult = await local.exec('caddy version 2>/dev/null || echo "unknown"');
-    const validateResult = await local.exec('caddy validate --config /etc/caddy/Caddyfile 2>&1');
-
-    return {
-      running: statusResult.stdout.trim() === 'active',
-      version: versionResult.stdout.trim().split(' ')[0] || 'unknown',
-      configValid: validateResult.code === 0 || validateResult.stdout.includes('Valid'),
-    };
+  // Caddy Admin API 사용 (컨테이너 호환)
+  return new Promise((resolve) => {
+    const req = httpRequest(
+      { hostname: '127.0.0.1', port: 2019, path: '/config/', method: 'GET', timeout: 3000 },
+      (res) => {
+        let body = '';
+        res.on('data', (chunk: Buffer) => { body += chunk; });
+        res.on('end', () => {
+          resolve({
+            running: res.statusCode === 200,
+            version: 'caddy (admin API)',
+            configValid: res.statusCode === 200,
+          });
+        });
+      }
+    );
+    req.on('error', () => resolve({ running: false, version: 'unknown', configValid: false }));
+    req.on('timeout', () => { req.destroy(); resolve({ running: false, version: 'unknown', configValid: false }); });
+    req.end();
   });
 }
 
@@ -470,9 +519,7 @@ export async function getCaddyStatus(): Promise<{
  * Force reload Caddy configuration
  */
 export async function reloadCaddy(): Promise<void> {
-  await withLocal(async (local) => {
-    await local.exec('systemctl reload caddy');
-  });
+  await reloadCaddyViaAPI();
 }
 
 export { BASE_DOMAIN, SUPPORTED_DOMAINS, APP_SERVER_IP, CADDY_SITES_DIR };

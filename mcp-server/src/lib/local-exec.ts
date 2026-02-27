@@ -54,7 +54,7 @@ export class LocalExec {
       cpExec(command, {
         timeout,
         maxBuffer: 10 * 1024 * 1024, // 10MB
-        shell: '/bin/bash',
+        shell: '/bin/sh',
       }, (error, stdout, stderr) => {
         if (error && error.killed) {
           reject(new Error(`Command timed out after ${timeout}ms`));
@@ -69,6 +69,19 @@ export class LocalExec {
         });
       });
     });
+  }
+
+  /**
+   * 엄격한 명령 실행 — exit code가 0이 아니면 throw
+   * docker pull, docker run 등 실패 감지가 필수인 명령에 사용
+   */
+  async execStrict(command: string, options: { timeout?: number } = {}): Promise<SSHResult> {
+    const result = await this.exec(command, options);
+    if (result.code !== 0) {
+      const errMsg = result.stderr.trim() || result.stdout.trim() || `Command failed with exit code ${result.code}`;
+      throw new Error(errMsg);
+    }
+    return result;
   }
 
   /**
